@@ -155,6 +155,103 @@ MVP 建议采用 4 个主导航：
 4. 最后加入克制的 AI 柔光总结。
 5. 小宇宙视图先做概念表达，不急于复杂实现。
 
+## Flutter 前端原型
+
+当前仓库已加入 Flutter 纯前端原型，主要代码在 `lib/main.dart`。
+
+平台目标：
+
+- Android：已生成 `android/` 工程目录。
+- iOS：已生成 `ios/` 工程目录。
+- macOS：已生成 `macos/` 工程目录，用于 macOS 桌面预览。
+- Windows：已生成 `windows/` 工程目录，用于 Windows 桌面预览。
+- Web：未生成 Web 目录。
+
+运行方式：
+
+```bash
+flutter pub get
+flutter run -d android
+flutter run -d ios
+flutter run -d macos
+```
+
+### macOS 启动交互式预览
+
+macOS 预览需要完整 Xcode，只有 Command Line Tools 不够。
+
+1. 安装 Xcode。
+2. 切换开发者目录并完成首次启动：
+
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -runFirstLaunch
+sudo xcodebuild -license accept
+```
+
+3. 进入项目目录并启动：
+
+```bash
+cd "/Users/jinzihan/Documents/New project/隙光"
+flutter doctor
+flutter run -d macos
+```
+
+如果本机没有把 Flutter 加入 `PATH`，可以使用本项目当前机器上的 SDK 路径：
+
+```bash
+/Users/jinzihan/.cache/codex-flutter-sdk/bin/flutter run -d macos
+```
+
+### Windows 启动交互式预览
+
+Windows 预览需要 Flutter SDK、Visual Studio 和桌面 C++ 构建工具。
+
+1. 安装 Flutter SDK，并把 `flutter/bin` 加入系统 `PATH`。
+2. 安装 Visual Studio 2022，勾选 `Desktop development with C++` 工作负载。
+3. 打开 PowerShell，进入项目目录：
+
+```powershell
+cd "你的项目路径\xiguang"
+flutter doctor
+flutter devices
+flutter run -d windows
+```
+
+如果 `flutter devices` 没看到 Windows，请先启用桌面支持：
+
+```powershell
+flutter config --enable-windows-desktop
+flutter doctor
+flutter run -d windows
+```
+
+参考文档：
+
+- Flutter Windows 桌面开发：https://docs.flutter.dev/platform-integration/windows/setup
+- Flutter macOS 桌面开发：https://docs.flutter.dev/platform-integration/macos/setup
+
+测试与预览：
+
+```bash
+flutter test
+flutter test --update-goldens test/golden_test.dart
+```
+
+当前电脑可读预览：
+
+```bash
+/Users/jinzihan/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 tools/generate_preview.py
+```
+
+生成结果位于 `preview/`：
+
+- `preview/01_capture_readable.png`
+- `preview/02_timeline_readable.png`
+- `preview/03_universe_readable.png`
+
+说明：Flutter 的 headless golden 测试环境会使用测试字体，中文 golden 图可能显示为方块；真实 Android/iOS/macOS 运行时会使用系统中文字体渲染。当前电脑因为缺少完整 Xcode 与 Android SDK，无法直接打开交互式 Flutter 运行窗口，因此提供 `preview/` 下的可读 PNG 作为本机预览。
+
 ## 产品信念
 
 隙光真正的竞争力，是让用户感到：
