@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../../design/tokens/colors.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../ui/composites/light_card.dart';
 import '../../../../ui/composites/tag_chip.dart';

@@ -3,9 +3,16 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  file_selector_windows
+  flutter_secure_storage_windows
+  permission_handler_windows
+  record_windows
+  sentry_flutter
+  sqlite3_flutter_libs
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

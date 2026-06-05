@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/colors.dart';
-import '../tokens/typography.dart';
 
 /// 隙光 ThemeData 组装 — 完全绕过 Material 默认样式
 ThemeData xiguangTheme() {

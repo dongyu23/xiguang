@@ -1,4 +1,5 @@
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../../design/tokens/colors.dart';
@@ -63,8 +64,6 @@ class StarryPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rng = Random(42);  // 固定种子，保证一致性
-
     // 背景星尘
     for (var i = 0; i < starCount; i++) {
       final x = (i * 37 % size.width).toDouble();

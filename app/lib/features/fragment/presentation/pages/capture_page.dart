@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../../../../design/tokens/colors.dart';
@@ -5,7 +7,6 @@ import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../ui/composites/emotion_picker.dart';
 import '../../../../ui/composites/light_card.dart';
-import '../../../../ui/composites/tag_chip.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
 /// 捕光页 — 首页，快速记录入口

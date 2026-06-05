@@ -19,31 +19,31 @@ GoRouter createRouter() {
         branches: [
           // Tab 1: 捕光
           StatefulShellBranch(routes: [
-            GoRoute('/capture', builder: (_, __) => const CapturePage()),
-            GoRoute('/fragments/:id', builder: (_, state) =>
+            GoRoute(path: '/capture', builder: (_, __) => const CapturePage()),
+            GoRoute(path: '/fragments/:id', builder: (_, state) =>
               FragmentDetailPlaceholder(id: state.pathParameters['id']!)),
-            GoRoute('/fragments/:id/edit', builder: (_, state) =>
+            GoRoute(path: '/fragments/:id/edit', builder: (_, state) =>
               FragmentEditPlaceholder(id: state.pathParameters['id']!)),
           ]),
           // Tab 2: 时间河
           StatefulShellBranch(routes: [
-            GoRoute('/timeline', builder: (_, __) => const TimeRiverPage()),
+            GoRoute(path: '/timeline', builder: (_, __) => const TimeRiverPage()),
           ]),
           // Tab 3: 织线（星图）
           StatefulShellBranch(routes: [
-            GoRoute('/weave', builder: (_, __) => const StarmapPage()),
-            GoRoute('/weave/select', builder: (_, __) => const _SelectPlaceholder()),
+            GoRoute(path: '/weave', builder: (_, __) => const StarmapPage()),
+            GoRoute(path: '/weave/select', builder: (_, __) => const _SelectPlaceholder()),
           ]),
           // Tab 4: 小宇宙
           StatefulShellBranch(routes: [
-            GoRoute('/universe', builder: (_, __) => const UniversePage()),
-            GoRoute('/islands/:id', builder: (_, state) =>
+            GoRoute(path: '/universe', builder: (_, __) => const UniversePage()),
+            GoRoute(path: '/islands/:id', builder: (_, state) =>
               _IslandDetailPlaceholder(id: state.pathParameters['id']!)),
           ]),
         ],
       ),
       // 非 Tab 页面（全屏）
-      GoRoute('/space', builder: (_, __) => const SpacePage()),
+      GoRoute(path: '/space', builder: (_, __) => const SpacePage()),
     ],
   );
 }
@@ -126,27 +126,27 @@ class _XiguangNavBar extends StatelessWidget {
 // ---- Placeholder pages below; replace with real implementations as features are built ----
 
 class _SelectPlaceholder extends StatelessWidget {
-  const _SelectPlaceholder();
+  const _SelectPlaceholder({super.key});
   @override
   Widget build(_) => const Scaffold(body: Center(child: Text('选择目标光片 — 织线')));
 }
 
 class _IslandDetailPlaceholder extends StatelessWidget {
-  const _IslandDetailPlaceholder({required this.id});
+  const _IslandDetailPlaceholder({super.key, required this.id});
   final String id;
   @override
   Widget build(_) => Scaffold(body: Center(child: Text('岛详情: $id')));
 }
 
 class FragmentDetailPlaceholder extends StatelessWidget {
-  const FragmentDetailPlaceholder({required this.id});
+  const FragmentDetailPlaceholder({super.key, required this.id});
   final String id;
   @override
   Widget build(_) => Scaffold(body: Center(child: Text('光片详情: $id')));
 }
 
 class FragmentEditPlaceholder extends StatelessWidget {
-  const FragmentEditPlaceholder({required this.id});
+  const FragmentEditPlaceholder({super.key, required this.id});
   final String id;
   @override
   Widget build(_) => Scaffold(body: Center(child: Text('编辑光片: $id')));

@@ -101,7 +101,7 @@ class _StarMapPainter extends CustomPainter {
     final pts = [Offset(size.width*.18, size.height*.34), Offset(size.width*.44, size.height*.22),
       Offset(size.width*.68, size.height*.38), Offset(size.width*.36, size.height*.56), Offset(size.width*.72, size.height*.66)];
     final lp = Paint()..color=AppColors.white.withValues(alpha:.24)..strokeWidth=1.2;
-    for(var i=0;i<pts.length-1;i++) canvas.drawLine(pts[i],pts[i+1],lp);
+    for (var i = 0; i < pts.length - 1; i++) { canvas.drawLine(pts[i], pts[i + 1], lp); }
     final gp=Paint()..color=AppColors.white.withValues(alpha:.22);
     final sp=Paint()..color=AppColors.white.withValues(alpha:.86);
     for(var i=0;i<pts.length;i++){canvas.drawCircle(pts[i],18+i*2,gp);canvas.drawCircle(pts[i],5+i.toDouble(),sp);}
