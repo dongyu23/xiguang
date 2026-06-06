@@ -32,6 +32,8 @@ func TestValidateRejectsProductionDefaults(t *testing.T) {
 func TestValidateAcceptsProductionExplicitConfig(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("DB_PASSWORD", "")
+	t.Setenv("MINIO_ACCESS_KEY", "prod-minio-access-key")
+	t.Setenv("MINIO_SECRET_KEY", "prod-minio-secret-key")
 	cfg := Config{
 		Env:           "production",
 		JWTSecret:     "real-secret-that-is-not-the-development-default",
