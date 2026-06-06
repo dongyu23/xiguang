@@ -11,13 +11,14 @@ class StarrySpace extends StatefulWidget {
   const StarrySpace({super.key, this.starCount = 22, this.nodePositions});
 
   final int starCount;
-  final List<Offset>? nodePositions;  // 星点位置（光片节点）
+  final List<Offset>? nodePositions; // 星点位置（光片节点）
 
   @override
   State<StarrySpace> createState() => StarrySpaceState();
 }
 
-class StarrySpaceState extends State<StarrySpace> with SingleTickerProviderStateMixin {
+class StarrySpaceState extends State<StarrySpace>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
   @override
@@ -94,12 +95,12 @@ class StarryPainter extends CustomPainter {
   }
 
   List<Offset> _defaultPositions(Size size) => [
-    Offset(size.width * .18, size.height * .34),
-    Offset(size.width * .44, size.height * .22),
-    Offset(size.width * .68, size.height * .38),
-    Offset(size.width * .36, size.height * .56),
-    Offset(size.width * .72, size.height * .66),
-  ];
+        Offset(size.width * .18, size.height * .34),
+        Offset(size.width * .44, size.height * .22),
+        Offset(size.width * .68, size.height * .38),
+        Offset(size.width * .36, size.height * .56),
+        Offset(size.width * .72, size.height * .66),
+      ];
 
   @override
   bool shouldRepaint(covariant StarryPainter old) =>

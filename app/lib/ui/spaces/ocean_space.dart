@@ -15,7 +15,8 @@ class OceanSpace extends StatefulWidget {
   State<OceanSpace> createState() => _OceanSpaceState();
 }
 
-class _OceanSpaceState extends State<OceanSpace> with SingleTickerProviderStateMixin {
+class _OceanSpaceState extends State<OceanSpace>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
   @override

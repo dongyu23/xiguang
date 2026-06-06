@@ -25,7 +25,8 @@ class BreathingWidget extends StatefulWidget {
   State<BreathingWidget> createState() => _BreathingWidgetState();
 }
 
-class _BreathingWidgetState extends State<BreathingWidget> with SingleTickerProviderStateMixin {
+class _BreathingWidgetState extends State<BreathingWidget>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
   @override
@@ -48,7 +49,8 @@ class _BreathingWidgetState extends State<BreathingWidget> with SingleTickerProv
     return AnimatedBuilder(
       animation: _controller,
       builder: (_, child) => Opacity(
-        opacity: widget.minOpacity + (widget.maxOpacity - widget.minOpacity) * _controller.value,
+        opacity: widget.minOpacity +
+            (widget.maxOpacity - widget.minOpacity) * _controller.value,
         child: Transform.scale(
           scale: 1.0 + widget.scaleRange * _controller.value,
           child: child,

@@ -26,6 +26,12 @@ migrate_working_dir/
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id
+**/ios/Flutter/Generated.xcconfig
+**/ios/Pods/
+**/macos/Pods/
+app/build/
+app/.dart_tool/
+app/android/build/
 .dart_tool/
 .flutter-plugins-dependencies
 .pub-cache/
@@ -43,3 +49,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local Docker runtime binaries
+backend/bin/
+
+# Local environment/runtime artifacts
+.env
+.env.local
+*.pid
+*.sqlite
+*.sqlite3

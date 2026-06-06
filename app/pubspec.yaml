@@ -36,7 +36,7 @@ dependencies:
   flutter_image_compress: ^2.1.0
 
   # 录音
-  record: ^5.0.0
+  record: ^7.0.0
 
   # 音频播放
   just_audio: ^0.9.0
@@ -46,7 +46,7 @@ dependencies:
   permission_handler: ^11.0.0
 
   # 崩溃上报
-  sentry_flutter: ^8.0.0
+  sentry_flutter: ^9.21.0
 
 dev_dependencies:
   flutter_test:

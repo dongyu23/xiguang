@@ -1,0 +1,11 @@
+{
+  "name": "隙光",
+  "short_name": "隙光",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#FFFCF6",
+  "theme_color": "#72A58F",
+  "description": "私人多媒体意识流记录工具",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false
+}

@@ -23,7 +23,8 @@ class RippleTap extends StatefulWidget {
   State<RippleTap> createState() => _RippleTapState();
 }
 
-class _RippleTapState extends State<RippleTap> with SingleTickerProviderStateMixin {
+class _RippleTapState extends State<RippleTap>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   Offset? _tapPosition;
 
@@ -61,7 +62,8 @@ class _RippleTapState extends State<RippleTap> with SingleTickerProviderStateMix
                   painter: _RipplePainter(
                     center: _tapPosition!,
                     radius: _controller.value * 80,
-                    color: widget.rippleColor.withValues(alpha: widget.rippleOpacity * (1 - _controller.value)),
+                    color: widget.rippleColor.withValues(
+                        alpha: widget.rippleOpacity * (1 - _controller.value)),
                   ),
                 ),
               ),
@@ -73,7 +75,8 @@ class _RippleTapState extends State<RippleTap> with SingleTickerProviderStateMix
 }
 
 class _RipplePainter extends CustomPainter {
-  _RipplePainter({required this.center, required this.radius, required this.color});
+  _RipplePainter(
+      {required this.center, required this.radius, required this.color});
 
   final Offset center;
   final double radius;
@@ -85,5 +88,6 @@ class _RipplePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _RipplePainter old) => old.center != center || old.radius != radius;
+  bool shouldRepaint(covariant _RipplePainter old) =>
+      old.center != center || old.radius != radius;
 }

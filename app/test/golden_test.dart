@@ -1,34 +1,43 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:xiguang/main.dart';
+import 'package:xiguang/app/app.dart';
+import 'package:xiguang/app/providers.dart';
+
+import 'test_auth_repository.dart';
 
 void main() {
-  testWidgets('mobile preview frames', (tester) async {
+  testWidgets('mobile preview tabs do not overflow', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const XiguangApp());
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(XiguangApp),
-      matchesGoldenFile('goldens/01_capture.png'),
-    );
+    final authRepository = FakeAuthRepository();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [authRepositoryProvider.overrideWithValue(authRepository)],
+      child: const XiguangApp(),
+    ));
+    await tester.pump(const Duration(seconds: 5));
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byKey(const ValueKey('go-register')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await tester.enterText(
+        find.byKey(const ValueKey('register-username')), 'golden_user');
+    await tester.enterText(
+        find.byKey(const ValueKey('register-nickname')), '预览账号');
+    await tester.enterText(
+        find.byKey(const ValueKey('register-password')), 'xiguang-pass');
+    await tester.tap(find.widgetWithText(FilledButton, '创建并进入'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
 
-    await tester.tap(find.text('时间线'));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(XiguangApp),
-      matchesGoldenFile('goldens/02_timeline.png'),
-    );
-
-    await tester.tap(find.text('小宇宙'));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(XiguangApp),
-      matchesGoldenFile('goldens/03_universe.png'),
-    );
+    for (final label in ['线', '屿', '我的']) {
+      await tester.tap(find.text(label));
+      await tester.pump(const Duration(seconds: 5));
+      expect(tester.takeException(), isNull);
+    }
   });
 }

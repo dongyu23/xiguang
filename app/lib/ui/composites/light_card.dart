@@ -8,9 +8,14 @@ import 'tag_chip.dart';
 /// 光片数据模型（纯展示用，正式开发时用 freezed 的 Fragment）
 class LightFragment {
   const LightFragment({
-    required this.time, required this.date, required this.title,
-    required this.text, required this.emotion, required this.tags,
-    required this.color, this.relation,
+    required this.time,
+    required this.date,
+    required this.title,
+    required this.text,
+    required this.emotion,
+    required this.tags,
+    required this.color,
+    this.relation,
   });
 
   final String time;
@@ -25,61 +30,83 @@ class LightFragment {
 
 /// 光片卡片 — 时间河流中使用
 class LightFragmentCard extends StatelessWidget {
-  const LightFragmentCard({super.key, required this.fragment, this.compact = false, this.onTap});
+  const LightFragmentCard(
+      {super.key,
+      required this.fragment,
+      this.compact = false,
+      this.onTap,
+      this.tapKey});
 
   final LightFragment fragment;
   final bool compact;
   final VoidCallback? onTap;
+  final Key? tapKey;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: EdgeInsets.all(compact ? 14 : 16),
-        decoration: softDecoration(AppColors.white),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 左侧色块
-            Container(
-              width: compact ? 48 : 58, height: compact ? 48 : 58,
-              decoration: BoxDecoration(
-                color: fragment.color,
-                borderRadius: BorderRadius.circular(8),
+    return Semantics(
+      key: tapKey,
+      button: onTap != null,
+      label: fragment.title,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: EdgeInsets.all(compact ? 14 : 16),
+          decoration: softDecoration(AppColors.white),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 左侧色块
+              Container(
+                width: compact ? 48 : 58,
+                height: compact ? 48 : 58,
+                decoration: BoxDecoration(
+                  color: fragment.color,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: CustomPaint(
+                  painter: _CardIconPainter(
+                      color: AppColors.white.withValues(alpha: .72)),
+                  child: const SizedBox.expand(),
+                ),
               ),
-              child: CustomPaint(
-                painter: _CardIconPainter(color: AppColors.white.withValues(alpha: .72)),
-                child: const SizedBox.expand(),
+              const SizedBox(width: 14),
+              // 右侧内容
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                            child: Text(fragment.title,
+                                style: AppText.titleSmall)),
+                        Text(fragment.time, style: AppText.caption),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(fragment.text,
+                        style: AppText.body,
+                        maxLines: compact ? 2 : 3,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        MiniTag(label: fragment.emotion, filled: true),
+                        ...fragment.tags
+                            .take(compact ? 2 : 3)
+                            .map((tag) => MiniTag(label: tag)),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 14),
-            // 右侧内容
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: Text(fragment.title, style: AppText.titleSmall)),
-                      Text(fragment.time, style: AppText.caption),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(fragment.text, style: AppText.body, maxLines: compact ? 2 : 3, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 6, runSpacing: 6,
-                    children: [
-                      MiniTag(label: fragment.emotion, filled: true),
-                      ...fragment.tags.take(compact ? 2 : 3).map((tag) => MiniTag(label: tag)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -93,7 +120,10 @@ class _CardIconPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = 2;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
     final center = Offset(size.width / 2, size.height / 2);
     canvas.drawCircle(center, size.shortestSide * .24, paint);
     canvas.drawLine(

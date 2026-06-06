@@ -37,11 +37,13 @@ class EmotionPicker extends StatelessWidget {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: emotions.map((e) => _EmotionChip(
-            emotion: e,
-            isSelected: selected == e.label,
-            onTap: () => onSelected?.call(e.label),
-          )).toList(),
+          children: emotions
+              .map((e) => _EmotionChip(
+                    emotion: e,
+                    isSelected: selected == e.label,
+                    onTap: () => onSelected?.call(e.label),
+                  ))
+              .toList(),
         ),
       ],
     );
@@ -56,7 +58,8 @@ class _Emotion {
 }
 
 class _EmotionChip extends StatelessWidget {
-  const _EmotionChip({required this.emotion, required this.isSelected, required this.onTap});
+  const _EmotionChip(
+      {required this.emotion, required this.isSelected, required this.onTap});
 
   final _Emotion emotion;
   final bool isSelected;
@@ -68,28 +71,37 @@ class _EmotionChip extends StatelessWidget {
       onTap: onTap,
       onLongPress: () {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(emotion.hint), duration: const Duration(seconds: 2), behavior: SnackBarBehavior.floating),
+          SnackBar(
+              content: Text(emotion.hint),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating),
         );
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? emotion.color : AppColors.white.withValues(alpha: .72),
+          color: isSelected
+              ? emotion.color
+              : AppColors.white.withValues(alpha: .72),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isSelected ? emotion.color : AppColors.line),
+          border:
+              Border.all(color: isSelected ? emotion.color : AppColors.line),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 10, height: 10,
-              decoration: BoxDecoration(color: emotion.color, shape: BoxShape.circle),
+              width: 10,
+              height: 10,
+              decoration:
+                  BoxDecoration(color: emotion.color, shape: BoxShape.circle),
             ),
             const SizedBox(width: 6),
-            Text(emotion.label, style: AppText.chip.copyWith(
-              color: isSelected ? Colors.white : AppColors.ink,
-            )),
+            Text(emotion.label,
+                style: AppText.chip.copyWith(
+                  color: isSelected ? Colors.white : AppColors.ink,
+                )),
           ],
         ),
       ),

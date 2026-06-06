@@ -155,9 +155,30 @@ MVP 建议采用 4 个主导航：
 4. 最后加入克制的 AI 柔光总结。
 5. 小宇宙视图先做概念表达，不急于复杂实现。
 
-## Flutter 前端原型
+## 当前工程结构
 
-当前仓库已加入 Flutter 纯前端原型，主要代码在 `lib/main.dart`。
+当前仓库已经包含 Flutter App 与 Go 后端 MVP：
+
+- `app/`：Flutter + Riverpod + go_router 前端，底部导航为「隙 / 线 / 屿 / 我的」。
+- `backend/`：Go + net/http + Chi 模块化单体后端，提供 `/api/v1` REST API。
+- `docker-compose.yml`：Nginx、Go app、PostgreSQL、Redis、MinIO 单机编排。
+- `.env.example`：部署环境变量模板；开发时不创建 `.env` 也可使用 Compose 默认值。
+
+Flutter 默认 API 地址为：
+
+```bash
+http://127.0.0.1:8088/api/v1
+```
+
+如需覆盖：
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://你的地址/api/v1
+```
+
+## Flutter App
+
+主要代码在 `app/lib/`，核心数据流已接入 API，并保留本地降级，便于无后端时预览。
 
 平台目标：
 
@@ -218,6 +239,74 @@ flutter devices
 flutter run -d windows
 ```
 
+## Go 后端
+
+本地编译与测试：
+
+```bash
+cd backend
+go test ./...
+go build ./cmd/server
+```
+
+核心接口：
+
+- `GET /healthz`
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `GET/PUT /api/v1/users/me`
+- `GET/POST/PUT/DELETE /api/v1/fragments`
+- `POST /api/v1/fragments/{id}/weave`
+- `GET/POST/PUT/DELETE /api/v1/tags`
+- `POST/GET/DELETE /api/v1/media`
+- `GET /api/v1/timeline`
+- `GET/POST/PUT/DELETE /api/v1/islands`
+- `POST/GET/DELETE /api/v1/relations`
+- `GET /api/v1/starmap`
+- `POST /api/v1/sync/push`
+- `GET /api/v1/sync/pull`
+- `POST /api/v1/ai/glow-summary`（MVP 预留，不后台解释用户）
+
+## Docker Compose
+
+推荐启动方式：
+
+```bash
+bash ./tools/docker-up.sh
+```
+
+脚本会先调用 `tools/prepare-docker-backend.sh`，根据 Docker 的运行架构生成 `backend/bin/xiguang-linux-arm64` 或
+`backend/bin/xiguang-linux-amd64`，再执行 `docker compose up -d --build`。
+这样后端 app 镜像使用 `scratch` 运行，不需要拉取 `golang` 或 `alpine` 基础镜像。
+
+访问：
+
+```bash
+curl http://127.0.0.1:8088/healthz
+```
+
+`docker-compose.yml` 已显式设置 `name: xiguang`，当前目录包含中文或空格时也能正常解析项目名。
+
+完整 5 容器 Compose smoke（Nginx + app + PostgreSQL + Redis + MinIO）可单独运行：
+
+```bash
+bash ./tools/verify-compose-stack.sh
+```
+
+该脚本使用临时 Compose project 和端口 `18088`，退出后会清理容器与卷。首次运行需要能拉取
+`nginx:alpine`、`postgres:16-alpine`、`redis:7-alpine`、`quay.io/minio/minio:latest`。
+脚本会先检查并拉取这些镜像；如果 Docker 引擎拉取 registry 超时，会明确指出卡住的镜像。
+默认 `tools/verify-all.sh` 使用不依赖这些外部镜像拉取的 scratch app 容器验证，保证日常门禁稳定。
+
+环境自检：
+
+```bash
+make doctor
+```
+
+该命令会检查 Docker、Compose 必需镜像、Android SDK、完整 Xcode 和 CocoaPods。只有这些本机依赖齐全时，才能证明
+Android/iOS 原生构建与完整 5 容器 Compose smoke。
+
 如果 `flutter devices` 没看到 Windows，请先启用桌面支持：
 
 ```powershell
@@ -236,6 +325,32 @@ flutter run -d windows
 ```bash
 flutter test
 flutter test --update-goldens test/golden_test.dart
+```
+
+Android 原生构建验证：
+
+```bash
+make android-build
+```
+
+当前验证使用 Homebrew 安装的 Android command line tools 与 JDK 17：
+
+```bash
+flutter config --android-sdk /opt/homebrew/share/android-commandlinetools
+flutter config --jdk-dir /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+```
+
+iOS 原生构建验证：
+
+```bash
+make ios-build
+```
+
+该命令需要完整 Xcode，不是 Command Line Tools。若本机只有 `/Library/Developer/CommandLineTools`，会明确提示安装并切换：
+
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -runFirstLaunch
 ```
 
 当前电脑可读预览：

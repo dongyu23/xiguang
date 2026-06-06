@@ -8,9 +8,9 @@ class GlowTheme extends ThemeExtension<GlowTheme> {
     required this.color,
   });
 
-  final double radius;     // 径向渐变半径
-  final double intensity;  // 强度 (0-1)
-  final Color color;       // 光晕颜色
+  final double radius; // 径向渐变半径
+  final double intensity; // 强度 (0-1)
+  final Color color; // 光晕颜色
 
   factory GlowTheme.default_() => const GlowTheme(
         radius: 120,

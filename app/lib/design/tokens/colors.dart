@@ -12,10 +12,10 @@ class AppColors {
   static const line = Color(0xFFE4DDD0);
 
   // 主题色
-  static const teaGreen = Color(0xFF72A58F);     // 茶绿 — 平静、生长
-  static const mistBlue = Color(0xFF9EBBCC);     // 雾蓝 — 微光、失眠
-  static const sunsetCoral = Color(0xFFE9A18B);  // 珊瑚 — 被击中、期待
-  static const lilac = Color(0xFFD9CCE8);        // 淡紫 — 说不清、氛围
+  static const teaGreen = Color(0xFF72A58F); // 茶绿 — 平静、生长
+  static const mistBlue = Color(0xFF9EBBCC); // 雾蓝 — 微光、失眠
+  static const sunsetCoral = Color(0xFFE9A18B); // 珊瑚 — 被击中、期待
+  static const lilac = Color(0xFFD9CCE8); // 淡紫 — 说不清、氛围
 
   // 情绪色点（对应 emotion 枚举）
   static const emotionCalm = teaGreen;

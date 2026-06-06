@@ -8,9 +8,9 @@ class SpaceTheme extends ThemeExtension<SpaceTheme> {
     required this.islandSpacing,
   });
 
-  final double starDensity;    // 星空粒子密度 (0-1)
-  final double waveAmplitude;  // 海洋波浪振幅
-  final double islandSpacing;  // 岛屿间距
+  final double starDensity; // 星空粒子密度 (0-1)
+  final double waveAmplitude; // 海洋波浪振幅
+  final double islandSpacing; // 岛屿间距
 
   factory SpaceTheme.default_() => const SpaceTheme(
         starDensity: .08,
@@ -19,7 +19,8 @@ class SpaceTheme extends ThemeExtension<SpaceTheme> {
       );
 
   @override
-  SpaceTheme copyWith({double? starDensity, double? waveAmplitude, double? islandSpacing}) {
+  SpaceTheme copyWith(
+      {double? starDensity, double? waveAmplitude, double? islandSpacing}) {
     return SpaceTheme(
       starDensity: starDensity ?? this.starDensity,
       waveAmplitude: waveAmplitude ?? this.waveAmplitude,

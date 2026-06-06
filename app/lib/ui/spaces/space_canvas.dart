@@ -6,7 +6,8 @@ import '../../design/tokens/colors.dart';
 
 /// 沉浸式空间画布基类 — 全屏 CustomPaint + 可选子组件
 class SpaceCanvas extends StatelessWidget {
-  const SpaceCanvas({super.key, required this.painter, this.child, this.backgroundColor});
+  const SpaceCanvas(
+      {super.key, required this.painter, this.child, this.backgroundColor});
 
   final CustomPainter painter;
   final Widget? child;
@@ -16,7 +17,8 @@ class SpaceCanvas extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: backgroundColor,
-      child: CustomPaint(painter: painter, child: child ?? const SizedBox.expand()),
+      child: CustomPaint(
+          painter: painter, child: child ?? const SizedBox.expand()),
     );
   }
 }

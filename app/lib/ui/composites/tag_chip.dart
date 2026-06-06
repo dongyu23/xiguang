@@ -45,8 +45,9 @@ class TagChip extends StatelessWidget {
               const SizedBox(width: 4),
               GestureDetector(
                 onTap: onDeleted,
-                child: Icon(Icons.close, size: 14,
-                  color: filled ? Colors.white70 : AppColors.inkMuted),
+                child: Icon(Icons.close,
+                    size: 14,
+                    color: filled ? Colors.white70 : AppColors.inkMuted),
               ),
             ],
           ],

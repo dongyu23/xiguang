@@ -8,9 +8,9 @@ class BlurTheme extends ThemeExtension<BlurTheme> {
     required this.tint,
   });
 
-  final double sigma;    // BackdropFilter 模糊量
-  final double opacity;  // 容器透明度
-  final Color tint;      // 着色
+  final double sigma; // BackdropFilter 模糊量
+  final double opacity; // 容器透明度
+  final Color tint; // 着色
 
   /// 默认毛玻璃参数
   factory BlurTheme.light() => const BlurTheme(
