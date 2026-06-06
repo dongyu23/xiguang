@@ -3,7 +3,14 @@ import 'package:flutter/material.dart';
 
 import '../../../design/tokens/colors.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../relation/domain/relation.dart';
 import '../../shared/data/api_client.dart';
+
+class LocalDraftException implements Exception {
+  const LocalDraftException(this.fragment);
+
+  final LightFragmentModel fragment;
+}
 
 class LightFragmentModel {
   const LightFragmentModel({
@@ -98,20 +105,39 @@ class FragmentRepository {
     List<String> mediaUrls = const [],
   }) async {
     await _auth.ensureSession();
-    if (_api.hasToken) {
-      try {
-        final body = await _api.post('/fragments', {
-          'content_text': text,
-          'emotion': emotion,
-          'tag_names': tags,
-          'media_urls': mediaUrls,
-          'client_op_id': 'flutter-${DateTime.now().microsecondsSinceEpoch}',
-        });
-        return LightFragmentModel.fromJson(body);
-      } on DioException {
-        // Fall through to local capture so the app remains usable during development.
-      }
+    if (mediaUrls.isNotEmpty && mediaUrls.any(_isLocalOnlyMedia)) {
+      final local = _createLocalFragment(
+        text: text,
+        emotion: emotion,
+        tags: tags,
+        mediaUrls: mediaUrls,
+      );
+      throw LocalDraftException(local);
     }
+    if (_api.hasToken) {
+      final body = await _api.post('/fragments', {
+        'content_text': text,
+        'emotion': emotion,
+        'tag_names': tags,
+        'media_urls': mediaUrls,
+        'client_op_id': 'flutter-${DateTime.now().microsecondsSinceEpoch}',
+      });
+      return LightFragmentModel.fromJson(body);
+    }
+    return _createLocalFragment(
+      text: text,
+      emotion: emotion,
+      tags: tags,
+      mediaUrls: mediaUrls,
+    );
+  }
+
+  LightFragmentModel _createLocalFragment({
+    required String text,
+    required String emotion,
+    required List<String> tags,
+    required List<String> mediaUrls,
+  }) {
     final local = LightFragmentModel(
       id: _localID++,
       contentText: text,
@@ -123,6 +149,15 @@ class FragmentRepository {
     );
     _local.insert(0, local);
     return local;
+  }
+
+  bool _isLocalOnlyMedia(String value) {
+    final trimmed = value.trim();
+    return !trimmed.startsWith('users/') ||
+        trimmed.startsWith('/') ||
+        trimmed.startsWith('file:') ||
+        trimmed.startsWith('data:') ||
+        trimmed.contains('\\');
   }
 
   Future<LightFragmentModel?> getFragment(int id) async {
@@ -151,22 +186,34 @@ class FragmentRepository {
     _local.removeWhere((item) => item.id == id);
   }
 
-  Future<void> weave({
+  Future<Relation?> weave({
     required int sourceFragmentId,
     required int targetFragmentId,
     String relationType = 'reminds_me',
     String? note,
   }) async {
     await _auth.ensureSession();
-    if (!_api.hasToken) return;
+    if (!_api.hasToken) return null;
     try {
-      await _api.post('/fragments/$sourceFragmentId/weave', {
+      final body = await _api.post('/fragments/$sourceFragmentId/weave', {
         'target_fragment_id': targetFragmentId,
         'relation_type': relationType,
         'note': note?.trim().isNotEmpty == true ? note!.trim() : '从光片详情轻轻织线',
       });
+      return Relation(
+        id: body['id'] as int? ?? 0,
+        publicId: body['public_id'] as String? ?? '',
+        userId: body['user_id'] as int? ?? 0,
+        sourceFragmentId:
+            body['source_fragment_id'] as int? ?? sourceFragmentId,
+        targetFragmentId:
+            body['target_fragment_id'] as int? ?? targetFragmentId,
+        relationType: body['relation_type'] as String? ?? relationType,
+        note: body['note'] as String?,
+      );
     } on DioException {
       // Weaving is optional context; failing should not interrupt reading.
+      return null;
     }
   }
 }

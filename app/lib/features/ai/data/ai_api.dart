@@ -8,4 +8,8 @@ class AIApi {
   Future<Map<String, dynamic>> glowSummary(Map<String, dynamic> body) {
     return _api.post('/ai/glow-summary', body);
   }
+
+  Future<Map<String, dynamic>> buildIslands() {
+    return _api.post('/ai/build-islands', {});
+  }
 }

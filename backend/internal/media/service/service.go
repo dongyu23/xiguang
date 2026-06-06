@@ -45,7 +45,15 @@ func (s *Service) Presign(userID int64, req domain.PresignRequest) (domain.Presi
 }
 
 func (s *Service) Confirm(ctx context.Context, userID int64, req domain.ConfirmRequest) (domain.MediaFile, error) {
-	if req.ObjectKey == "" {
+	prefix := "users/" + strconv.FormatInt(userID, 10) + "/media/"
+	if req.ObjectKey == "" ||
+		req.FragmentID <= 0 ||
+		!strings.HasPrefix(req.ObjectKey, prefix) ||
+		strings.HasPrefix(req.ObjectKey, "data:") ||
+		strings.HasPrefix(req.ObjectKey, "file:") ||
+		strings.HasPrefix(req.ObjectKey, "/") ||
+		strings.Contains(req.ObjectKey, "\\") ||
+		strings.Contains(req.ObjectKey, "../") {
 		return domain.MediaFile{}, ErrInvalidConfirm
 	}
 	return s.repo.Confirm(ctx, userID, req)

@@ -2,24 +2,26 @@ import '../domain/space_repository.dart';
 import '../domain/space_theme.dart';
 import 'space_api.dart';
 
-class SpaceRepositoryImpl implements SpaceRepositoryContract {
-  const SpaceRepositoryImpl(this._api);
+class SpaceRepositoryImpl implements SpaceRepository {
+  SpaceRepositoryImpl(this._api);
 
   final SpaceApi _api;
 
   @override
-  Future<SpaceThemeValue> currentTheme() async {
-    final body = await _api.getConfig();
-    return switch (body['theme']) {
-      'ocean' => SpaceThemeValue.ocean,
-      'room' => SpaceThemeValue.room,
-      'island' => SpaceThemeValue.island,
-      _ => SpaceThemeValue.starry,
-    };
-  }
-
-  @override
-  Future<void> saveTheme(SpaceThemeValue theme) async {
-    await _api.saveConfig({'theme': theme.name});
+  Future<SpaceTheme> currentTheme() async {
+    try {
+      final json = await _api.currentTheme();
+      return SpaceTheme(
+        name: json['name'] as String? ?? '晨雾',
+        primaryColorHex: json['primary_color'] as String? ?? '#72A58F',
+        description: json['description'] as String? ?? '一层轻柔的微光。',
+      );
+    } catch (_) {
+      return const SpaceTheme(
+        name: '晨雾',
+        primaryColorHex: '#72A58F',
+        description: '一层轻柔的微光。',
+      );
+    }
   }
 }

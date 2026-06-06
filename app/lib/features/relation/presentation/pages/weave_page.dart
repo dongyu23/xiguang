@@ -9,6 +9,8 @@ import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../../fragment/data/fragment_repository.dart';
+import '../../../relation/domain/relation.dart';
+import '../../../starmap/presentation/providers/starmap_provider.dart';
 import '../widgets/relation_note_input.dart';
 import '../widgets/relation_type_picker.dart';
 
@@ -37,6 +39,7 @@ class _WeavePageState extends ConsumerState<WeavePage> {
   @override
   Widget build(BuildContext context) {
     final fragments = ref.watch(fragmentsProvider);
+    final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
       const Positioned.fill(child: _ThreadMist()),
@@ -44,12 +47,13 @@ class _WeavePageState extends ConsumerState<WeavePage> {
         backgroundColor: Colors.transparent,
         body: SafeArea(
           child: fragments.when(
-            data: (items) => _buildContent(context, items),
+            data: (items) => _buildContent(context, items, nightMode),
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, _) => Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('暂时无法展开这些光：$error', style: AppText.body),
+                child: Text('暂时无法展开这些光：$error',
+                    style: AppText.onNight(AppText.body, nightMode)),
               ),
             ),
           ),
@@ -58,7 +62,11 @@ class _WeavePageState extends ConsumerState<WeavePage> {
     ]);
   }
 
-  Widget _buildContent(BuildContext context, List<LightFragmentModel> items) {
+  Widget _buildContent(
+    BuildContext context,
+    List<LightFragmentModel> items,
+    bool nightMode,
+  ) {
     final source =
         items.where((item) => item.id == widget.sourceId).firstOrNull;
     final candidates =
@@ -84,7 +92,7 @@ class _WeavePageState extends ConsumerState<WeavePage> {
             constraints: const BoxConstraints(maxWidth: 560),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _Header(onBack: () => context.pop()),
+              _Header(onBack: () => context.pop(), nightMode: nightMode),
               const SizedBox(height: 18),
               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const _StepThread(),
@@ -94,14 +102,23 @@ class _WeavePageState extends ConsumerState<WeavePage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _SectionLabel(
-                            icon: Icons.wb_twilight_rounded, label: '当前这束光'),
+                          icon: Icons.wb_twilight_rounded,
+                          label: '当前这束光',
+                          nightMode: nightMode,
+                        ),
                         const SizedBox(height: 10),
                         _CurrentLightCard(fragment: source),
+                        const SizedBox(height: 12),
+                        _ExistingRelations(
+                          sourceId: source.id,
+                          fragments: items,
+                        ),
                         const SizedBox(height: 24),
                         _SectionLabel(
                           icon: Icons.blur_circular_rounded,
                           label: '选择另一束光',
                           trailing: _SortPill(),
+                          nightMode: nightMode,
                         ),
                         const SizedBox(height: 10),
                         if (candidates.isEmpty)
@@ -119,7 +136,11 @@ class _WeavePageState extends ConsumerState<WeavePage> {
                             ),
                           ),
                         const SizedBox(height: 14),
-                        _SectionLabel(icon: Icons.hub_rounded, label: '关系类型'),
+                        _SectionLabel(
+                          icon: Icons.hub_rounded,
+                          label: '关系类型',
+                          nightMode: nightMode,
+                        ),
                         const SizedBox(height: 12),
                         RelationTypePicker(
                           selectedType: _relationType,
@@ -127,10 +148,11 @@ class _WeavePageState extends ConsumerState<WeavePage> {
                               setState(() => _relationType = type),
                         ),
                         const SizedBox(height: 24),
-                        const _SectionLabel(
+                        _SectionLabel(
                           icon: Icons.short_text_rounded,
                           label: '写一句关系说明',
                           suffix: '可选',
+                          nightMode: nightMode,
                         ),
                         const SizedBox(height: 10),
                         RelationNoteInput(controller: _noteController),
@@ -184,24 +206,98 @@ class _WeavePageState extends ConsumerState<WeavePage> {
       _isSubmitting = true;
       _completed = false;
     });
-    await ref.read(fragmentRepositoryProvider).weave(
+    final relation = await ref.read(fragmentRepositoryProvider).weave(
           sourceFragmentId: source.id,
           targetFragmentId: selected.id,
           relationType: _relationType,
           note: _noteController.text,
         );
     if (!mounted) return;
+    ref.invalidate(fragmentRelationsProvider(source.id));
+    ref.invalidate(starGraphProvider);
     setState(() {
       _isSubmitting = false;
-      _completed = true;
+      _completed = relation != null;
     });
   }
 }
 
+class _ExistingRelations extends ConsumerWidget {
+  const _ExistingRelations({required this.sourceId, required this.fragments});
+
+  final int sourceId;
+  final List<LightFragmentModel> fragments;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final relations = ref.watch(fragmentRelationsProvider(sourceId));
+    final nightMode = ref.watch(nightModeProvider);
+    return relations.when(
+      data: (items) {
+        if (items.isEmpty) {
+          return Text('还没有织好的线。',
+              style: AppText.onNight(AppText.bodyMuted, nightMode));
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('已经织好的线',
+                style: AppText.onNight(AppText.caption, nightMode)),
+            const SizedBox(height: 8),
+            ...items.take(4).map((relation) {
+              final other = _otherFragment(relation);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(children: [
+                  const Icon(Icons.blur_circular_rounded,
+                      size: 16, color: AppColors.teaGreen),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_relationLabel(relation.relationType)} · ${other?.title ?? '另一束光'}',
+                      style: AppText.onNight(AppText.bodyMuted, nightMode),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ]),
+              );
+            }),
+          ],
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => Text('织线暂时无法读取。',
+          style: AppText.onNight(AppText.bodyMuted, nightMode)),
+    );
+  }
+
+  LightFragmentModel? _otherFragment(Relation relation) {
+    final otherId = relation.sourceFragmentId == sourceId
+        ? relation.targetFragmentId
+        : relation.sourceFragmentId;
+    return fragments.where((fragment) => fragment.id == otherId).firstOrNull;
+  }
+
+  String _relationLabel(String value) {
+    return switch (value) {
+      'echo' => '回声',
+      'foreshadow' => '伏笔',
+      'aftershock' => '余震',
+      'parallel' => '平行宇宙',
+      'lifeline' => '小小救命',
+      'tide' => '潮汐',
+      'old_light' => '旧光',
+      _ => '有点相似',
+    };
+  }
+}
+
 class _Header extends StatelessWidget {
-  const _Header({required this.onBack});
+  const _Header({required this.onBack, required this.nightMode});
 
   final VoidCallback onBack;
+  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
@@ -220,9 +316,18 @@ class _Header extends StatelessWidget {
         ),
       ),
       Column(mainAxisSize: MainAxisSize.min, children: [
-        Text('织线', style: AppText.hero.copyWith(fontSize: 30)),
+        Text(
+          '织线',
+          style: AppText.onNight(
+            AppText.hero.copyWith(fontSize: 30),
+            nightMode,
+          ),
+        ),
         const SizedBox(height: 6),
-        Text('让两束光轻轻靠近。', style: AppText.bodyMuted),
+        Text(
+          '让两束光轻轻靠近。',
+          style: AppText.onNight(AppText.bodyMuted, nightMode),
+        ),
       ]),
     ]);
   }
@@ -397,12 +502,14 @@ class _SectionLabel extends StatelessWidget {
   const _SectionLabel({
     required this.icon,
     required this.label,
+    required this.nightMode,
     this.trailing,
     this.suffix,
   });
 
   final IconData icon;
   final String label;
+  final bool nightMode;
   final Widget? trailing;
   final String? suffix;
 
@@ -411,10 +518,16 @@ class _SectionLabel extends StatelessWidget {
     return Row(children: [
       Icon(icon, size: 18, color: AppColors.teaGreen),
       const SizedBox(width: 8),
-      Text(label, style: AppText.titleMedium.copyWith(fontSize: 17)),
+      Text(
+        label,
+        style: AppText.onNight(
+          AppText.titleMedium.copyWith(fontSize: 17),
+          nightMode,
+        ),
+      ),
       if (suffix != null) ...[
         const SizedBox(width: 6),
-        Text(suffix!, style: AppText.caption),
+        Text(suffix!, style: AppText.onNight(AppText.caption, nightMode)),
       ],
       if (trailing != null) ...[
         const Spacer(),

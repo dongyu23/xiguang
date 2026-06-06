@@ -16,6 +16,7 @@ class WhiteNoisePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedID = ref.watch(whiteNoisePlayingProvider);
     final noises = ref.watch(_whiteNoiseOptionsProvider);
+    final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
       Scaffold(
@@ -24,6 +25,7 @@ class WhiteNoisePage extends ConsumerWidget {
           title: const Text('白噪音'),
           backgroundColor: Colors.transparent,
           elevation: 0,
+          foregroundColor: nightMode ? AppText.nightInk : AppColors.ink,
         ),
         body: SafeArea(
           top: false,
@@ -36,9 +38,11 @@ class WhiteNoisePage extends ConsumerWidget {
                   data: (items) => Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('BACKGROUND SOUND', style: AppText.eyebrow),
+                      Text('BACKGROUND SOUND',
+                          style: AppText.onNight(AppText.eyebrow, nightMode)),
                       const SizedBox(height: 8),
-                      Text('只在你需要的时候响起。', style: AppText.body),
+                      Text('只在你需要的时候响起。',
+                          style: AppText.onNight(AppText.body, nightMode)),
                       const SizedBox(height: 18),
                       Wrap(
                         spacing: 10,
@@ -84,7 +88,8 @@ class WhiteNoisePage extends ConsumerWidget {
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
                   error: (error, _) =>
-                      Text('暂时无法读取白噪音：$error', style: AppText.body),
+                      Text('暂时无法读取白噪音：$error',
+                          style: AppText.onNight(AppText.body, nightMode)),
                 ),
               ),
             ),

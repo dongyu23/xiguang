@@ -9,6 +9,12 @@ class RelationApi {
     return _api.post('/relations', body);
   }
 
+  Future<Map<String, dynamic>> list({int? fragmentId}) {
+    return _api.get('/relations', query: {
+      if (fragmentId != null) 'fragment_id': fragmentId,
+    });
+  }
+
   Future<void> delete(int id) async {
     await _api.delete('/relations/$id');
   }

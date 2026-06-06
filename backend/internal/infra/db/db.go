@@ -127,20 +127,24 @@ CREATE TABLE IF NOT EXISTS media_files (
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   fragment_id BIGINT NOT NULL REFERENCES fragments(id) ON DELETE CASCADE,
   media_type media_type NOT NULL,
-  object_key VARCHAR(512) NOT NULL,
+  object_key TEXT NOT NULL,
   file_name VARCHAR(512) NOT NULL,
   file_size BIGINT NOT NULL DEFAULT 0,
   mime_type VARCHAR(128) NOT NULL DEFAULT '',
   width INT,
   height INT,
   duration_ms INT,
-  thumbnail_key VARCHAR(512),
+  thumbnail_key TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at TIMESTAMPTZ,
   CONSTRAINT uq_media_public_id UNIQUE(public_id)
 );
 CREATE INDEX IF NOT EXISTS idx_media_fragment ON media_files(fragment_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_media_user ON media_files(user_id, created_at DESC) WHERE deleted_at IS NULL;
+ALTER TABLE media_files ALTER COLUMN object_key TYPE TEXT;
+ALTER TABLE media_files ALTER COLUMN thumbnail_key TYPE TEXT;
+ALTER TABLE media_files ALTER COLUMN file_size SET DEFAULT 0;
+ALTER TABLE media_files ALTER COLUMN mime_type SET DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS islands (
   id BIGSERIAL PRIMARY KEY,

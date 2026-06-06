@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:xiguang/app/app.dart';
 import 'package:xiguang/app/providers.dart';
@@ -10,6 +11,7 @@ import 'test_auth_repository.dart';
 void main() {
   testWidgets('Xiguang MVP renders CLAUDE navigation and can capture a light',
       (tester) async {
+    SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -23,7 +25,7 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
 
     expect(find.text('登录并捕光'), findsOneWidget);
-    expect(find.text('注册新账号'), findsOneWidget);
+    expect(find.text('创建账号'), findsOneWidget);
     expect(find.text('本地试用'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('go-register')));
     await tester.pumpAndSettle(const Duration(milliseconds: 100),
@@ -45,12 +47,28 @@ void main() {
     expect(find.text('捕光'), findsWidgets);
 
     await tester.enterText(find.byType(EditableText).first, '测试里落下的一束光');
+    await tester.pump();
+    expect(find.text('清空草稿'), findsOneWidget);
+    await tester.ensureVisible(find.text('图片'));
+    expect(find.text('图片'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, '音频'));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('停止'), findsOneWidget);
+    expect(find.textContaining('正在贴近这一刻的声音'), findsOneWidget);
+    await tester.ensureVisible(find.widgetWithText(OutlinedButton, '停止'));
+    await tester.tap(find.widgetWithText(OutlinedButton, '停止'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    expect(find.text('声音已贴近'), findsOneWidget);
+    expect(find.textContaining('贴近这一刻的声音'), findsOneWidget);
     await tester.ensureVisible(find.text('疲惫'));
     await tester.tap(find.text('疲惫'));
     await tester.ensureVisible(find.widgetWithText(FilledButton, '捕光').first);
     await tester.tap(find.widgetWithText(FilledButton, '捕光').first);
     await tester.pump(const Duration(seconds: 5));
     expect(find.textContaining('测试里落下'), findsWidgets);
+    expect(find.text('刚刚留下的光'), findsWidgets);
+    expect(find.text('去织线'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('nav-timeline')));
     await tester.pumpAndSettle(const Duration(milliseconds: 100),
@@ -114,5 +132,66 @@ void main() {
     await tester.pumpAndSettle(const Duration(milliseconds: 100),
         EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
     expect(find.text('第二个账号'), findsWidgets);
+  });
+
+  testWidgets('capture draft is restored and cleared after saving',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'capture_draft_text': '还没写完的一束光',
+      'capture_draft_tags': '夜风 草稿',
+      'capture_draft_emotion': '自定义',
+      'capture_draft_custom_emotion': '松了一口气',
+    });
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final authRepository = FakeAuthRepository();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [authRepositoryProvider.overrideWithValue(authRepository)],
+      child: const XiguangApp(),
+    ));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.tap(find.byKey(const ValueKey('go-register')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await tester.enterText(
+        find.byKey(const ValueKey('register-username')), 'draft_user');
+    await tester.enterText(
+        find.byKey(const ValueKey('register-nickname')), '草稿账号');
+    await tester.enterText(
+        find.byKey(const ValueKey('register-password')), 'xiguang-pass');
+    await tester.tap(find.widgetWithText(FilledButton, '创建并进入'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
+
+    final draftStatusCount = tester.widgetList(find.text('已找回上次没写完的光')).length +
+        tester.widgetList(find.text('已轻轻存下草稿')).length;
+    expect(draftStatusCount, 1);
+    expect(find.text('还没写完的一束光'), findsOneWidget);
+    expect(find.text('松了一口气'), findsOneWidget);
+    expect(find.text('清空草稿'), findsOneWidget);
+
+    await tester.tap(find.text('清空草稿'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    expect(find.text('还没写完的一束光'), findsNothing);
+    expect(find.text('可以只留一句'), findsOneWidget);
+
+    final clearedPrefs = await SharedPreferences.getInstance();
+    expect(clearedPrefs.getString('capture_draft_text'), isNull);
+
+    await tester.enterText(find.byType(EditableText).first, '清空后重新落下的一束光');
+
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '捕光').first);
+    await tester.tap(find.widgetWithText(FilledButton, '捕光').first);
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.text('刚刚留下的光'), findsWidgets);
+    expect(find.text('去织线'), findsNothing);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('capture_draft_text'), isNull);
   });
 }

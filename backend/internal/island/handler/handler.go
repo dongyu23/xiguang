@@ -28,6 +28,8 @@ func (h *Handler) Routes() http.Handler {
 	r.Get("/{id}", h.get)
 	r.Put("/{id}", h.update)
 	r.Delete("/{id}", h.delete)
+	r.Post("/{id}/fragments", h.addFragments)
+	r.Delete("/{id}/fragments", h.removeFragments)
 	r.Get("/{name}/fragments", h.fragments)
 	return r
 }
@@ -106,6 +108,50 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+func (h *Handler) addFragments(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	islandID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	var action domain.FragmentAction
+	if err := shared.DecodeJSON(r, &action); err != nil {
+		shared.WriteError(w, http.StatusBadRequest, "bad_request", "请求格式不正确。")
+		return
+	}
+
+	dto, err := h.service.AddFragments(r.Context(), userID, islandID, action.FragmentIDs)
+	if errors.Is(err, service.ErrNotManualIsland) {
+		shared.WriteError(w, http.StatusForbidden, "island_not_manual", "自动生长的小岛不能手动添加光片。")
+		return
+	}
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "island_failed", "暂时无法添加光片。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, dto)
+}
+
+func (h *Handler) removeFragments(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	islandID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	var action domain.FragmentAction
+	if err := shared.DecodeJSON(r, &action); err != nil {
+		shared.WriteError(w, http.StatusBadRequest, "bad_request", "请求格式不正确。")
+		return
+	}
+
+	dto, err := h.service.RemoveFragments(r.Context(), userID, islandID, action.FragmentIDs)
+	if errors.Is(err, service.ErrNotManualIsland) {
+		shared.WriteError(w, http.StatusForbidden, "island_not_manual", "自动生长的小岛不能手动移除光片。")
+		return
+	}
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "island_failed", "暂时无法移除光片。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, dto)
 }
 
 func (h *Handler) fragments(w http.ResponseWriter, r *http.Request) {

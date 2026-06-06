@@ -90,11 +90,20 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (domain.Toke
 	if refreshToken == "" {
 		return domain.TokenPair{}, ErrRefreshFailed
 	}
-	userID, err := s.repo.FindRefreshUserID(ctx, tokenHash(refreshToken))
+	newRefresh, err := randomToken()
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	accessExpiresAt := time.Now().Add(s.cfg.AccessExpiry)
+	userID, err := s.repo.RotateRefreshToken(ctx, tokenHash(refreshToken), tokenHash(newRefresh), time.Now().Add(s.cfg.RefreshExpiry))
 	if err != nil {
 		return domain.TokenPair{}, ErrRefreshFailed
 	}
-	return s.IssueTokens(ctx, userID)
+	access, err := s.signToken(userID, accessExpiresAt)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	return domain.TokenPair{AccessToken: access, RefreshToken: newRefresh, ExpiresAt: accessExpiresAt}, nil
 }
 
 func (s *Service) IssueTokens(ctx context.Context, userID int64) (domain.TokenPair, error) {

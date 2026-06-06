@@ -1,19 +1,15 @@
-/// Island 实体 — "主题岛"
-class Island {
-  const Island(
-      {required this.id,
-      required this.publicId,
-      required this.userId,
-      required this.name,
-      required this.status,
-      required this.fragmentCount,
-      this.description = ''});
+import 'island_status.dart';
 
-  final int id;
-  final String publicId;
-  final int userId;
+class Island {
+  const Island({
+    required this.name,
+    required this.status,
+    required this.fragmentCount,
+    required this.description,
+  });
+
   final String name;
-  final String status; // star_point/growing/formed/dormant/relit
+  final IslandStatus status;
   final int fragmentCount;
   final String description;
 }

@@ -15,6 +15,7 @@ class SettingsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final api = ref.watch(apiClientProvider);
     final session = ref.watch(authSessionProvider);
+    final nightMode = ref.watch(nightModeProvider);
     return Scaffold(
       body: Stack(children: [
         const Positioned.fill(child: AtmosphereBackground()),
@@ -31,10 +32,12 @@ class SettingsPage extends ConsumerWidget {
                       tooltip: '返回',
                       onPressed: () => context.pop(),
                       icon: const Icon(Icons.arrow_back_rounded),
+                      color: nightMode ? AppText.nightInkMuted : AppColors.ink,
                     ),
-                    Text('SETTINGS', style: AppText.eyebrow),
+                    Text('SETTINGS',
+                        style: AppText.onNight(AppText.eyebrow, nightMode)),
                     const SizedBox(height: 8),
-                    Text('设置', style: AppText.hero),
+                    Text('设置', style: AppText.onNight(AppText.hero, nightMode)),
                     const SizedBox(height: 18),
                     _Panel(children: [
                       Text('账号', style: AppText.titleMedium),

@@ -5,12 +5,14 @@ import '../../shared/data/api_client.dart';
 class IslandModel {
   const IslandModel({
     required this.name,
+    this.islandId = 0,
     required this.status,
     required this.fragmentCount,
     required this.description,
   });
 
   final String name;
+  final int islandId;
   final String status;
   final int fragmentCount;
   final String description;
@@ -18,6 +20,7 @@ class IslandModel {
   static IslandModel fromJson(Map<String, dynamic> json) {
     return IslandModel(
       name: json['name'] as String? ?? '未命名小岛',
+      islandId: (json['island_id'] as num?)?.toInt() ?? 0,
       status: json['status'] as String? ?? 'star_point',
       fragmentCount: json['fragment_count'] as int? ?? 0,
       description: json['description'] as String? ?? '',
@@ -53,13 +56,25 @@ class IslandRepository {
         counts[tag] = (counts[tag] ?? 0) + 1;
       }
     }
-    final islands = counts.entries.map((entry) {
-      final formed = entry.value >= 5;
+    final islands = counts.entries
+        .where((entry) => entry.value >= 3)
+        .map((entry) {
+      final count = entry.value;
+      final String status;
+      if (count >= 5) {
+        status = 'formed';
+      } else if (count >= 4) {
+        status = 'growing';
+      } else {
+        status = 'star_point';
+      }
       return IslandModel(
         name: entry.key,
-        status: formed ? 'formed' : 'star_point',
-        fragmentCount: entry.value,
-        description: formed ? '这座小岛已经成形。' : '这个主题星点正在靠近更多旧光。',
+        status: status,
+        fragmentCount: count,
+        description: status == 'formed'
+            ? '这座小岛已经成形。'
+            : '这个主题星点正在靠近更多旧光。',
       );
     }).toList();
     islands.sort((a, b) => b.fragmentCount.compareTo(a.fragmentCount));
@@ -78,6 +93,31 @@ class IslandRepository {
     }
     final items = await listIslands();
     return items.where((item) => item.name == name).firstOrNull;
+  }
+
+  Future<IslandModel> createIsland(String name, String description) async {
+    await _auth.ensureSession();
+    final body = await _api.post('/islands', {
+      'name': name,
+      'description': description,
+    });
+    return IslandModel.fromJson(body);
+  }
+
+  Future<IslandModel> addFragments(int islandId, List<int> fragmentIds) async {
+    await _auth.ensureSession();
+    final body = await _api.post('/islands/$islandId/fragments', {
+      'fragment_ids': fragmentIds,
+    });
+    return IslandModel.fromJson(body);
+  }
+
+  Future<IslandModel> removeFragments(
+      int islandId, List<int> fragmentIds) async {
+    await _auth.ensureSession();
+    final body = await _api.delete('/islands/$islandId/fragments',
+        body: {'fragment_ids': fragmentIds});
+    return IslandModel.fromJson(body);
   }
 
   Future<List<LightFragmentModel>> listIslandFragments(String name) async {

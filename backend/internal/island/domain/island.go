@@ -4,6 +4,7 @@ import "time"
 
 type Island struct {
 	ID            string    `json:"id"`
+	IslandID      int64     `json:"island_id"`
 	Name          string    `json:"name"`
 	Status        string    `json:"status"`
 	FragmentCount int       `json:"fragment_count"`
@@ -15,6 +16,10 @@ type UpsertParams struct {
 	ID          int64
 	Name        string
 	Description string
+}
+
+type FragmentAction struct {
+	FragmentIDs []int64 `json:"fragment_ids"`
 }
 
 type FragmentPreview struct {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../domain/star_graph.dart';
@@ -17,6 +18,7 @@ class StarmapPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final graph = ref.watch(starGraphProvider);
+    final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
       SafeArea(
@@ -29,7 +31,7 @@ class StarmapPage extends ConsumerWidget {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _Header(),
+                    _Header(nightMode: nightMode),
                     const SizedBox(height: 20),
                     graph.when(
                       data: (value) => _GraphPanel(graph: value),
@@ -43,10 +45,12 @@ class StarmapPage extends ConsumerWidget {
                         child: const CircularProgressIndicator(),
                       ),
                       error: (error, _) =>
-                          Text('星图暂时无法展开：$error', style: AppText.body),
+                          Text('星图暂时无法展开：$error',
+                              style: AppText.onNight(AppText.body, nightMode)),
                     ),
                     const SizedBox(height: 16),
-                    Text('这里展示已经确认的织线关系。', style: AppText.bodyMuted),
+                    Text('这里展示已经确认的织线关系。',
+                        style: AppText.onNight(AppText.bodyMuted, nightMode)),
                   ]),
             ),
           ),
@@ -132,14 +136,19 @@ class _GraphPainter extends CustomPainter {
 }
 
 class _Header extends StatelessWidget {
-  const _Header();
+  const _Header({required this.nightMode});
+
+  final bool nightMode;
+
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('WEAVE', style: AppText.eyebrow),
+      Text('WEAVE', style: AppText.onNight(AppText.eyebrow, nightMode)),
       const SizedBox(height: 8),
       Row(children: [
-        Expanded(child: Text('织线', style: AppText.hero)),
+        Expanded(
+          child: Text('织线', style: AppText.onNight(AppText.hero, nightMode)),
+        ),
         Container(
             width: 42,
             height: 42,
@@ -150,7 +159,8 @@ class _Header extends StatelessWidget {
                 const Icon(Icons.blur_circular_rounded, color: AppColors.ink)),
       ]),
       const SizedBox(height: 8),
-      Text('星点之间，有一条细细的线。', style: AppText.body),
+      Text('星点之间，有一条细细的线。',
+          style: AppText.onNight(AppText.body, nightMode)),
     ]);
   }
 }

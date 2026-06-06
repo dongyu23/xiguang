@@ -2,11 +2,29 @@ import 'package:flutter/material.dart';
 
 import 'colors.dart';
 
-/// 隙光字体层级 — PingFang SC，低压力阅读节奏
+/// 隙光字体层级 — 平方时光体，低压力阅读节奏
 class AppText {
   AppText._();
 
-  static const _family = 'PingFang SC';
+  static const _family = 'PingFangShiGuangTi';
+  static const nightInk = Color(0xFFF4EFE4);
+  static const nightInkMuted = Color(0xFFC9D0C8);
+  static const nightAccent = Color(0xFFA6CDBB);
+
+  static TextStyle onNight(TextStyle style, bool nightMode) {
+    if (!nightMode) return style;
+    final color = style.color;
+    if (color == AppColors.ink) {
+      return style.copyWith(color: nightInk);
+    }
+    if (color == AppColors.inkMuted) {
+      return style.copyWith(color: nightInkMuted);
+    }
+    if (color == AppColors.teaGreen) {
+      return style.copyWith(color: nightAccent);
+    }
+    return style;
+  }
 
   // 标签行
   static const eyebrow = TextStyle(

@@ -1,4 +1,5 @@
 import '../../shared/data/api_client.dart';
+import 'session_storage.dart';
 
 class AuthSession {
   const AuthSession({
@@ -41,17 +42,44 @@ class AuthSession {
 }
 
 class AuthRepository {
-  AuthRepository(this._api);
+  AuthRepository(this._api, {SessionStorage storage = const SessionStorage()})
+      : _storage = storage {
+    _api.tokenRefreshCallback = _refreshForApiClient;
+  }
 
   final ApiClient _api;
+  final SessionStorage _storage;
   AuthSession? _session;
+  String? _refreshToken;
+  DateTime? _expiresAt;
 
   AuthSession? get currentSession => _session;
 
   Future<AuthSession> ensureSession() async {
     final existing = _session;
     if (existing != null) return existing;
+    final restored = await restoreSession();
+    if (restored != null) return restored;
     return me();
+  }
+
+  Future<AuthSession?> restoreSession() async {
+    final stored = await _storage.read();
+    if (stored == null) return null;
+    _session = stored.session;
+    _refreshToken = stored.refreshToken;
+    _expiresAt = stored.expiresAt;
+    _api.accessToken = stored.accessToken;
+    if (stored.expiresAt
+        .isBefore(DateTime.now().add(const Duration(minutes: 1)))) {
+      await _refresh();
+    }
+    try {
+      return await me();
+    } catch (_) {
+      await logout();
+      return null;
+    }
   }
 
   Future<AuthSession> login({
@@ -78,12 +106,20 @@ class AuthRepository {
     return _saveSession(body);
   }
 
-  void logout() {
+  Future<void> logout() async {
     _api.accessToken = null;
     _session = null;
+    _refreshToken = null;
+    _expiresAt = null;
+    await _storage.delete();
   }
 
   Future<AuthSession> me() async {
+    if (_api.hasToken &&
+        _expiresAt != null &&
+        _expiresAt!.isBefore(DateTime.now().add(const Duration(minutes: 1)))) {
+      await _refresh();
+    }
     if (!_api.hasToken) {
       throw StateError('not_authenticated');
     }
@@ -108,15 +144,72 @@ class AuthRepository {
       'privacy_mode': privacyMode,
     });
     _session = _parseUser(body);
+    await _persistCurrent();
     return _session!;
   }
 
-  AuthSession _saveSession(Map<String, dynamic> body) {
-    final tokens = body['tokens'] as Map<String, dynamic>?;
-    _api.accessToken = tokens?['access_token'] as String?;
+  Future<void> _refresh() async {
+    final refreshToken = _refreshToken;
+    if (refreshToken == null || refreshToken.isEmpty) {
+      throw StateError('not_authenticated');
+    }
+    final body = await _api.post('/auth/refresh', {
+      'refresh_token': refreshToken,
+    });
+    _saveTokens(body);
+    await _persistCurrent();
+  }
+
+  Future<String?> _refreshForApiClient() async {
+    try {
+      await _refresh();
+      return _api.debugAccessTokenForVerification();
+    } catch (_) {
+      await logout();
+      return null;
+    }
+  }
+
+  Future<AuthSession> _saveSession(Map<String, dynamic> body) async {
+    _saveTokens(body['tokens'] as Map<String, dynamic>? ?? const {});
     final user = body['user'] as Map<String, dynamic>? ?? const {};
     _session = _parseUser(user);
+    await _persistCurrent();
     return _session!;
+  }
+
+  void _saveTokens(Map<String, dynamic> tokens) {
+    final accessToken = tokens['access_token'] as String?;
+    if (accessToken != null && accessToken.isNotEmpty) {
+      _api.accessToken = accessToken;
+    }
+    final refreshToken = tokens['refresh_token'] as String?;
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      _refreshToken = refreshToken;
+    }
+    final expiresAt = DateTime.tryParse(tokens['expires_at'] as String? ?? '');
+    if (expiresAt != null) {
+      _expiresAt = expiresAt;
+    }
+  }
+
+  Future<void> _persistCurrent() async {
+    final session = _session;
+    final accessToken = _api.debugAccessTokenForVerification();
+    final refreshToken = _refreshToken;
+    final expiresAt = _expiresAt;
+    if (session == null ||
+        accessToken == null ||
+        refreshToken == null ||
+        expiresAt == null) {
+      return;
+    }
+    await _storage.save(StoredAuthSession(
+      session: session,
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      expiresAt: expiresAt,
+    ));
   }
 
   AuthSession _parseUser(Map<String, dynamic> user) {

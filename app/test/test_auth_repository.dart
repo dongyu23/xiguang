@@ -12,6 +12,9 @@ class FakeAuthRepository extends AuthRepository {
   AuthSession? get currentSession => _session;
 
   @override
+  Future<AuthSession?> restoreSession() async => null;
+
+  @override
   Future<AuthSession> ensureSession() => me();
 
   @override
@@ -48,7 +51,7 @@ class FakeAuthRepository extends AuthRepository {
   }
 
   @override
-  void logout() {
+  Future<void> logout() async {
     _session = null;
   }
 

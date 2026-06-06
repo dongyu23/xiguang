@@ -6,7 +6,7 @@ import '../tokens/colors.dart';
 ThemeData xiguangTheme() {
   return ThemeData(
     useMaterial3: true,
-    fontFamily: 'PingFang SC',
+    fontFamily: 'PingFangShiGuangTi',
     scaffoldBackgroundColor: AppColors.paper,
     colorScheme: ColorScheme.fromSeed(
       seedColor: AppColors.teaGreen,

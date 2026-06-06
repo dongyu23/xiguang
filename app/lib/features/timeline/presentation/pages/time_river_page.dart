@@ -8,6 +8,7 @@ import '../../../../features/fragment/data/fragment_repository.dart';
 import '../../../../features/fragment/presentation/pages/fragment_detail_page.dart';
 import '../../../../features/timeline/presentation/providers/timeline_provider.dart';
 import '../../../../ui/composites/light_card.dart';
+import '../../../../ui/composites/night_mode_button.dart';
 import '../../../../ui/composites/tag_chip.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
@@ -28,6 +29,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
   Widget build(BuildContext context) {
     final fragments = ref.watch(fragmentsProvider);
     final timeline = ref.watch(timelineGroupsProvider);
+    final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
       SafeArea(
@@ -40,7 +42,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _Header(),
+                    _Header(nightMode: nightMode),
                     const SizedBox(height: 18),
                     timeline.when(
                       data: (groups) {
@@ -61,13 +63,20 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
                             return GestureDetector(
                               onTap: () => setState(() => _filter = label),
                               child: TagChip(
-                                  label: label, filled: _filter == label),
+                                label: label,
+                                filled: _filter == label,
+                                nightMode: nightMode,
+                              ),
                             );
                           }).toList()),
                         );
                       },
                       loading: () => const SizedBox(height: 32),
-                      error: (_, __) => TagChip(label: '本地回看', filled: true),
+                      error: (_, __) => TagChip(
+                        label: '本地回看',
+                        filled: true,
+                        nightMode: nightMode,
+                      ),
                     ),
                     const SizedBox(height: 20),
                     timeline.when(
@@ -88,7 +97,10 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
                         if (visibleGroups.isEmpty) {
                           return Padding(
                             padding: const EdgeInsets.only(top: 24),
-                            child: Text('还没有这样的旧光。', style: AppText.body),
+                            child: Text(
+                              '还没有这样的旧光。',
+                              style: AppText.onNight(AppText.body, nightMode),
+                            ),
                           );
                         }
                         return Column(
@@ -97,7 +109,8 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
                               for (final group in visibleGroups) ...[
                                 _DateRail(
                                     label: group.label,
-                                    count: '${group.items.length} 束光'),
+                                    count: '${group.items.length} 束光',
+                                    nightMode: nightMode),
                                 ...group.items.map((f) => LightFragmentCard(
                                       tapKey: ValueKey('timeline-card-${f.id}'),
                                       fragment: f.toLightFragment(),
@@ -122,11 +135,12 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
                         data: (items) => _FallbackTimeline(
                           items: items,
                           filter: _filter,
+                          nightMode: nightMode,
                         ),
-                        loading: () =>
-                            Text('时间河暂时变浅了：$error', style: AppText.body),
-                        error: (_, __) =>
-                            Text('时间河暂时变浅了：$error', style: AppText.body),
+                        loading: () => Text('时间河暂时变浅了：$error',
+                            style: AppText.onNight(AppText.body, nightMode)),
+                        error: (_, __) => Text('时间河暂时变浅了：$error',
+                            style: AppText.onNight(AppText.body, nightMode)),
                       ),
                     ),
                   ]),
@@ -139,25 +153,26 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header();
+  const _Header({required this.nightMode});
+
+  final bool nightMode;
+
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('TIME RIVER', style: AppText.eyebrow),
+      Text('TIME RIVER', style: AppText.onNight(AppText.eyebrow, nightMode)),
       const SizedBox(height: 8),
       Row(children: [
-        Expanded(child: Text('线', style: AppText.hero)),
-        Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-                color: AppColors.white.withValues(alpha: .86),
-                shape: BoxShape.circle),
-            child:
-                const Icon(Icons.nights_stay_outlined, color: AppColors.ink)),
+        Expanded(
+          child: Text('线', style: AppText.onNight(AppText.hero, nightMode)),
+        ),
+        const NightModeButton(),
       ]),
       const SizedBox(height: 8),
-      Text('这些碎片不用被整理成答案，它们先按时间流动。', style: AppText.body),
+      Text(
+        '这些碎片不用被整理成答案，它们先按时间流动。',
+        style: AppText.onNight(AppText.body, nightMode),
+      ),
     ]);
   }
 }
@@ -173,6 +188,7 @@ extension _LightFragmentAdapter on LightFragmentModel {
       tags: tags,
       color: color,
       relation: status,
+      mediaUrls: mediaUrls,
     );
   }
 }
@@ -190,10 +206,15 @@ LightFragmentModel _fromDomainFragment(dynamic fragment) {
 }
 
 class _FallbackTimeline extends StatelessWidget {
-  const _FallbackTimeline({required this.items, required this.filter});
+  const _FallbackTimeline({
+    required this.items,
+    required this.filter,
+    required this.nightMode,
+  });
 
   final List<LightFragmentModel> items;
   final String filter;
+  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
@@ -206,7 +227,8 @@ class _FallbackTimeline extends StatelessWidget {
     if (visible.isEmpty) {
       return Padding(
         padding: const EdgeInsets.only(top: 24),
-        child: Text('还没有这样的旧光。', style: AppText.body),
+        child:
+            Text('还没有这样的旧光。', style: AppText.onNight(AppText.body, nightMode)),
       );
     }
     final labels = visible.map((item) => item.dateLabel).toSet().toList();
@@ -215,6 +237,7 @@ class _FallbackTimeline extends StatelessWidget {
         _DateRail(
           label: label,
           count: '${visible.where((f) => f.dateLabel == label).length} 束光',
+          nightMode: nightMode,
         ),
         ...visible.where((f) => f.dateLabel == label).map(
               (f) => LightFragmentCard(
@@ -234,8 +257,13 @@ class _FallbackTimeline extends StatelessWidget {
 }
 
 class _DateRail extends StatelessWidget {
-  const _DateRail({required this.label, required this.count});
+  const _DateRail({
+    required this.label,
+    required this.count,
+    required this.nightMode,
+  });
   final String label, count;
+  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
@@ -248,9 +276,9 @@ class _DateRail extends StatelessWidget {
             decoration: const BoxDecoration(
                 color: AppColors.teaGreen, shape: BoxShape.circle)),
         const SizedBox(width: 8),
-        Text(label, style: AppText.titleSmall),
+        Text(label, style: AppText.onNight(AppText.titleSmall, nightMode)),
         const SizedBox(width: 8),
-        Text(count, style: AppText.caption),
+        Text(count, style: AppText.onNight(AppText.caption, nightMode)),
       ]),
     );
   }

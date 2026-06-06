@@ -23,6 +23,7 @@ func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Post("/glow-summary", h.glowSummary)
 	r.Get("/requests", h.requests)
+	r.Post("/build-islands", h.buildIslands)
 	return r
 }
 
@@ -45,4 +46,18 @@ func (h *Handler) requests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared.WriteJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) buildIslands(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	result := h.service.BuildIslands(r.Context(), userID)
+
+	status := http.StatusOK
+	switch result.Status {
+	case "rate_limited":
+		status = http.StatusTooManyRequests
+	case "error":
+		status = http.StatusInternalServerError
+	}
+	shared.WriteJSON(w, status, result)
 }

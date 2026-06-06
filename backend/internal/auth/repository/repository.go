@@ -16,6 +16,7 @@ type Repository interface {
 	UpdateUser(ctx context.Context, id int64, params domain.UpdateUserParams) (domain.User, error)
 	InsertRefreshToken(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error
 	FindRefreshUserID(ctx context.Context, tokenHash string) (int64, error)
+	RotateRefreshToken(ctx context.Context, oldTokenHash, newTokenHash string, expiresAt time.Time) (int64, error)
 }
 
 type PG struct {
@@ -72,4 +73,29 @@ func (r *PG) FindRefreshUserID(ctx context.Context, tokenHash string) (int64, er
 	var userID int64
 	err := r.db.QueryRow(ctx, `SELECT user_id FROM refresh_tokens WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at > now()`, tokenHash).Scan(&userID)
 	return userID, err
+}
+
+func (r *PG) RotateRefreshToken(ctx context.Context, oldTokenHash, newTokenHash string, expiresAt time.Time) (int64, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	var userID int64
+	err = tx.QueryRow(ctx, `UPDATE refresh_tokens
+		SET revoked_at=now()
+		WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at > now()
+		RETURNING user_id`, oldTokenHash).Scan(&userID)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO refresh_tokens(user_id, token_hash, expires_at) VALUES($1,$2,$3)`,
+		userID, newTokenHash, expiresAt); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return userID, nil
 }

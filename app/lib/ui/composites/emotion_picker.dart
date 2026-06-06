@@ -6,15 +6,19 @@ import '../../design/tokens/typography.dart';
 /// 微光情绪选择器 — 柔和色点 + 情绪词
 ///
 /// 可跳过，默认"说不清"。不强制用户选择。
-class EmotionPicker extends StatelessWidget {
+class EmotionPicker extends StatefulWidget {
   const EmotionPicker({
     super.key,
     this.selected,
     this.onSelected,
+    this.customValue = '',
+    this.onCustomChanged,
   });
 
   final String? selected;
   final ValueChanged<String>? onSelected;
+  final String customValue;
+  final ValueChanged<String>? onCustomChanged;
 
   static const emotions = [
     _Emotion('平静', AppColors.emotionCalm, '内心安静，没有波澜'),
@@ -24,26 +28,90 @@ class EmotionPicker extends StatelessWidget {
     _Emotion('失落', AppColors.emotionLost, '空空的，说不上来'),
     _Emotion('被击中', AppColors.emotionStruck, '被什么触动了'),
     _Emotion('混乱', AppColors.emotionChaos, '一团乱，理不清楚'),
-    _Emotion('说不清', AppColors.emotionUnclear, '不一定要说清楚'),
+    _Emotion('自定义', AppColors.emotionUnclear, '先留一个自己的感觉'),
   ];
+
+  @override
+  State<EmotionPicker> createState() => _EmotionPickerState();
+}
+
+class _EmotionPickerState extends State<EmotionPicker> {
+  late final TextEditingController _customController;
+
+  @override
+  void initState() {
+    super.initState();
+    _customController = TextEditingController(text: widget.customValue);
+  }
+
+  @override
+  void didUpdateWidget(covariant EmotionPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.customValue != widget.customValue &&
+        _customController.text != widget.customValue) {
+      _customController.text = widget.customValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _customController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('不一定要说清楚，选一个靠近的感觉就好。', style: AppText.caption),
+        Row(children: [
+          Text('心绪收录', style: AppText.titleSmall),
+          const SizedBox(width: 8),
+          Text('轻触一个靠近的感觉', style: AppText.caption),
+        ]),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: emotions
-              .map((e) => _EmotionChip(
-                    emotion: e,
-                    isSelected: selected == e.label,
-                    onTap: () => onSelected?.call(e.label),
-                  ))
-              .toList(),
+        GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          itemCount: EmotionPicker.emotions.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              mainAxisExtent: 42),
+          itemBuilder: (context, index) {
+            final emotion = EmotionPicker.emotions[index];
+            return _EmotionChip(
+              emotion: emotion,
+              isSelected: widget.selected == emotion.label ||
+                  (emotion.label == '自定义' &&
+                      (widget.selected == null ||
+                          widget.selected == '说不清' ||
+                          widget.customValue.trim().isNotEmpty)),
+              onTap: () => widget.onSelected?.call(emotion.label),
+            );
+          },
+        ),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: widget.selected == '自定义'
+              ? Padding(
+                  key: const ValueKey('custom-emotion-field'),
+                  padding: const EdgeInsets.only(top: 10),
+                  child: TextField(
+                    controller: _customController,
+                    onChanged: widget.onCustomChanged,
+                    maxLength: 8,
+                    decoration: InputDecoration(
+                      counterText: '',
+                      hintText: '写一个自己的感觉',
+                      prefixIcon: const Icon(Icons.edit_outlined),
+                      filled: true,
+                      fillColor: AppColors.white.withValues(alpha: .72),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
@@ -79,29 +147,40 @@ class _EmotionChip extends StatelessWidget {
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected
               ? emotion.color
               : AppColors.white.withValues(alpha: .72),
           borderRadius: BorderRadius.circular(8),
-          border:
-              Border.all(color: isSelected ? emotion.color : AppColors.line),
+          border: Border.all(
+            color: isSelected ? emotion.color : AppColors.line,
+            width: isSelected ? 1.2 : 1,
+          ),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 10,
-              height: 10,
+              width: 9,
+              height: 9,
               decoration:
                   BoxDecoration(color: emotion.color, shape: BoxShape.circle),
             ),
             const SizedBox(width: 6),
-            Text(emotion.label,
+            Flexible(
+              child: Text(
+                emotion.label,
                 style: AppText.chip.copyWith(
                   color: isSelected ? Colors.white : AppColors.ink,
-                )),
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       ),

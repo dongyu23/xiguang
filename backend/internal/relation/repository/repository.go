@@ -25,8 +25,12 @@ func NewPG(db *pgxpool.Pool) *PG {
 
 func (r *PG) Create(ctx context.Context, userID int64, params domain.CreateParams) (domain.Relation, error) {
 	var dto domain.Relation
-	err := r.db.QueryRow(ctx, `INSERT INTO relations(user_id, source_fragment_id, target_fragment_id, relation_type, note)
-		VALUES($1,$2,$3,$4,$5)
+	err := r.db.QueryRow(ctx, `WITH owned AS (
+			SELECT COUNT(*) AS count FROM fragments
+			WHERE user_id=$1 AND is_deleted=FALSE AND id IN ($2,$3)
+		)
+		INSERT INTO relations(user_id, source_fragment_id, target_fragment_id, relation_type, note)
+		SELECT $1,$2,$3,$4,$5 FROM owned WHERE count=2
 		ON CONFLICT(user_id, source_fragment_id, target_fragment_id, relation_type) DO UPDATE SET note=EXCLUDED.note
 		RETURNING id, public_id::text, user_id, source_fragment_id, target_fragment_id, relation_type, COALESCE(note,''), created_at`,
 		userID, params.SourceFragmentID, params.TargetFragmentID, strings.TrimSpace(params.RelationType), params.Note).

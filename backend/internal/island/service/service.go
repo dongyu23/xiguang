@@ -10,7 +10,10 @@ import (
 	"xiguang/backend/internal/island/repository"
 )
 
-var ErrEmptyName = errors.New("island_empty")
+var (
+	ErrEmptyName      = errors.New("island_empty")
+	ErrNotManualIsland = repository.ErrNotManualIsland
+)
 
 type Service struct {
 	repo repository.Repository
@@ -21,12 +24,13 @@ func New(repo repository.Repository) *Service {
 }
 
 func (s *Service) List(ctx context.Context, userID int64) ([]domain.Island, error) {
+	_, _ = s.repo.MarkDormantIslands(ctx, userID)
+
 	items, err := s.repo.List(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	for i := range items {
-		items[i].ID = items[i].Name
 		fillDescription(&items[i])
 	}
 	return items, nil
@@ -62,8 +66,20 @@ func (s *Service) Delete(ctx context.Context, userID, id int64) (bool, error) {
 	return s.repo.Delete(ctx, userID, id)
 }
 
+func (s *Service) AddFragments(ctx context.Context, userID int64, islandID int64, fragmentIDs []int64) (domain.Island, error) {
+	return s.repo.AddFragments(ctx, userID, islandID, fragmentIDs)
+}
+
+func (s *Service) RemoveFragments(ctx context.Context, userID int64, islandID int64, fragmentIDs []int64) (domain.Island, error) {
+	return s.repo.RemoveFragments(ctx, userID, islandID, fragmentIDs)
+}
+
 func (s *Service) Fragments(ctx context.Context, userID int64, name, rawLimit string) ([]domain.FragmentPreview, error) {
 	return s.repo.Fragments(ctx, userID, name, parseLimit(rawLimit, 50))
+}
+
+func (s *Service) FragmentsByID(ctx context.Context, userID int64, islandID int64, rawLimit string) ([]domain.FragmentPreview, error) {
+	return s.repo.FragmentsByID(ctx, userID, islandID, parseLimit(rawLimit, 50))
 }
 
 func fillDescription(item *domain.Island) {

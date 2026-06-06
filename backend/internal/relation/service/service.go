@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+
 	"xiguang/backend/internal/relation/domain"
 	"xiguang/backend/internal/relation/repository"
 )
@@ -27,7 +29,11 @@ func (s *Service) Create(ctx context.Context, userID int64, params domain.Create
 		params.RelationType == "" {
 		return domain.Relation{}, ErrInvalidRelation
 	}
-	return s.repo.Create(ctx, userID, params)
+	relation, err := s.repo.Create(ctx, userID, params)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Relation{}, ErrInvalidRelation
+	}
+	return relation, err
 }
 
 func (s *Service) List(ctx context.Context, userID, fragmentID int64) ([]domain.Relation, error) {

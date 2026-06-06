@@ -11,7 +11,10 @@ import (
 	"xiguang/backend/internal/fragment/repository"
 )
 
-var ErrEmptyLight = errors.New("empty_light")
+var (
+	ErrEmptyLight   = errors.New("empty_light")
+	ErrInvalidMedia = errors.New("invalid_media")
+)
 
 type WeaveFunc func(ctx context.Context, userID, sourceFragmentID, targetFragmentID int64, relationType, note string) (any, error)
 
@@ -33,7 +36,10 @@ func (s *Service) Create(ctx context.Context, userID int64, params domain.Create
 		params.Emotion = "说不清"
 	}
 	tags := cleanTags(params.Tags)
-	media := cleanTags(params.MediaURLs)
+	media, err := s.cleanMedia(ctx, userID, params.MediaURLs)
+	if err != nil {
+		return domain.Fragment{}, err
+	}
 	dto, err := s.repo.Create(ctx, userID, params.ContentText, params.Emotion, statusFor(params.Emotion, len(tags), len(media)), tags, media)
 	if err != nil {
 		return domain.Fragment{}, err
@@ -105,6 +111,77 @@ func cleanTags(tags []string) []string {
 		result = append(result, tag)
 	}
 	return result
+}
+
+func (s *Service) cleanMedia(ctx context.Context, userID int64, media []string) ([]string, error) {
+	items := cleanMediaKeys(media)
+	if len(items) == 0 {
+		return items, nil
+	}
+	prefix := "users/" + strconv.FormatInt(userID, 10) + "/media/"
+	objectKeys := make([]string, 0, len(items))
+	for _, item := range items {
+		if isInlineImage(item) {
+			continue
+		}
+		if strings.HasPrefix(item, "file:") ||
+			strings.HasPrefix(item, "/") ||
+			strings.Contains(item, "\\") ||
+			strings.Contains(item, "../") ||
+			!strings.HasPrefix(item, prefix) {
+			return nil, ErrInvalidMedia
+		}
+		objectKeys = append(objectKeys, item)
+	}
+	if len(objectKeys) == 0 {
+		return items, nil
+	}
+	confirmed, err := s.repo.FindConfirmedMedia(ctx, userID, objectKeys)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range objectKeys {
+		if !confirmed[item] {
+			return nil, ErrInvalidMedia
+		}
+	}
+	return items, nil
+}
+
+func cleanMediaKeys(media []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(media))
+	for _, item := range media {
+		item = strings.TrimSpace(item)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		result = append(result, item)
+	}
+	return result
+}
+
+func isInlineImage(value string) bool {
+	if len(value) > 750_000 {
+		return false
+	}
+	if !strings.HasPrefix(value, "data:image/") {
+		return false
+	}
+	header, payload, ok := strings.Cut(value, ",")
+	if !ok || payload == "" || !strings.Contains(header, ";base64") {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(header, "data:image/jpeg"),
+		strings.HasPrefix(header, "data:image/png"),
+		strings.HasPrefix(header, "data:image/webp"),
+		strings.HasPrefix(header, "data:image/gif"):
+		return true
+	default:
+		return false
+	}
 }
 
 func statusFor(emotion string, tags, media int) string {

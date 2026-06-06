@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+typedef TokenRefreshCallback = Future<String?> Function();
+
 class ApiClient {
   ApiClient({Dio? dio, String? baseUrl})
       : _dio = dio ??
@@ -15,6 +17,7 @@ class ApiClient {
 
   final Dio _dio;
   String? _accessToken;
+  TokenRefreshCallback? _refreshToken;
 
   String get baseUrl => _dio.options.baseUrl;
   bool get hasToken => _accessToken != null;
@@ -24,42 +27,68 @@ class ApiClient {
     _accessToken = token;
   }
 
+  set tokenRefreshCallback(TokenRefreshCallback? callback) {
+    _refreshToken = callback;
+  }
+
   Future<Map<String, dynamic>> get(String path,
       {Map<String, dynamic>? query}) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      path,
-      queryParameters: query,
-      options: Options(headers: _authHeaders()),
-    );
-    return _unwrap(response.data);
+    return _send(() => _dio.get<Map<String, dynamic>>(
+          path,
+          queryParameters: query,
+          options: Options(headers: _authHeaders()),
+        ));
   }
 
   Future<Map<String, dynamic>> post(
       String path, Map<String, dynamic> body) async {
-    final response = await _dio.post<Map<String, dynamic>>(
-      path,
-      data: body,
-      options: Options(headers: _authHeaders()),
+    return _send(
+      () => _dio.post<Map<String, dynamic>>(
+        path,
+        data: body,
+        options: Options(headers: _authHeaders()),
+      ),
+      allowRefresh: path != '/auth/refresh',
     );
-    return _unwrap(response.data);
   }
 
   Future<Map<String, dynamic>> put(
       String path, Map<String, dynamic> body) async {
-    final response = await _dio.put<Map<String, dynamic>>(
-      path,
-      data: body,
-      options: Options(headers: _authHeaders()),
-    );
-    return _unwrap(response.data);
+    return _send(() => _dio.put<Map<String, dynamic>>(
+          path,
+          data: body,
+          options: Options(headers: _authHeaders()),
+        ));
   }
 
-  Future<Map<String, dynamic>> delete(String path) async {
-    final response = await _dio.delete<Map<String, dynamic>>(
-      path,
-      options: Options(headers: _authHeaders()),
-    );
-    return _unwrap(response.data);
+  Future<Map<String, dynamic>> delete(String path,
+      {Map<String, dynamic>? body}) async {
+    return _send(() => _dio.delete<Map<String, dynamic>>(
+          path,
+          data: body,
+          options: Options(headers: _authHeaders()),
+        ));
+  }
+
+  Future<Map<String, dynamic>> _send(
+    Future<Response<Map<String, dynamic>>> Function() request, {
+    bool allowRefresh = true,
+  }) async {
+    try {
+      final response = await request();
+      return _unwrap(response.data);
+    } on DioException catch (error) {
+      if (!allowRefresh || !_isUnauthorized(error) || _refreshToken == null) {
+        rethrow;
+      }
+      final token = await _refreshToken!();
+      if (token == null || token.isEmpty) {
+        rethrow;
+      }
+      _accessToken = token;
+      final response = await request();
+      return _unwrap(response.data);
+    }
   }
 
   Map<String, String> _authHeaders() {
@@ -81,5 +110,16 @@ class ApiClient {
       error: body['error'] ?? body,
       type: DioExceptionType.badResponse,
     );
+  }
+
+  bool _isUnauthorized(DioException error) {
+    final status = error.response?.statusCode;
+    if (status == 401) return true;
+    final body = error.response?.data;
+    if (body is Map<String, dynamic>) {
+      final apiError = body['error'];
+      return apiError is Map && apiError['code'] == 'unauthorized';
+    }
+    return false;
   }
 }

@@ -6,6 +6,7 @@ import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../ui/composites/image_grid.dart';
 import '../../../../ui/composites/tag_chip.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
@@ -60,6 +61,10 @@ class FragmentDetailPage extends ConsumerWidget {
                                   const SizedBox(height: 12),
                                   Text(fragment.contentText,
                                       style: AppText.body),
+                                  if (fragment.mediaUrls.isNotEmpty) ...[
+                                    const SizedBox(height: 14),
+                                    ImageGrid(urls: fragment.mediaUrls),
+                                  ],
                                   const SizedBox(height: 16),
                                   Wrap(spacing: 8, runSpacing: 8, children: [
                                     MiniTag(

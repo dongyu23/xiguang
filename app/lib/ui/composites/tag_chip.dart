@@ -10,12 +10,14 @@ class TagChip extends StatelessWidget {
     super.key,
     required this.label,
     this.filled = false,
+    this.nightMode = false,
     this.onTap,
     this.onDeleted,
   });
 
   final String label;
   final bool filled;
+  final bool nightMode;
   final VoidCallback? onTap;
   final VoidCallback? onDeleted;
 
@@ -26,10 +28,18 @@ class TagChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: filled ? AppColors.ink : AppColors.paper,
+          color: nightMode
+              ? (filled
+                  ? AppColors.teaGreen.withValues(alpha: .82)
+                  : AppColors.white.withValues(alpha: .10))
+              : (filled ? AppColors.ink : AppColors.paper),
           borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(
-            color: filled ? AppColors.ink : AppColors.line,
+            color: nightMode
+                ? (filled
+                    ? AppColors.teaGreen.withValues(alpha: .72)
+                    : AppColors.white.withValues(alpha: .16))
+                : (filled ? AppColors.ink : AppColors.line),
           ),
         ),
         child: Row(
@@ -38,7 +48,9 @@ class TagChip extends StatelessWidget {
             Text(
               label,
               style: AppText.chip.copyWith(
-                color: filled ? Colors.white : AppColors.inkMuted,
+                color: nightMode
+                    ? (filled ? AppColors.ink : AppText.nightInkMuted)
+                    : (filled ? Colors.white : AppColors.inkMuted),
               ),
             ),
             if (onDeleted != null) ...[
@@ -47,7 +59,11 @@ class TagChip extends StatelessWidget {
                 onTap: onDeleted,
                 child: Icon(Icons.close,
                     size: 14,
-                    color: filled ? Colors.white70 : AppColors.inkMuted),
+                    color: nightMode
+                        ? (filled
+                            ? AppColors.ink.withValues(alpha: .72)
+                            : AppText.nightInkMuted)
+                        : (filled ? Colors.white70 : AppColors.inkMuted)),
               ),
             ],
           ],
@@ -59,23 +75,35 @@ class TagChip extends StatelessWidget {
 
 /// 迷你标签 — 光片卡片内使用
 class MiniTag extends StatelessWidget {
-  const MiniTag({super.key, required this.label, this.filled = false});
+  const MiniTag({
+    super.key,
+    required this.label,
+    this.filled = false,
+    this.nightMode = false,
+  });
 
   final String label;
   final bool filled;
+  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: filled ? AppColors.ink : AppColors.paper,
+        color: nightMode
+            ? (filled
+                ? AppColors.teaGreen.withValues(alpha: .72)
+                : AppColors.white.withValues(alpha: .10))
+            : (filled ? AppColors.ink : AppColors.paper),
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
         label,
         style: AppText.caption.copyWith(
-          color: filled ? Colors.white : AppColors.inkMuted,
+          color: nightMode
+              ? (filled ? AppColors.ink : AppText.nightInkMuted)
+              : (filled ? Colors.white : AppColors.inkMuted),
         ),
       ),
     );

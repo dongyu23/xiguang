@@ -10,6 +10,7 @@ import '../../../../features/fragment/presentation/pages/fragment_detail_page.da
 import '../../../../ui/composites/light_card.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../data/island_repository.dart';
+import '../widgets/fragment_picker_sheet.dart';
 
 class IslandDetailPage extends ConsumerWidget {
   const IslandDetailPage({super.key, required this.id});
@@ -29,6 +30,13 @@ class IslandDetailPage extends ConsumerWidget {
           title: const Text('小岛详情'),
           backgroundColor: Colors.transparent,
           elevation: 0,
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () => _showFragmentPicker(context, ref, repository, name),
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('添加光片'),
+          backgroundColor: AppColors.teaGreen,
+          foregroundColor: Colors.white,
         ),
         body: SafeArea(
           top: false,
@@ -79,7 +87,8 @@ class IslandDetailPage extends ConsumerWidget {
                         ),
                         const SizedBox(height: 14),
                         if (data.fragments.isEmpty)
-                          Text('这座小岛还没有可回看的光片。', style: AppText.body)
+                          Text('这座小岛还没有可回看的光片。\n点右下角按钮添加第一束光。',
+                              style: AppText.body)
                         else
                           ...data.fragments.map((fragment) => LightFragmentCard(
                                 fragment: fragment.toLightFragment(),
@@ -100,6 +109,24 @@ class IslandDetailPage extends ConsumerWidget {
         ),
       ),
     ]);
+  }
+
+  void _showFragmentPicker(BuildContext context, WidgetRef ref,
+      IslandRepository repository, String islandName) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => FragmentPickerSheet(
+        onConfirm: (fragmentIds) async {
+          final island = await repository.getIsland(islandName);
+          if (island != null && island.islandId > 0) {
+            await repository.addFragments(island.islandId, fragmentIds);
+            ref.invalidate(islandsProvider);
+          }
+        },
+      ),
+    );
   }
 
   Future<_IslandDetailData> _load(
@@ -149,6 +176,7 @@ extension _LightFragmentAdapter on LightFragmentModel {
       tags: tags,
       color: color,
       relation: status,
+      mediaUrls: mediaUrls,
     );
   }
 }

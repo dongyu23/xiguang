@@ -1,6 +1,10 @@
+import '../../fragment/data/fragment_repository.dart';
 import 'island.dart';
 
-abstract interface class IslandRepositoryContract {
-  Future<List<Island>> list();
-  Future<Island?> getById(int id);
+abstract class IslandRepositoryPort {
+  Future<List<Island>> listIslands();
+
+  Future<Island?> getIsland(String name);
+
+  Future<List<LightFragmentModel>> listIslandFragments(String name);
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:xiguang/app/app.dart';
 import 'package:xiguang/app/providers.dart';
@@ -12,6 +13,7 @@ import 'test_auth_repository.dart';
 void main() {
   testWidgets('CLAUDE bottom navigation keeps weave contextual only',
       (tester) async {
+    SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -41,7 +43,7 @@ void main() {
       expect(find.text(label), findsWidgets);
     }
     expect(find.text('织'), findsNothing);
-    expect(find.widgetWithText(FloatingActionButton, '捕光'), findsOneWidget);
+    expect(find.widgetWithText(FloatingActionButton, '捕光'), findsNothing);
 
     for (final navKey in [
       'nav-timeline',
@@ -52,6 +54,7 @@ void main() {
       await tester.pumpAndSettle(const Duration(milliseconds: 100),
           EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
       expect(find.text('织'), findsNothing);
+      expect(find.widgetWithText(FloatingActionButton, '捕光'), findsNothing);
     }
 
     expect(find.widgetWithText(FloatingActionButton, '捕光'), findsNothing);

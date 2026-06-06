@@ -1,81 +1,44 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/providers.dart';
-import '../../../../ui/spaces/island_space.dart';
-import '../../../../ui/spaces/ocean_space.dart';
-import '../../../../ui/spaces/starry_space.dart';
-import '../../domain/space_theme.dart';
+import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/shadows.dart';
+import '../../../../design/tokens/typography.dart';
+import '../../../../ui/spaces/space_canvas.dart';
+import '../providers/space_provider.dart';
 
-class SpacePage extends ConsumerStatefulWidget {
+class SpacePage extends ConsumerWidget {
   const SpacePage({super.key});
 
   @override
-  ConsumerState<SpacePage> createState() => _SpacePageState();
-}
-
-class _SpacePageState extends ConsumerState<SpacePage> {
-  SpaceThemeValue _theme = SpaceThemeValue.starry;
-  bool _loaded = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_loaded) return;
-    _loaded = true;
-    ref.read(spaceRepositoryProvider).currentTheme().then((theme) {
-      if (mounted) setState(() => _theme = theme);
-    }).catchError((_) {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(children: [
-        Positioned.fill(child: _background),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              const Spacer(),
-              SegmentedButton<SpaceThemeValue>(
-                showSelectedIcon: false,
-                style: SegmentedButton.styleFrom(
-                  backgroundColor: Colors.white.withValues(alpha: .18),
-                  foregroundColor: Colors.white,
-                  selectedBackgroundColor: Colors.white.withValues(alpha: .82),
-                  selectedForegroundColor: const Color(0xFF233332),
-                ),
-                segments: const [
-                  ButtonSegment(
-                      value: SpaceThemeValue.starry, label: Text('星')),
-                  ButtonSegment(value: SpaceThemeValue.ocean, label: Text('海')),
-                  ButtonSegment(
-                      value: SpaceThemeValue.island, label: Text('屿')),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = ref.watch(spaceThemeProvider);
+    return Stack(children: [
+      const Positioned.fill(child: AtmosphereBackground()),
+      SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 104),
+          child: theme.when(
+            data: (space) => Container(
+              padding: const EdgeInsets.all(18),
+              decoration: softDecoration(AppColors.white),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('SPACE', style: AppText.eyebrow),
+                  const SizedBox(height: 8),
+                  Text(space.name, style: AppText.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(space.description, style: AppText.body),
                 ],
-                selected: {_theme},
-                onSelectionChanged: (values) {
-                  final next = values.first;
-                  setState(() => _theme = next);
-                  ref.read(spaceRepositoryProvider).saveTheme(next);
-                },
               ),
-            ]),
+            ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (_, __) => Text('空间主题暂时不可用。', style: AppText.body),
           ),
         ),
-      ]),
-    );
-  }
-
-  Widget get _background {
-    return switch (_theme) {
-      SpaceThemeValue.ocean => const OceanSpace(waveLayers: 5),
-      SpaceThemeValue.island => const IslandSpace(),
-      _ => const StarrySpace(starCount: 40),
-    };
+      ),
+    ]);
   }
 }

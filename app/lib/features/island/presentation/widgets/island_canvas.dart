@@ -1,19 +1,26 @@
 import 'package:flutter/material.dart';
 
+import '../../../../design/tokens/colors.dart';
+
 class IslandCanvas extends StatelessWidget {
-  const IslandCanvas({super.key});
+  const IslandCanvas({super.key, this.child});
+
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-        painter: _IslandPainter(), child: const SizedBox.expand());
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.teaGreen.withValues(alpha: .14),
+            AppColors.mistBlue.withValues(alpha: .12),
+          ],
+        ),
+      ),
+      child: child ?? const SizedBox.expand(),
+    );
   }
-}
-
-class _IslandPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {}
-
-  @override
-  bool shouldRepaint(covariant _IslandPainter oldDelegate) => false;
 }

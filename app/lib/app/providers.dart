@@ -5,6 +5,9 @@ import '../features/ai/data/ai_api.dart';
 import '../features/ai/data/ai_repository_impl.dart';
 import '../features/fragment/data/fragment_repository.dart';
 import '../features/island/data/island_repository.dart';
+import '../features/relation/data/relation_api.dart';
+import '../features/relation/data/relation_repository_impl.dart';
+import '../features/relation/domain/relation.dart';
 import '../features/space/data/space_api.dart';
 import '../features/space/data/space_repository_impl.dart';
 import '../features/starmap/data/starmap_api.dart';
@@ -18,6 +21,8 @@ import '../features/whitenoise/data/whitenoise_repository_impl.dart';
 import '../features/shared/data/api_client.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
+
+final nightModeProvider = StateProvider<bool>((ref) => false);
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(ref.watch(apiClientProvider));
@@ -40,6 +45,10 @@ final islandRepositoryProvider = Provider<IslandRepository>((ref) {
     ref.watch(authRepositoryProvider),
     ref.watch(fragmentRepositoryProvider),
   );
+});
+
+final relationRepositoryProvider = Provider<RelationRepositoryImpl>((ref) {
+  return RelationRepositoryImpl(RelationApi(ref.watch(apiClientProvider)));
 });
 
 final timelineRepositoryProvider = Provider<TimelineRepositoryImpl>((ref) {
@@ -66,6 +75,10 @@ final sessionProvider = FutureProvider<AuthSession>((ref) {
   return ref.watch(authRepositoryProvider).me();
 });
 
+final authRestoreProvider = FutureProvider<AuthSession?>((ref) {
+  return ref.watch(authRepositoryProvider).restoreSession();
+});
+
 final authSessionProvider = StateProvider<AuthSession?>((ref) {
   return ref.watch(authRepositoryProvider).currentSession;
 });
@@ -87,6 +100,20 @@ class FragmentsNotifier extends AsyncNotifier<List<LightFragmentModel>> {
     required List<String> tags,
     List<String> mediaUrls = const [],
   }) async {
+    await captureWithResult(
+      text: text,
+      emotion: emotion,
+      tags: tags,
+      mediaUrls: mediaUrls,
+    );
+  }
+
+  Future<LightFragmentModel> captureWithResult({
+    required String text,
+    required String emotion,
+    required List<String> tags,
+    List<String> mediaUrls = const [],
+  }) async {
     final previous = state.value ?? const [];
     state =
         const AsyncLoading<List<LightFragmentModel>>().copyWithPrevious(state);
@@ -101,9 +128,18 @@ class FragmentsNotifier extends AsyncNotifier<List<LightFragmentModel>> {
       state = AsyncData(
           [created, ...previous.where((item) => item.id != created.id)]);
       ref.invalidate(islandsProvider);
+      return created;
+    } on LocalDraftException catch (error) {
+      state = AsyncData([
+        error.fragment,
+        ...previous.where((item) => item.id != error.fragment.id)
+      ]);
+      ref.invalidate(islandsProvider);
+      return error.fragment;
     } catch (error, stackTrace) {
       state = AsyncError<List<LightFragmentModel>>(error, stackTrace)
           .copyWithPrevious(AsyncData(previous));
+      rethrow;
     }
   }
 
@@ -117,4 +153,9 @@ class FragmentsNotifier extends AsyncNotifier<List<LightFragmentModel>> {
 
 final islandsProvider = FutureProvider<List<IslandModel>>((ref) async {
   return ref.watch(islandRepositoryProvider).listIslands();
+});
+
+final fragmentRelationsProvider =
+    FutureProvider.family<List<Relation>, int>((ref, fragmentId) {
+  return ref.watch(relationRepositoryProvider).list(fragmentId: fragmentId);
 });

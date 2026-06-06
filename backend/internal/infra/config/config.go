@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -34,7 +35,7 @@ func Load() Config {
 			"@" + env("DB_HOST", "localhost") + ":" + env("DB_PORT", "5432") + "/" + env("DB_NAME", "glimmer") +
 			"?sslmode=" + env("DB_SSLMODE", "disable")
 	}
-	return Config{
+	cfg := Config{
 		Env:                 env("APP_ENV", "development"),
 		Port:                env("APP_PORT", "8080"),
 		JWTSecret:           env("JWT_SECRET", "dev_only_change_me_64_chars_minimum_for_real_deployments"),
@@ -51,6 +52,29 @@ func Load() Config {
 		AIDailyQuotaPerUser: quota,
 		AllowedOrigin:       env("ALLOWED_ORIGIN", "*"),
 	}
+	if err := cfg.Validate(); err != nil {
+		panic(err)
+	}
+	return cfg
+}
+
+func (c Config) Validate() error {
+	if c.Env == "development" || c.Env == "dev" || c.Env == "test" {
+		return nil
+	}
+	if c.JWTSecret == "" || c.JWTSecret == "dev_only_change_me_64_chars_minimum_for_real_deployments" {
+		return fmt.Errorf("JWT_SECRET must be configured outside development")
+	}
+	if c.AllowedOrigin == "" || c.AllowedOrigin == "*" {
+		return fmt.Errorf("ALLOWED_ORIGIN must be explicit outside development")
+	}
+	if os.Getenv("DATABASE_URL") == "" && os.Getenv("DB_PASSWORD") == "" {
+		return fmt.Errorf("DB_PASSWORD or DATABASE_URL must be configured outside development")
+	}
+	if os.Getenv("DB_PASSWORD") == "glimmer_dev_password" {
+		return fmt.Errorf("default DB_PASSWORD is not allowed outside development")
+	}
+	return nil
 }
 
 func env(key, fallback string) string {

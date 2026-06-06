@@ -7,6 +7,7 @@ import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../auth/data/auth_repository.dart';
+import '../../../../ui/composites/night_mode_button.dart';
 import '../../../../ui/primitives/glow_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
@@ -89,10 +90,11 @@ class _MinePageState extends ConsumerState<MinePage> {
     }
   }
 
-  void _logout() {
-    ref.read(authRepositoryProvider).logout();
+  Future<void> _logout() async {
+    await ref.read(authRepositoryProvider).logout();
     ref.read(authSessionProvider.notifier).state = null;
     ref.invalidate(sessionProvider);
+    if (!mounted) return;
     context.go('/login');
   }
 
@@ -100,6 +102,7 @@ class _MinePageState extends ConsumerState<MinePage> {
   Widget build(BuildContext context) {
     final sessionValue = ref.watch(sessionProvider);
     final api = ref.watch(apiClientProvider);
+    final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
       SafeArea(
@@ -130,11 +133,22 @@ class _MinePageState extends ConsumerState<MinePage> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('BOUNDARY', style: AppText.eyebrow),
+                      Text('BOUNDARY',
+                          style: AppText.onNight(AppText.eyebrow, nightMode)),
                       const SizedBox(height: 8),
-                      Text('我的', style: AppText.hero),
+                      Row(children: [
+                        Expanded(
+                          child: Text('我的',
+                              style:
+                                  AppText.onNight(AppText.hero, nightMode)),
+                        ),
+                        const NightModeButton(),
+                      ]),
                       const SizedBox(height: 8),
-                      Text('账号、同步、隐私和那些你想自己决定的边界。', style: AppText.body),
+                      Text(
+                        '账号、同步、隐私和那些你想自己决定的边界。',
+                        style: AppText.onNight(AppText.body, nightMode),
+                      ),
                       const SizedBox(height: 22),
                       _ProfileCard(
                         session: cardSession,
@@ -157,10 +171,16 @@ class _MinePageState extends ConsumerState<MinePage> {
                       ),
                       if (_notice != null) ...[
                         const SizedBox(height: 10),
-                        Text(_notice!, style: AppText.caption),
+                        Text(_notice!,
+                            style: AppText.onNight(
+                                AppText.caption, nightMode)),
                       ],
                       const SizedBox(height: 14),
                       _SyncCard(apiBaseUrl: api.baseUrl, session: cardSession),
+                      const SizedBox(height: 14),
+                      _AIStarMapCard(
+                        onTap: () => context.push('/ai/build-islands'),
+                      ),
                       const SizedBox(height: 14),
                       _BoundaryCard(onLogout: _logout),
                       const SizedBox(height: 14),
@@ -368,6 +388,59 @@ class _BoundaryCard extends StatelessWidget {
           label: const Text('退出登录'),
         ),
       ]),
+    );
+  }
+}
+
+class _AIStarMapCard extends StatelessWidget {
+  const _AIStarMapCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: softDecoration(AppColors.white),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.lilac.withValues(alpha: .22),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.auto_awesome_outlined,
+                  color: AppColors.ink, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('星图管理员', style: AppText.titleMedium),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.inkMuted, size: 20),
+          ]),
+          const SizedBox(height: 12),
+          Text(
+            '让 AI 帮你读所有光片，发现隐秘的联系，建议新的小岛。只在你的指令下工作。',
+            style: AppText.body,
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: onTap,
+            icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+            label: const Text('让 AI 帮我发现小岛'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.lilac.withValues(alpha: .18),
+              foregroundColor: AppColors.ink,
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }

@@ -47,6 +47,7 @@ dependencies:
 
   # 崩溃上报
   sentry_flutter: ^9.21.0
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
@@ -62,15 +63,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # fonts: PingFang SC 在 iOS/macOS 上是系统字体，无需打包。
-  # Android 端自动 fallback 到系统默认中文字体。
-  # 如需自定义字体，将 .ttf 放入 fonts/ 目录后取消注释：
-  # fonts:
-  #   - family: PingFang SC
-  #     fonts:
-  #       - asset: fonts/PingFangSC-Regular.ttf
-  #         weight: 400
-  #       - asset: fonts/PingFangSC-Semibold.ttf
-  #         weight: 600
-  #       - asset: fonts/PingFangSC-Bold.ttf
-  #         weight: 700
+  assets:
+    - assets/nav_icons/nav_gap.png
+    - assets/nav_icons/nav_thread.png
+    - assets/nav_icons/nav_island.png
+    - assets/nav_icons/nav_mine.png
+  fonts:
+    - family: PingFangShiGuangTi
+      fonts:
+        - asset: assets/fonts/PingFangShiGuangTi.ttf
+          weight: 400

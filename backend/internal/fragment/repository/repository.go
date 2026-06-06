@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"xiguang/backend/internal/fragment/domain"
+	"xiguang/backend/internal/island/rules"
 )
 
 type Repository interface {
@@ -19,6 +20,7 @@ type Repository interface {
 	List(ctx context.Context, userID int64, query domain.ListQuery) ([]domain.Fragment, error)
 	FindByID(ctx context.Context, userID, id int64) (domain.Fragment, error)
 	LogCreate(ctx context.Context, userID int64, clientOpID string, dto domain.Fragment) error
+	FindConfirmedMedia(ctx context.Context, userID int64, objectKeys []string) (map[string]bool, error)
 }
 
 type PG struct {
@@ -135,6 +137,27 @@ func (r *PG) LogCreate(ctx context.Context, userID int64, clientOpID string, dto
 	return err
 }
 
+func (r *PG) FindConfirmedMedia(ctx context.Context, userID int64, objectKeys []string) (map[string]bool, error) {
+	confirmed := map[string]bool{}
+	if len(objectKeys) == 0 {
+		return confirmed, nil
+	}
+	rows, err := r.db.Query(ctx, `SELECT object_key FROM media_files
+		WHERE user_id=$1 AND object_key=ANY($2) AND deleted_at IS NULL`, userID, objectKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var objectKey string
+		if err := rows.Scan(&objectKey); err != nil {
+			return nil, err
+		}
+		confirmed[objectKey] = true
+	}
+	return confirmed, rows.Err()
+}
+
 type fragmentScanner interface {
 	Scan(dest ...any) error
 }
@@ -183,11 +206,8 @@ func (r *PG) replaceFragmentMedia(ctx context.Context, tx pgx.Tx, userID, fragme
 		if objectKey == "" {
 			continue
 		}
-		fileName := filepath.Base(objectKey)
-		if fileName == "." || fileName == string(filepath.Separator) || fileName == "" {
-			fileName = "light-media"
-		}
-		mime := mimeFromName(fileName)
+		mime := mimeFromObjectKey(objectKey)
+		fileName := fileNameFromObjectKey(objectKey, mime)
 		if _, err := tx.Exec(ctx, `INSERT INTO media_files(user_id, fragment_id, media_type, object_key, file_name, mime_type)
 			VALUES($1,$2,$3,$4,$5,$6)
 			ON CONFLICT DO NOTHING`, userID, fragmentID, mediaTypeFromMime(mime), objectKey, fileName, mime); err != nil {
@@ -195,6 +215,31 @@ func (r *PG) replaceFragmentMedia(ctx context.Context, tx pgx.Tx, userID, fragme
 		}
 	}
 	return nil
+}
+
+func fileNameFromObjectKey(objectKey, mime string) string {
+	if strings.HasPrefix(objectKey, "data:image/") {
+		return "light-media" + extFromMime(mime)
+	}
+	fileName := filepath.Base(objectKey)
+	if fileName == "." || fileName == string(filepath.Separator) || fileName == "" {
+		return "light-media" + extFromMime(mime)
+	}
+	if len(fileName) > 512 {
+		return fileName[:512]
+	}
+	return fileName
+}
+
+func mimeFromObjectKey(objectKey string) string {
+	if strings.HasPrefix(objectKey, "data:image/") {
+		header := strings.SplitN(objectKey, ",", 2)[0]
+		mime := strings.TrimPrefix(strings.SplitN(header, ";", 2)[0], "data:")
+		if strings.HasPrefix(mime, "image/") {
+			return mime
+		}
+	}
+	return mimeFromName(filepath.Base(objectKey))
 }
 
 func mimeFromName(fileName string) string {
@@ -218,6 +263,19 @@ func mimeFromName(fileName string) string {
 	}
 }
 
+func extFromMime(mime string) string {
+	switch mime {
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	default:
+		return ".jpg"
+	}
+}
+
 func mediaTypeFromMime(mime string) string {
 	if strings.HasPrefix(mime, "audio/") {
 		return "audio"
@@ -232,21 +290,41 @@ func (r *PG) growIsland(ctx context.Context, tx pgx.Tx, userID, tagID int64, tag
 		WHERE f.user_id=$1 AND ft.tag_id=$2`, userID, tagID).Scan(&count); err != nil {
 		return err
 	}
-	if count < 3 {
+	if count < rules.StarPointThreshold {
 		return nil
 	}
-	status := "star_point"
-	if count >= 5 {
-		status = "formed"
-	} else if count >= 4 {
-		status = "growing"
-	}
+
+	// Read current island status to handle dormant→relit→formed transitions.
+	var currentStatus string
+	_ = tx.QueryRow(ctx, `SELECT status::text FROM islands
+		WHERE user_id=$1 AND source_tag_id=$2 AND deleted_at IS NULL`,
+		userID, tagID).Scan(&currentStatus)
+
+	status := rules.NextStatus(currentStatus, count, true)
+
 	var islandID int64
-	if err := tx.QueryRow(ctx, `INSERT INTO islands(user_id, name, status, source_tag_id, fragment_count)
+	upsertSQL := `INSERT INTO islands(user_id, name, status, source_tag_id, fragment_count)
 		VALUES($1,$2,$3,$4,$5)
 		ON CONFLICT(user_id, source_tag_id) WHERE deleted_at IS NULL DO UPDATE
-		SET status=EXCLUDED.status, fragment_count=EXCLUDED.fragment_count, updated_at=now()
-		RETURNING id`, userID, tagName, status, tagID, count).Scan(&islandID); err != nil {
+		SET status=EXCLUDED.status, fragment_count=EXCLUDED.fragment_count, updated_at=now()`
+	upsertArgs := []any{userID, tagName, status, tagID, count}
+
+	// Handle timestamp columns for dormant/relit transitions.
+	if currentStatus == "dormant" && status == "relit" {
+		upsertSQL = `INSERT INTO islands(user_id, name, status, source_tag_id, fragment_count, relit_at)
+			VALUES($1,$2,$3,$4,$5,now())
+			ON CONFLICT(user_id, source_tag_id) WHERE deleted_at IS NULL DO UPDATE
+			SET status=EXCLUDED.status, fragment_count=EXCLUDED.fragment_count,
+			    relit_at=now(), updated_at=now()`
+	} else if status == "formed" {
+		upsertSQL = `INSERT INTO islands(user_id, name, status, source_tag_id, fragment_count)
+			VALUES($1,$2,$3,$4,$5)
+			ON CONFLICT(user_id, source_tag_id) WHERE deleted_at IS NULL DO UPDATE
+			SET status=EXCLUDED.status, fragment_count=EXCLUDED.fragment_count,
+			    dormant_at=NULL, relit_at=NULL, updated_at=now()`
+	}
+
+	if err := tx.QueryRow(ctx, upsertSQL, upsertArgs...).Scan(&islandID); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx, `INSERT INTO island_fragments(island_id, fragment_id)

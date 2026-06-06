@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:xiguang/app/app.dart';
 import 'package:xiguang/app/providers.dart';
@@ -9,6 +10,7 @@ import 'test_auth_repository.dart';
 
 void main() {
   testWidgets('mobile preview tabs do not overflow', (tester) async {
+    SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);

@@ -60,7 +60,7 @@ func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 			private.Mount("/space", space.Routes())
 			private.Mount("/whitenoise", whitenoise.Routes())
 			private.Mount("/sync", sync.New(pool).Routes())
-			private.Mount("/ai", ai.New(pool).Routes())
+			private.Mount("/ai", ai.New(pool, cfg).Routes())
 		})
 	})
 	return r

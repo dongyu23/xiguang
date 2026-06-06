@@ -1,13 +1,19 @@
 import '../../shared/data/api_client.dart';
 
 class IslandApi {
-  const IslandApi(this._api);
+  IslandApi(this._api);
 
   final ApiClient _api;
 
-  Future<Map<String, dynamic>> list() => _api.get('/islands');
-  Future<Map<String, dynamic>> get(String idOrName) =>
-      _api.get('/islands/$idOrName');
-  Future<Map<String, dynamic>> fragments(String name) =>
-      _api.get('/islands/$name/fragments');
+  Future<Map<String, dynamic>> listIslands() {
+    return _api.get('/islands');
+  }
+
+  Future<Map<String, dynamic>> getIsland(String name) {
+    return _api.get('/islands/${Uri.encodeComponent(name)}');
+  }
+
+  Future<Map<String, dynamic>> listIslandFragments(String name) {
+    return _api.get('/islands/${Uri.encodeComponent(name)}/fragments');
+  }
 }

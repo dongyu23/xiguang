@@ -67,6 +67,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, http.StatusBadRequest, "empty_light", "至少留下一句话或一张图片。")
 		return
 	}
+	if errors.Is(err, service.ErrInvalidMedia) {
+		shared.WriteError(w, http.StatusBadRequest, "invalid_media", "图片需要先完成上传，再放进这束光。")
+		return
+	}
 	if err != nil {
 		shared.WriteError(w, http.StatusInternalServerError, "create_failed", "暂时无法保存这束光。")
 		return
