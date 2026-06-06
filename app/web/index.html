@@ -10,8 +10,148 @@
   <meta name="apple-mobile-web-app-title" content="Glimmer">
   <link rel="manifest" href="manifest.json">
   <title>Glimmer</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #142322;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+    }
+
+    #native-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: #fbf7ef;
+      opacity: 1;
+      transition: opacity 260ms ease;
+      pointer-events: none;
+    }
+
+    #native-splash.is-hidden {
+      opacity: 0;
+    }
+
+    #native-splash::before {
+      position: absolute;
+      inset: 0;
+      content: "";
+      background:
+        radial-gradient(circle at 52% 42%, rgba(231, 220, 172, .52), transparent 28%),
+        radial-gradient(circle at 42% 56%, rgba(127, 176, 164, .26), transparent 34%),
+        repeating-linear-gradient(
+          174deg,
+          transparent 0 72px,
+          rgba(63, 109, 96, .08) 73px,
+          transparent 75px
+        );
+      animation: native-splash-wash 1500ms ease-out both;
+    }
+
+    #native-splash-card {
+      position: relative;
+      width: min(78vw, 42vh, 430px);
+      min-width: 220px;
+      aspect-ratio: 2 / 3;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 20px 38px rgba(91, 74, 63, .12);
+      animation: native-splash-card 1500ms cubic-bezier(.2, .8, .2, 1) both;
+    }
+
+    #native-splash-card img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    #native-splash-curtain {
+      position: absolute;
+      width: min(64vw, 54vh, 430px);
+      min-width: 230px;
+      transform: translate(-52%, -10%) scale(.98);
+      opacity: .28;
+      animation: native-splash-curtain 900ms ease-out both;
+    }
+
+    @keyframes native-splash-wash {
+      0% {
+        background-color: #090d0c;
+      }
+      100% {
+        background-color: #fbf7ef;
+      }
+    }
+
+    @keyframes native-splash-card {
+      0% {
+        opacity: 0;
+        transform: translateY(24px) scale(.94);
+      }
+      45%,
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes native-splash-curtain {
+      0% {
+        opacity: 0;
+        transform: translate(-68%, -12%) scale(.96);
+      }
+      42% {
+        opacity: .38;
+      }
+      100% {
+        opacity: 0;
+        transform: translate(-44%, -8%) scale(1.01);
+      }
+    }
+  </style>
+  <script>
+    (function () {
+      var hash = window.location.hash;
+      if (!hash || hash.indexOf("#/") !== 0) return;
+      var normalizedPath = hash.slice(1);
+      window.history.replaceState(null, "", normalizedPath);
+    })();
+  </script>
 </head>
 <body>
+  <div id="native-splash" aria-hidden="true">
+    <img
+      id="native-splash-curtain"
+      src="assets/assets/picture/%E7%AA%97%E5%B8%98%E8%88%9E%E5%8A%A8.gif"
+      alt=""
+    >
+    <div id="native-splash-card">
+      <img src="assets/assets/picture/%E6%89%93%E5%BC%80%E5%B1%95%E7%A4%BA.png" alt="">
+    </div>
+  </div>
+  <script>
+    window.addEventListener("flutter-first-frame", function () {
+      var splash = document.getElementById("native-splash");
+      if (!splash) return;
+      window.setTimeout(function () {
+        splash.classList.add("is-hidden");
+        window.setTimeout(function () {
+          splash.remove();
+        }, 300);
+      }, 120);
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

@@ -22,22 +22,22 @@ class IslandDetailPage extends ConsumerStatefulWidget {
 }
 
 class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
-  late String _name;
+  late String _idOrName;
   late Future<_IslandDetailData> _detail;
 
   @override
   void initState() {
     super.initState();
-    _name = Uri.decodeComponent(widget.id);
-    _detail = _load(ref.read(islandRepositoryProvider), _name);
+    _idOrName = widget.id;
+    _detail = _load(ref.read(islandRepositoryProvider), _idOrName);
   }
 
   @override
   void didUpdateWidget(covariant IslandDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.id != widget.id) {
-      _name = Uri.decodeComponent(widget.id);
-      _detail = _load(ref.read(islandRepositoryProvider), _name);
+      _idOrName = widget.id;
+      _detail = _load(ref.read(islandRepositoryProvider), _idOrName);
     }
   }
 
@@ -71,7 +71,7 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
               final data = snapshot.data ??
                   _IslandDetailData(
                     island: IslandModel(
-                      name: _name,
+                      name: _idOrName,
                       status: 'star_point',
                       fragmentCount: 0,
                       description: '这些光因为同一个主题靠近。',
@@ -114,8 +114,11 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
                         else
                           ...data.fragments.map((fragment) => LightFragmentCard(
                                 fragment: fragment.toLightFragment(),
+                                dense: true,
+                                showAttachmentBadge: true,
+                                showTitle: false,
                                 onTap: () =>
-                                    context.push('/weave/${fragment.id}'),
+                                    context.push('/fragments/${fragment.id}'),
                               )),
                       ],
                     ),
@@ -129,42 +132,70 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
     ]);
   }
 
-  void _showFragmentPicker(BuildContext context, IslandRepository repository) {
+  Future<void> _showFragmentPicker(
+    BuildContext context,
+    IslandRepository repository,
+  ) async {
+    final _IslandDetailData current;
+    try {
+      current = await _detail;
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('小岛还没有加载完成，稍后再试。')),
+      );
+      return;
+    }
+    if (!context.mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => FragmentPickerSheet(
+        excludedFragmentIds: {
+          for (final fragment in current.fragments) fragment.id,
+        },
         onConfirm: (fragmentIds) async {
-          final island = await repository.getIsland(_name);
-          if (island != null && island.islandId > 0) {
-            await repository.addFragments(island.islandId, fragmentIds);
-            ref.invalidate(islandsProvider);
-            if (!mounted) return;
-            setState(() {
-              _detail = _load(repository, _name);
-            });
+          final data = await _detail;
+          final islandId = data.island.islandId;
+          if (islandId <= 0) {
+            if (!context.mounted) return false;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('这座自动生长的小岛暂时不能手动添加光片。')),
+            );
+            return false;
           }
+          final updated = await repository.addFragments(islandId, fragmentIds);
+          final nextDetail = _load(repository, _idOrName, seed: updated);
+          if (!mounted) return false;
+          setState(() {
+            _detail = nextDetail;
+          });
+          ref.invalidate(islandsProvider);
+          await nextDetail;
+          return true;
         },
       ),
     );
   }
 
-  Future<_IslandDetailData> _load(
-      IslandRepository repository, String name) async {
-    final results = await Future.wait<Object?>([
-      repository.getIsland(name),
-      repository.listIslandFragments(name),
-    ]);
+  Future<_IslandDetailData> _load(IslandRepository repository, String idOrName,
+      {IslandModel? seed}) async {
+    final island = seed ?? await repository.getIsland(idOrName);
+    final displayName = island?.name ?? idOrName;
+    final fragments = await repository.listIslandFragments(
+      displayName,
+      islandId: island?.islandId,
+    );
     return _IslandDetailData(
-      island: (results[0] as IslandModel?) ??
+      island: island ??
           IslandModel(
-            name: name,
+            name: displayName,
             status: 'star_point',
             fragmentCount: 0,
             description: '这些光因为同一个主题靠近。',
           ),
-      fragments: results[1] as List<LightFragmentModel>,
+      fragments: fragments,
     );
   }
 

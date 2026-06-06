@@ -7,6 +7,9 @@ class FragmentEditPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(body: Center(child: Text('编辑光片: $id')));
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Center(child: Text('编辑光片: $id')),
+    );
   }
 }

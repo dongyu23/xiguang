@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
@@ -15,14 +16,14 @@ class AiBuildIslandsPage extends ConsumerStatefulWidget {
   const AiBuildIslandsPage({super.key});
 
   @override
-  ConsumerState<AiBuildIslandsPage> createState() =>
-      _AiBuildIslandsPageState();
+  ConsumerState<AiBuildIslandsPage> createState() => _AiBuildIslandsPageState();
 }
 
 class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     with TickerProviderStateMixin {
   int _phase = 0;
   String? _error;
+  String? _outcomeStatus;
   Map<String, dynamic>? _result;
   final _accepted = <String>{};
   late final AnimationController _starController;
@@ -63,17 +64,32 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
       final body = await api.buildIslands();
       if (!mounted) return;
       if (body['status'] == 'rate_limited') {
-        setState(() => _error = body['message'] as String? ?? '今天已经整理过啦。');
+        setState(() {
+          _outcomeStatus = 'rate_limited';
+          _error = body['message'] as String? ?? '今天已经整理过啦。';
+        });
       } else if (body['status'] == 'not_enough') {
-        setState(() => _error = body['message'] as String? ?? '光还不够多。');
-      } else if (body['status'] == 'error') {
-        setState(() => _error = body['message'] as String? ?? '星图管理员暂时无法工作。');
+        setState(() {
+          _outcomeStatus = 'not_enough';
+          _error = body['message'] as String? ?? '光还不够多。';
+        });
+      } else if (body['status'] == 'error' || body['status'] == 'parse_error') {
+        setState(() {
+          _outcomeStatus = 'error';
+          _error = body['message'] as String? ?? '星图管理员暂时无法工作。';
+        });
       } else {
-        setState(() => _result = body);
+        setState(() {
+          _outcomeStatus = body['status'] as String? ?? 'success';
+          _result = body;
+        });
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '星图管理员暂时无法工作。请稍后再试。');
+      setState(() {
+        _outcomeStatus = 'error';
+        _error = '星图管理员暂时无法工作。请稍后再试。';
+      });
     }
   }
 
@@ -137,11 +153,11 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
             height: 200,
             child: AnimatedBuilder(
               animation: Listenable.merge([_starController, _pulseController]),
-              builder: (_, __) =>
-                  CustomPaint(painter: _AnalyzingPainter(
-                    progress: _starController.value,
-                    pulse: _pulseController.value,
-                  )),
+              builder: (_, __) => CustomPaint(
+                  painter: _AnalyzingPainter(
+                progress: _starController.value,
+                pulse: _pulseController.value,
+              )),
             ),
           ),
           const SizedBox(height: 32),
@@ -166,7 +182,8 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.auto_awesome_outlined, size: 64, color: AppColors.inkMuted),
+          const Icon(Icons.auto_awesome_outlined,
+              size: 64, color: AppColors.inkMuted),
           const SizedBox(height: 24),
           Text(_error!, style: AppText.body, textAlign: TextAlign.center),
           const SizedBox(height: 24),
@@ -174,21 +191,30 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
             onPressed: () {
               setState(() {
                 _error = null;
+                _outcomeStatus = null;
                 _phase = 0;
               });
               _startAnalysis();
             },
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('再试一次'),
+            label: Text(_outcomeStatus == 'not_enough' ? '重新看看' : '再试一次'),
           ),
+          if (_outcomeStatus == 'not_enough') ...[
+            const SizedBox(height: 10),
+            TextButton.icon(
+              onPressed: () => context.go('/capture'),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('去捕一束光'),
+            ),
+          ],
         ]),
       ),
     );
   }
 
   Widget _buildResults() {
-    final islands =
-        (_result!['islands'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+    final islands = (_result!['islands'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
     if (islands.isEmpty) {
       return Center(
         child: Text(
@@ -228,13 +254,17 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
   Widget _buildIslandCard(Map<String, dynamic> island) {
     final name = island['name'] as String;
     final accepted = _accepted.contains(name);
-    final fragmentIds = (island['fragment_ids'] as List<dynamic>).map((e) => (e as num).toInt()).toList();
+    final fragmentIds = (island['fragment_ids'] as List<dynamic>)
+        .map((e) => (e as num).toInt())
+        .toList();
     final confidence = island['confidence'] as String? ?? 'medium';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(18),
-      decoration: softDecoration(accepted ? AppColors.teaGreen.withValues(alpha: .08) : AppColors.white),
+      decoration: softDecoration(accepted
+          ? AppColors.teaGreen.withValues(alpha: .08)
+          : AppColors.white),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

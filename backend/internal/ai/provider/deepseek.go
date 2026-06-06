@@ -64,6 +64,14 @@ type chatResponse struct {
 }
 
 func (p *DeepSeek) Chat(ctx context.Context, systemPrompt, userMessage string) (string, int, error) {
+	return p.chat(ctx, systemPrompt, userMessage, true)
+}
+
+func (p *DeepSeek) TextChat(ctx context.Context, systemPrompt, userMessage string) (string, int, error) {
+	return p.chat(ctx, systemPrompt, userMessage, false)
+}
+
+func (p *DeepSeek) chat(ctx context.Context, systemPrompt, userMessage string, jsonResponse bool) (string, int, error) {
 	if p.apiKey == "" {
 		return "", 0, ErrNotConfigured
 	}
@@ -76,9 +84,11 @@ func (p *DeepSeek) Chat(ctx context.Context, systemPrompt, userMessage string) (
 		},
 		Temperature: 0.7,
 		MaxTokens:   p.maxTokens,
-		ResponseFormat: &struct {
+	}
+	if jsonResponse {
+		reqBody.ResponseFormat = &struct {
 			Type string `json:"type"`
-		}{Type: "json_object"},
+		}{Type: "json_object"}
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)

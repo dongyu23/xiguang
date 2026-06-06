@@ -62,6 +62,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: Stack(children: [
         const Positioned.fill(child: AtmosphereBackground()),
         SafeArea(

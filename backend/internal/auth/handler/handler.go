@@ -110,14 +110,10 @@ func (h *Handler) updateMe(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, http.StatusBadRequest, "bad_request", "请求格式不正确。")
 		return
 	}
-	aiEnabled := false
-	if req.AIEnabled != nil {
-		aiEnabled = *req.AIEnabled
-	}
 	user, err := h.service.UpdateMe(r.Context(), id, domain.UpdateUserParams{
 		Nickname:    req.Nickname,
 		AvatarKey:   req.AvatarKey,
-		AIEnabled:   aiEnabled,
+		AIEnabled:   req.AIEnabled,
 		PrivacyMode: req.PrivacyMode,
 	})
 	if err != nil {

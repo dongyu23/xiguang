@@ -7,7 +7,7 @@ import (
 )
 
 func TestStaticModulesUseCLAUDELayeredStructure(t *testing.T) {
-	for _, module := range []string{"emotion", "space", "whitenoise"} {
+	for _, module := range []string{"asr", "emotion", "space", "whitenoise"} {
 		for _, layer := range []string{"domain", "service", "handler"} {
 			assertModuleLayer(t, module, layer)
 		}
@@ -32,6 +32,7 @@ func TestCLAUDEExtendedModuleLayersExist(t *testing.T) {
 		layer  string
 	}{
 		{"ai", "provider"},
+		{"asr", "provider"},
 		{"island", "rules"},
 		{"media", "processor"},
 		{"media", "storage"},

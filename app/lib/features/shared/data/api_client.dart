@@ -21,6 +21,7 @@ class ApiClient {
 
   String get baseUrl => _dio.options.baseUrl;
   bool get hasToken => _accessToken != null;
+  String? get accessToken => _accessToken;
   String? debugAccessTokenForVerification() => _accessToken;
 
   set accessToken(String? token) {
@@ -41,12 +42,15 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> post(
-      String path, Map<String, dynamic> body) async {
+    String path,
+    Map<String, dynamic> body, {
+    Options? options,
+  }) async {
     return _send(
       () => _dio.post<Map<String, dynamic>>(
         path,
         data: body,
-        options: Options(headers: _authHeaders()),
+        options: _mergeOptions(options),
       ),
       allowRefresh: path != '/auth/refresh',
     );
@@ -95,6 +99,14 @@ class ApiClient {
     final token = _accessToken;
     if (token == null) return const {};
     return {'Authorization': 'Bearer $token'};
+  }
+
+  Options _mergeOptions(Options? options) {
+    final headers = <String, dynamic>{
+      ...?options?.headers,
+      ..._authHeaders(),
+    };
+    return (options ?? Options()).copyWith(headers: headers);
   }
 
   Map<String, dynamic> _unwrap(Map<String, dynamic>? body) {

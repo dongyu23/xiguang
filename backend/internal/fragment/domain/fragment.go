@@ -30,6 +30,7 @@ type UpdateParams struct {
 	ContentText string
 	Emotion     string
 	Tags        []string
+	MediaURLs   *[]string
 }
 
 type ListQuery struct {

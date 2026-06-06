@@ -24,6 +24,7 @@ func (h *Handler) Routes() http.Handler {
 	r.Post("/glow-summary", h.glowSummary)
 	r.Get("/requests", h.requests)
 	r.Post("/build-islands", h.buildIslands)
+	r.Post("/polish", h.polish)
 	return r
 }
 
@@ -60,4 +61,15 @@ func (h *Handler) buildIslands(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusInternalServerError
 	}
 	shared.WriteJSON(w, status, result)
+}
+
+func (h *Handler) polish(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	var req domain.PolishRequest
+	if err := shared.DecodeJSON(r, &req); err != nil {
+		shared.WriteError(w, http.StatusBadRequest, "bad_request", "请求格式不正确。")
+		return
+	}
+	result := h.service.PolishFragment(r.Context(), userID, req)
+	shared.WriteJSON(w, http.StatusOK, result)
 }

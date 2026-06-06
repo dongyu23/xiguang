@@ -5,36 +5,61 @@ import '../../design/tokens/typography.dart';
 import 'media_image.dart';
 
 class ImageGrid extends StatelessWidget {
-  const ImageGrid({super.key, required this.urls});
+  const ImageGrid({super.key, required this.urls, this.onImageTap});
 
   final List<String> urls;
+  final ValueChanged<String>? onImageTap;
 
   @override
   Widget build(BuildContext context) {
-    final images =
-        urls.where((url) => !url.startsWith('audio-cue://')).toList();
-    final audio = urls.where((url) => url.startsWith('audio-cue://')).toList();
+    final images = urls.where((url) => !_isAudioMedia(url)).toList();
+    final audio = urls.where(_isAudioMedia).toList();
     return GridView.count(
       crossAxisCount: 3,
       shrinkWrap: true,
       mainAxisSpacing: 8,
       crossAxisSpacing: 8,
       children: [
-        ...images.map((url) => _PreviewImage(url: url)),
+        ...images.map((url) => _PreviewImage(url: url, onTap: onImageTap)),
         ...audio.map((url) => _AudioPreview(url: url)),
       ],
     );
   }
 }
 
+bool _isAudioMedia(String value) {
+  final media = value.trim().toLowerCase();
+  return media.startsWith('audio-cue://') ||
+      media.startsWith('data:audio/') ||
+      media.endsWith('.m4a') ||
+      media.endsWith('.mp3') ||
+      media.endsWith('.wav') ||
+      media.endsWith('.aac') ||
+      media.endsWith('.ogg') ||
+      media.endsWith('.opus');
+}
+
 class _PreviewImage extends StatelessWidget {
-  const _PreviewImage({required this.url});
+  const _PreviewImage({required this.url, this.onTap});
 
   final String url;
+  final ValueChanged<String>? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return MediaImage(source: url, fallback: _fallback);
+    final image = MediaImage(source: url, fallback: _fallback);
+    if (onTap == null) return image;
+    return Semantics(
+      button: true,
+      label: '查看照片',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => onTap!(url),
+          child: image,
+        ),
+      ),
+    );
   }
 
   Widget get _fallback => Container(

@@ -12,6 +12,7 @@ import (
 
 type fakeAuthRepo struct {
 	refreshTokens map[string]int64
+	lastUpdate    domain.UpdateUserParams
 }
 
 func (f *fakeAuthRepo) CreateUser(ctx context.Context, username, passwordHash, nickname string) (domain.User, error) {
@@ -31,7 +32,12 @@ func (f *fakeAuthRepo) FindByID(ctx context.Context, id int64) (domain.User, err
 }
 
 func (f *fakeAuthRepo) UpdateUser(ctx context.Context, id int64, params domain.UpdateUserParams) (domain.User, error) {
-	return domain.User{}, nil
+	f.lastUpdate = params
+	user := domain.User{ID: id, PrivacyMode: params.PrivacyMode}
+	if params.AIEnabled != nil {
+		user.AIEnabled = *params.AIEnabled
+	}
+	return user, nil
 }
 
 func (f *fakeAuthRepo) InsertRefreshToken(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error {
@@ -86,5 +92,25 @@ func TestRefreshRotatesRefreshToken(t *testing.T) {
 	}
 	if second.RefreshToken == first.RefreshToken {
 		t.Fatal("refresh token should rotate on every refresh")
+	}
+}
+
+func TestUpdateMeKeepsAIEnabledOptional(t *testing.T) {
+	repo := &fakeAuthRepo{refreshTokens: map[string]int64{}}
+	svc := New(repo, config.Config{})
+
+	if _, err := svc.UpdateMe(context.Background(), 7, domain.UpdateUserParams{}); err != nil {
+		t.Fatalf("update without ai_enabled failed: %v", err)
+	}
+	if repo.lastUpdate.AIEnabled != nil {
+		t.Fatal("missing ai_enabled should remain nil so repository can preserve the stored value")
+	}
+
+	disabled := false
+	if _, err := svc.UpdateMe(context.Background(), 7, domain.UpdateUserParams{AIEnabled: &disabled}); err != nil {
+		t.Fatalf("update with ai_enabled=false failed: %v", err)
+	}
+	if repo.lastUpdate.AIEnabled == nil || *repo.lastUpdate.AIEnabled {
+		t.Fatal("explicit ai_enabled=false should be preserved")
 	}
 }

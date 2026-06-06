@@ -5,8 +5,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../app/providers.dart';
@@ -14,11 +15,12 @@ import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
-import '../../data/fragment_repository.dart';
 import '../../../../ui/composites/emotion_picker.dart';
-import '../../../../ui/composites/light_card.dart';
 import '../../../../ui/composites/night_mode_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
+import 'audio_capture_file_stub.dart'
+    if (dart.library.io) 'audio_capture_file_io.dart';
+import 'image_attachment_picker.dart';
 
 /// 捕光页 — 首页，快速记录入口
 ///
@@ -45,9 +47,9 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
 
   @override
   Widget build(BuildContext context) {
-    final fragments = ref.watch(fragmentsProvider);
     final nightMode = ref.watch(nightModeProvider);
     final moodColor = AppColors.emotionColor(_effectiveEmotion);
+    final vinylAudioAsset = _vinylAudioForEmotion(_effectiveEmotion);
     return _XiguangPage(
       moodColor: moodColor,
       nightMode: nightMode,
@@ -61,7 +63,11 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
             nightMode: nightMode,
           ),
           const SizedBox(height: 12),
-          _BreathingLightBanner(moodColor: moodColor, nightMode: nightMode),
+          _BreathingLightBanner(
+            moodColor: moodColor,
+            nightMode: nightMode,
+            audioAsset: vinylAudioAsset,
+          ),
           const SizedBox(height: 14),
           _QuickRecordComposer(
             selectedEmotion: _emotion,
@@ -69,33 +75,6 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
             onEmotionChanged: (emotion) => setState(() => _emotion = emotion),
             onCustomEmotionChanged: (value) =>
                 setState(() => _customEmotion = value),
-          ),
-          const SizedBox(height: 30),
-          _SectionTitle(
-            title: '刚刚留下的光',
-            action: fragments.when(
-                data: (items) => '${items.length} 束光',
-                loading: () => '读取中',
-                error: (_, __) => '本地光片'),
-            onTap: () => ref.read(fragmentsProvider.notifier).refresh(),
-          ),
-          const SizedBox(height: 16),
-          fragments.when(
-            data: (items) => Column(
-                children: items
-                    .take(3)
-                    .map((f) => LightFragmentCard(
-                          fragment: f.toLightFragment(),
-                          compact: true,
-                          onTap: () => context.push('/weave/${f.id}'),
-                        ))
-                    .toList()),
-            loading: () => const Center(
-                child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: CircularProgressIndicator())),
-            error: (error, _) =>
-                Text('这束光先留在本地：$error', style: AppText.caption),
           ),
         ],
       ),
@@ -108,6 +87,14 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
     }
     return _emotion == '自定义' ? '说不清' : _emotion;
   }
+}
+
+String _vinylAudioForEmotion(String emotion) {
+  return switch (emotion) {
+    '开心' || '被击中' || '混乱' => 'assets/audio/Light music 律动欢快.m4a',
+    '失落' => 'assets/audio/haoyvnlai(1).m4a',
+    _ => 'assets/audio/Light music 舒缓.m4a',
+  };
 }
 
 // --- Shared widgets (moved from original main.dart) ---
@@ -126,7 +113,7 @@ class _XiguangPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
-      final hp = constraints.maxWidth > 520 ? 34.0 : 22.0;
+      final hp = constraints.maxWidth > 520 ? 34.0 : 16.0;
       return Stack(children: [
         const Positioned.fill(child: AtmosphereBackground()),
         Positioned.fill(
@@ -257,10 +244,12 @@ class _BreathingLightBanner extends StatelessWidget {
   const _BreathingLightBanner({
     required this.moodColor,
     required this.nightMode,
+    required this.audioAsset,
   });
 
   final Color moodColor;
   final bool nightMode;
+  final String audioAsset;
 
   @override
   Widget build(BuildContext context) {
@@ -312,6 +301,7 @@ class _BreathingLightBanner extends StatelessWidget {
               size: compact ? 96 : 124,
               moodColor: moodColor,
               nightMode: nightMode,
+              audioAsset: audioAsset,
             ),
           ),
           Positioned.fill(
@@ -420,50 +410,133 @@ class _VinylLightSource extends StatefulWidget {
     required this.size,
     required this.moodColor,
     required this.nightMode,
+    required this.audioAsset,
   });
 
   final double size;
   final Color moodColor;
   final bool nightMode;
+  final String audioAsset;
 
   @override
   State<_VinylLightSource> createState() => _VinylLightSourceState();
 }
 
 class _VinylLightSourceState extends State<_VinylLightSource>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+    with TickerProviderStateMixin {
+  late final AnimationController _rotationController;
+  late final AnimationController _needleController;
+  AudioPlayer? _player;
+  String? _loadedAsset;
+  bool _playing = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _rotationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4200),
     );
+    _needleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
+    _needleController.value = 1;
     if (!_isRunningWidgetTest) {
-      _controller.repeat();
+      _player = AudioPlayer();
+      unawaited(_player!.setLoopMode(LoopMode.one));
+      unawaited(_ensureAudioAsset(widget.audioAsset));
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _VinylLightSource oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.audioAsset != widget.audioAsset) {
+      unawaited(_switchAudioAsset(resume: _playing));
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    unawaited(_player?.dispose());
+    _rotationController.dispose();
+    _needleController.dispose();
     super.dispose();
+  }
+
+  Future<void> _ensureAudioAsset(String asset) async {
+    final player = _player;
+    if (player == null || _loadedAsset == asset) return;
+    await player.setAsset(asset);
+    _loadedAsset = asset;
+  }
+
+  Future<void> _switchAudioAsset({required bool resume}) async {
+    try {
+      await _ensureAudioAsset(widget.audioAsset);
+      if (!mounted || !_playing || !resume) return;
+      await _player?.play();
+    } catch (_) {
+      if (!mounted || !resume) return;
+      _pauseVisualPlayback();
+    }
+  }
+
+  Future<void> _togglePlayback() async {
+    if (_playing) {
+      _pauseVisualPlayback();
+      try {
+        await _player?.pause();
+      } catch (_) {}
+      return;
+    }
+
+    _playVisualPlayback();
+    try {
+      await _ensureAudioAsset(widget.audioAsset);
+      if (!mounted || !_playing) return;
+      await _player?.play();
+    } catch (_) {
+      if (mounted) _pauseVisualPlayback();
+    }
+  }
+
+  void _playVisualPlayback() {
+    setState(() => _playing = true);
+    _needleController.reverse();
+    if (!_isRunningWidgetTest) {
+      _rotationController.repeat();
+    }
+  }
+
+  void _pauseVisualPlayback() {
+    setState(() => _playing = false);
+    _needleController.forward();
+    _rotationController.stop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) => SizedBox(
-        width: widget.size,
-        height: widget.size,
-        child: CustomPaint(
-          painter: _VinylLightPainter(
-            phase: _controller.value * pi * 2,
-            moodColor: widget.moodColor,
-            nightMode: widget.nightMode,
+    return Semantics(
+      button: true,
+      label: _playing ? '暂停黑胶' : '播放黑胶',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _togglePlayback,
+        child: AnimatedBuilder(
+          animation: Listenable.merge([_rotationController, _needleController]),
+          builder: (context, _) => SizedBox(
+            width: widget.size,
+            height: widget.size,
+            child: CustomPaint(
+              painter: _VinylLightPainter(
+                phase: _rotationController.value * pi * 2,
+                needleLift: _needleController.value,
+                moodColor: widget.moodColor,
+                nightMode: widget.nightMode,
+              ),
+            ),
           ),
         ),
       ),
@@ -474,11 +547,13 @@ class _VinylLightSourceState extends State<_VinylLightSource>
 class _VinylLightPainter extends CustomPainter {
   const _VinylLightPainter({
     required this.phase,
+    required this.needleLift,
     required this.moodColor,
     required this.nightMode,
   });
 
   final double phase;
+  final double needleLift;
   final Color moodColor;
   final bool nightMode;
 
@@ -562,20 +637,35 @@ class _VinylLightPainter extends CustomPainter {
       ..strokeWidth = 3.2
       ..strokeCap = StrokeCap.round;
     final armStart = Offset(size.width * .83, size.height * .14);
-    final armEnd = Offset(size.width * .72, size.height * .78);
+    final armEndOnDisc = Offset(size.width * .72, size.height * .78);
+    final armEndResting = Offset(size.width * .91, size.height * .42);
+    final armEnd = Offset.lerp(armEndOnDisc, armEndResting, needleLift)!;
+    final needleEndOnDisc = Offset(size.width * .66, size.height * .88);
+    final needleEndResting = Offset(size.width * .96, size.height * .48);
+    final needleEnd =
+        Offset.lerp(needleEndOnDisc, needleEndResting, needleLift)!;
+    final liftedShadow = Paint()
+      ..color = Colors.black.withValues(alpha: .12 * needleLift)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.4
+      ..strokeCap = StrokeCap.round;
+    if (needleLift > 0) {
+      canvas.drawLine(
+        armStart.translate(1.8, 2.4),
+        armEnd.translate(1.8, 2.4),
+        liftedShadow,
+      );
+    }
     canvas.drawLine(armStart, armEnd, toneArm);
     canvas.drawCircle(armStart, 5, Paint()..color = AppColors.ink);
     canvas.drawCircle(armEnd, 5, Paint()..color = AppColors.ink);
-    canvas.drawLine(
-      armEnd,
-      Offset(size.width * .66, size.height * .88),
-      toneArm,
-    );
+    canvas.drawLine(armEnd, needleEnd, toneArm);
   }
 
   @override
   bool shouldRepaint(covariant _VinylLightPainter oldDelegate) {
     return oldDelegate.phase != phase ||
+        oldDelegate.needleLift != needleLift ||
         oldDelegate.moodColor != moodColor ||
         oldDelegate.nightMode != nightMode;
   }
@@ -652,12 +742,14 @@ class _MusicTrailPainter extends CustomPainter {
     final path = Path()
       ..moveTo(start.dx, start.dy)
       ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
-    final trail = Paint()
-      ..color = AppColors.white.withValues(alpha: .34)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round;
-    canvas.drawPath(path, trail);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withValues(alpha: compact ? 0.08 : 0.1)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = compact ? 1.2 : 1.6
+        ..strokeCap = StrokeCap.round,
+    );
 
     for (var i = 0; i < 5; i++) {
       final t = (phase + i * .18) % 1.0;
@@ -666,6 +758,7 @@ class _MusicTrailPainter extends CustomPainter {
       final alpha = sin(t * pi).clamp(.0, 1.0);
       _drawNote(
         canvas,
+        size,
         Offset(point.dx, point.dy - lift),
         i,
         alpha,
@@ -682,9 +775,14 @@ class _MusicTrailPainter extends CustomPainter {
     );
   }
 
-  void _drawNote(
-      Canvas canvas, Offset p, int index, double alpha, double scale) {
+  void _drawNote(Canvas canvas, Size size, Offset p, int index, double alpha,
+      double scale) {
     final noteColor = index.isEven ? AppColors.ink : color;
+    final margin = 18 * scale;
+    final point = Offset(
+      p.dx.clamp(margin, size.width - margin).toDouble(),
+      p.dy.clamp(margin + 18 * scale, size.height - margin).toDouble(),
+    );
     final fill = Paint()
       ..color = noteColor.withValues(alpha: .35 + alpha * .55)
       ..style = PaintingStyle.fill;
@@ -693,24 +791,41 @@ class _MusicTrailPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2 * scale
       ..strokeCap = StrokeCap.round;
-    canvas.drawCircle(p, 4.2 * scale, fill);
-    if (index == 1 || index == 3) {
-      canvas.drawLine(
-        Offset(p.dx + 3 * scale, p.dy),
-        Offset(p.dx + 3 * scale, p.dy - 20 * scale),
-        stroke,
+    final head = Rect.fromCenter(
+      center: point,
+      width: 9.6 * scale,
+      height: 7.2 * scale,
+    );
+    canvas.drawOval(head, fill);
+
+    final stemBottom = Offset(point.dx + 4 * scale, point.dy - 1 * scale);
+    final stemTop = Offset(point.dx + 4 * scale, point.dy - 22 * scale);
+    canvas.drawLine(stemBottom, stemTop, stroke);
+
+    final flagPath = Path()
+      ..moveTo(stemTop.dx, stemTop.dy)
+      ..cubicTo(
+        stemTop.dx + 8 * scale,
+        stemTop.dy + 1.5 * scale,
+        stemTop.dx + 12 * scale,
+        stemTop.dy + 7 * scale,
+        stemTop.dx + 6 * scale,
+        stemTop.dy + 11 * scale,
       );
-      canvas.drawLine(
-        Offset(p.dx + 3 * scale, p.dy - 20 * scale),
-        Offset(p.dx + 12 * scale, p.dy - 16 * scale),
-        stroke,
-      );
-    } else if (index == 4) {
-      canvas.drawLine(
-        Offset(p.dx + 3 * scale, p.dy),
-        Offset(p.dx + 3 * scale, p.dy - 15 * scale),
-        stroke,
-      );
+    canvas.drawPath(flagPath, stroke);
+
+    if (index == 2 || index == 4) {
+      final lowerFlag = Path()
+        ..moveTo(stemTop.dx, stemTop.dy + 6 * scale)
+        ..cubicTo(
+          stemTop.dx + 7 * scale,
+          stemTop.dy + 7 * scale,
+          stemTop.dx + 10 * scale,
+          stemTop.dy + 12 * scale,
+          stemTop.dx + 5 * scale,
+          stemTop.dy + 15 * scale,
+        );
+      canvas.drawPath(lowerFlag, stroke);
     }
   }
 
@@ -748,29 +863,27 @@ class _QuickRecordComposer extends ConsumerStatefulWidget {
 
 class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   static const _draftTextKey = 'capture_draft_text';
-  static const _draftTagsKey = 'capture_draft_tags';
   static const _draftEmotionKey = 'capture_draft_emotion';
   static const _draftCustomEmotionKey = 'capture_draft_custom_emotion';
 
   final _controller = TextEditingController();
-  final _tagController = TextEditingController();
   final _picker = ImagePicker();
+  final _attachmentRecorder = AudioRecorder();
   final List<XFile> _images = [];
   Timer? _draftTimer;
   Timer? _audioTimer;
   bool _recordingAudio = false;
   int _audioSeconds = 0;
+  String? _audioPath;
   bool _saving = false;
   bool _restoredDraft = false;
   bool _draftSaved = false;
   bool _suppressDraftSave = false;
-  LightFragmentModel? _lastCreated;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_handleDraftInputChanged);
-    _tagController.addListener(_handleDraftInputChanged);
     _restoreDraft();
   }
 
@@ -787,10 +900,9 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   void dispose() {
     _draftTimer?.cancel();
     _audioTimer?.cancel();
+    unawaited(_attachmentRecorder.dispose());
     _controller.removeListener(_handleDraftInputChanged);
-    _tagController.removeListener(_handleDraftInputChanged);
     _controller.dispose();
-    _tagController.dispose();
     super.dispose();
   }
 
@@ -798,7 +910,12 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 430;
     return Container(
-      padding: EdgeInsets.fromLTRB(18, compact ? 18 : 20, 18, 18),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 14 : 18,
+        compact ? 14 : 20,
+        compact ? 14 : 18,
+        compact ? 14 : 18,
+      ),
       decoration: softDecoration(AppColors.white),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('把这一瞬间放在这里', style: AppText.titleMedium),
@@ -827,19 +944,20 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
         ),
         const SizedBox(height: 10),
         Container(
-          constraints: BoxConstraints(minHeight: compact ? 122 : 144),
+          constraints: BoxConstraints(minHeight: compact ? 104 : 144),
           decoration: BoxDecoration(
               color: AppColors.paper,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: AppColors.line)),
           child: TextField(
+            key: const ValueKey('capture-content'),
             controller: _controller,
-            minLines: compact ? 4 : 6,
+            minLines: compact ? 3 : 6,
             maxLines: 8,
             decoration: const InputDecoration(
               hintText: '今天发生了什么？',
               border: InputBorder.none,
-              contentPadding: EdgeInsets.all(14),
+              contentPadding: EdgeInsets.all(12),
             ),
           ),
         ),
@@ -857,16 +975,6 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
             customValue: widget.customEmotion,
             onCustomChanged: widget.onCustomEmotionChanged,
             onSelected: (e) => widget.onEmotionChanged(e)),
-        const SizedBox(height: 14),
-        TextField(
-          controller: _tagController,
-          decoration: InputDecoration(
-            hintText: '可选：给光命名，用空格分隔，例如：雨天 通勤 微光',
-            prefixIcon: const Icon(Icons.tag_rounded),
-            filled: true,
-            fillColor: AppColors.white.withValues(alpha: .72),
-          ),
-        ),
         const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
@@ -932,13 +1040,9 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
           _AudioCuePreview(
             seconds: _audioSeconds,
             recording: _recordingAudio,
-            onStop: _recordingAudio ? _stopAudio : null,
-            onRemove: _clearAudio,
+            onStop: _recordingAudio ? () => unawaited(_stopAudio()) : null,
+            onRemove: () => unawaited(_clearAudio()),
           ),
-        ],
-        if (_lastCreated != null) ...[
-          const SizedBox(height: 12),
-          _FreshLightHint(fragment: _lastCreated!),
         ],
       ]),
     );
@@ -946,11 +1050,10 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
 
   Future<void> _pickImages() async {
     try {
-      final picked = await _picker.pickMultiImage(
+      final picked = await pickImageAttachments(
+        context: context,
+        picker: _picker,
         limit: 6,
-        maxWidth: 960,
-        maxHeight: 960,
-        imageQuality: 76,
       );
       if (picked.isEmpty) return;
       setState(() {
@@ -962,7 +1065,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('暂时无法打开相册。'),
+          content: Text('暂时无法打开图片选择。'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -978,21 +1081,14 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       );
       return;
     }
-    final tags = _tagController.text
-        .split(RegExp(r'[\s,，#]+'))
-        .map((tag) => tag.trim())
-        .where((tag) => tag.isNotEmpty)
-        .toSet()
-        .toList();
     setState(() => _saving = true);
     final mediaUrls = await _mediaUrlsForSave();
     if (!mounted) return;
-    LightFragmentModel? created;
     try {
-      created = await ref.read(fragmentsProvider.notifier).captureWithResult(
+      await ref.read(fragmentsProvider.notifier).captureWithResult(
             text: text,
             emotion: _emotionForSave(),
-            tags: tags,
+            tags: const [],
             mediaUrls: mediaUrls,
           );
     } catch (_) {
@@ -1008,9 +1104,9 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     if (!mounted) return;
     setState(() {
       _saving = false;
-      _lastCreated = created;
       _recordingAudio = false;
       _audioSeconds = 0;
+      _audioPath = null;
       _draftSaved = false;
       _restoredDraft = false;
     });
@@ -1021,7 +1117,6 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       await _clearDraft();
       if (!mounted) return;
       _controller.clear();
-      _tagController.clear();
       _images.clear();
     } finally {
       _suppressDraftSave = false;
@@ -1044,17 +1139,30 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
         urls.add('data:${_mimeType(image)};base64,${base64Encode(bytes)}');
       }
     }
-    if (_audioSeconds > 0) {
-      urls.add('audio-cue://voice?duration=$_audioSeconds');
+    final audioUrl = await _audioUrlForSave();
+    if (audioUrl != null) {
+      urls.add(audioUrl);
     }
     return urls;
+  }
+
+  Future<String?> _audioUrlForSave() async {
+    if (_recordingAudio) {
+      await _stopAudio();
+    }
+    final path = _audioPath;
+    if (path == null || _audioSeconds <= 0) return null;
+    final url = await audioPathToDataUrl(path);
+    if (url == null) {
+      throw StateError('audio_capture_missing');
+    }
+    return url;
   }
 
   int get _writtenCount => _controller.text.trim().runes.length;
 
   bool get _hasDraftLikeContent {
     return _controller.text.trim().isNotEmpty ||
-        _tagController.text.trim().isNotEmpty ||
         _images.isNotEmpty ||
         _audioSeconds > 0 ||
         widget.selectedEmotion != '说不清' ||
@@ -1067,35 +1175,89 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     _scheduleDraftSave();
   }
 
-  void _toggleAudio() {
+  Future<void> _toggleAudio() async {
     if (_recordingAudio) {
-      _stopAudio();
+      await _stopAudio();
       return;
     }
-    setState(() {
-      _recordingAudio = true;
-      if (_audioSeconds == 0) _audioSeconds = 1;
-    });
-    _audioTimer?.cancel();
-    _audioTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _audioSeconds += 1);
-    });
+    await _startAudio();
   }
 
-  void _stopAudio() {
+  Future<void> _startAudio() async {
+    try {
+      if (!await _attachmentRecorder.hasPermission()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('需要麦克风权限才能留下声音。'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      final path = await nextAudioCapturePath();
+      await _attachmentRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 44100,
+          bitRate: 128000,
+          numChannels: 1,
+          echoCancel: true,
+          noiseSuppress: true,
+        ),
+        path: path,
+      );
+      _audioTimer?.cancel();
+      setState(() {
+        _recordingAudio = true;
+        _audioSeconds = 0;
+        _audioPath = path;
+      });
+      _audioTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _audioSeconds += 1);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('暂时无法开始录音。'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _stopAudio() async {
     _audioTimer?.cancel();
+    String? path = _audioPath;
+    try {
+      path = await _attachmentRecorder.stop() ?? path;
+    } catch (_) {
+      // If the recorder was already stopped, keep the last known path.
+    }
+    if (!mounted) return;
     setState(() {
       _recordingAudio = false;
       if (_audioSeconds == 0) _audioSeconds = 1;
+      _audioPath = path;
     });
   }
 
-  void _clearAudio() {
+  Future<void> _clearAudio() async {
     _audioTimer?.cancel();
+    if (_recordingAudio) {
+      try {
+        await _attachmentRecorder.cancel();
+      } catch (_) {
+        // Ignore recorder cleanup errors when clearing the draft.
+      }
+    }
+    if (!mounted) return;
     setState(() {
       _recordingAudio = false;
       _audioSeconds = 0;
+      _audioPath = null;
     });
   }
 
@@ -1105,10 +1267,10 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     _suppressDraftSave = true;
     setState(() {
       _controller.clear();
-      _tagController.clear();
       _images.clear();
       _recordingAudio = false;
       _audioSeconds = 0;
+      _audioPath = null;
       _draftSaved = false;
       _restoredDraft = false;
     });
@@ -1154,9 +1316,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
 
   Future<void> _saveDraft() async {
     final text = _controller.text;
-    final tags = _tagController.text;
     final hasDraft = text.trim().isNotEmpty ||
-        tags.trim().isNotEmpty ||
         widget.selectedEmotion != '说不清' ||
         widget.customEmotion.trim().isNotEmpty;
     final prefs = await SharedPreferences.getInstance();
@@ -1171,13 +1331,13 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       return;
     }
     await prefs.setString(_draftTextKey, text);
-    await prefs.setString(_draftTagsKey, tags);
     await prefs.setString(_draftEmotionKey, widget.selectedEmotion);
     await prefs.setString(_draftCustomEmotionKey, widget.customEmotion);
     if (mounted) {
       setState(() {
-        _draftSaved = true;
-        _restoredDraft = false;
+        if (!_restoredDraft) {
+          _draftSaved = true;
+        }
       });
     }
   }
@@ -1185,66 +1345,35 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   Future<void> _restoreDraft() async {
     final prefs = await SharedPreferences.getInstance();
     final text = prefs.getString(_draftTextKey) ?? '';
-    final tags = prefs.getString(_draftTagsKey) ?? '';
     final emotion = prefs.getString(_draftEmotionKey);
     final customEmotion = prefs.getString(_draftCustomEmotionKey) ?? '';
     final hasDraft = text.trim().isNotEmpty ||
-        tags.trim().isNotEmpty ||
         (emotion != null && emotion != '说不清') ||
         customEmotion.trim().isNotEmpty;
     if (!mounted || !hasDraft) return;
-    _controller.text = text;
-    _tagController.text = tags;
-    if (emotion != null && emotion.isNotEmpty) {
-      widget.onEmotionChanged(emotion);
+    _suppressDraftSave = true;
+    try {
+      _controller.text = text;
+      if (emotion != null && emotion.isNotEmpty) {
+        widget.onEmotionChanged(emotion);
+      }
+      if (customEmotion.isNotEmpty) {
+        widget.onCustomEmotionChanged(customEmotion);
+      }
+      setState(() {
+        _restoredDraft = true;
+        _draftSaved = false;
+      });
+    } finally {
+      _suppressDraftSave = false;
     }
-    if (customEmotion.isNotEmpty) {
-      widget.onCustomEmotionChanged(customEmotion);
-    }
-    setState(() {
-      _restoredDraft = true;
-      _draftSaved = false;
-    });
   }
 
   Future<void> _clearDraft() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_draftTextKey);
-    await prefs.remove(_draftTagsKey);
     await prefs.remove(_draftEmotionKey);
     await prefs.remove(_draftCustomEmotionKey);
-  }
-}
-
-class _FreshLightHint extends StatelessWidget {
-  const _FreshLightHint({required this.fragment});
-
-  final LightFragmentModel fragment;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = fragment.color;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .10),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: .26)),
-      ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        _ThreadSeed(color: color),
-        const SizedBox(width: 10),
-        Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('刚刚留下的光', style: AppText.caption),
-            const SizedBox(height: 3),
-            Text('它会先留在这里，慢慢和旧光靠近。', style: AppText.bodyMuted),
-          ]),
-        ),
-      ]),
-    );
   }
 }
 
@@ -1265,13 +1394,12 @@ class _ComposerMetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = draftSaved
-        ? '草稿已存'
+    final statusSuffix = draftSaved
+        ? ' · 草稿已存'
         : restoredDraft
-            ? '上次的光已找回'
-            : writtenCount == 0
-                ? ''
-                : '已写 $writtenCount 字';
+            ? ' · 上次的光已找回'
+            : '';
+    final status = '已写 $writtenCount 字$statusSuffix';
     return Row(children: [
       Icon(
         writtenCount == 0 ? Icons.edit_note_rounded : Icons.auto_awesome,
@@ -1299,55 +1427,6 @@ class _ComposerMetaRow extends StatelessWidget {
             : const SizedBox.shrink(),
       ),
     ]);
-  }
-}
-
-class _ThreadSeed extends StatelessWidget {
-  const _ThreadSeed({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 44,
-      height: 42,
-      child: CustomPaint(painter: _ThreadSeedPainter(color)),
-    );
-  }
-}
-
-class _ThreadSeedPainter extends CustomPainter {
-  const _ThreadSeedPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    final path = Path()
-      ..moveTo(5, size.height * .62)
-      ..cubicTo(15, 6, 30, size.height - 5, size.width - 5, 12);
-    canvas.drawPath(path, paint);
-    canvas.drawCircle(
-      Offset(size.width * .30, size.height * .42),
-      5,
-      Paint()..color = color.withValues(alpha: .28),
-    );
-    canvas.drawCircle(
-      Offset(size.width * .72, size.height * .34),
-      4,
-      Paint()..color = color.withValues(alpha: .62),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _ThreadSeedPainter oldDelegate) {
-    return oldDelegate.color != color;
   }
 }
 
@@ -1571,36 +1650,5 @@ class _AudioPulsePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _AudioPulsePainter oldDelegate) {
     return oldDelegate.recording != recording;
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(
-      {required this.title, required this.action, required this.onTap});
-  final String title, action;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(children: [
-      Expanded(child: Text(title, style: AppText.titleMedium)),
-      TextButton(onPressed: onTap, child: Text(action)),
-    ]);
-  }
-}
-
-extension _LightFragmentAdapter on LightFragmentModel {
-  LightFragment toLightFragment() {
-    return LightFragment(
-      time: time,
-      date: dateLabel,
-      title: title,
-      text: contentText,
-      emotion: emotion,
-      tags: tags,
-      color: color,
-      relation: status,
-      mediaUrls: mediaUrls,
-    );
   }
 }

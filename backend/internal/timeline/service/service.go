@@ -39,18 +39,9 @@ func (s *Service) Timeline(ctx context.Context, userID int64, emotion, tag, rawL
 }
 
 func dateLabel(now, value time.Time) string {
-	ny, nm, nd := now.Date()
 	vy, vm, vd := value.In(now.Location()).Date()
-	today := time.Date(ny, nm, nd, 0, 0, 0, 0, now.Location())
 	day := time.Date(vy, vm, vd, 0, 0, 0, 0, now.Location())
-	switch today.Sub(day).Hours() / 24 {
-	case 0:
-		return "今天"
-	case 1:
-		return "昨天"
-	default:
-		return day.Format("2006-01-02")
-	}
+	return day.Format("2006-01-02")
 }
 
 func parseLimit(raw string, fallback int) int {

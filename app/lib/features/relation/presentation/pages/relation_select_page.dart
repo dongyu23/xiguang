@@ -5,6 +5,9 @@ class RelationSelectPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: Text('选择另一束光')));
+    return const Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Center(child: Text('选择另一束光')),
+    );
   }
 }

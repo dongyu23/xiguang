@@ -26,9 +26,10 @@ void main() {
     ));
     await tester.pump(const Duration(seconds: 5));
     expect(find.text('本地试用'), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('go-register')));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await tester.ensureVisible(find.byKey(const ValueKey('go-register')));
+    await tester.tap(find.text('创建账号'));
+    await _pumpUntilFound(
+        tester, find.byKey(const ValueKey('register-username')));
     await tester.enterText(
         find.byKey(const ValueKey('register-username')), 'claude_user');
     await tester.enterText(
@@ -36,8 +37,7 @@ void main() {
     await tester.enterText(
         find.byKey(const ValueKey('register-password')), 'xiguang-pass');
     await tester.tap(find.widgetWithText(FilledButton, '创建并进入'));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await _pumpUntilFound(tester, find.byKey(const ValueKey('nav-timeline')));
 
     for (final label in ['隙', '线', '屿', '我的']) {
       expect(find.text(label), findsWidgets);
@@ -51,8 +51,7 @@ void main() {
       'nav-mine',
     ]) {
       await tester.tap(find.byKey(ValueKey(navKey)));
-      await tester.pumpAndSettle(const Duration(milliseconds: 100),
-          EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 1));
       expect(find.text('织'), findsNothing);
       expect(find.widgetWithText(FloatingActionButton, '捕光'), findsNothing);
     }
@@ -269,4 +268,17 @@ void main() {
           reason: '$path should not be an empty placeholder');
     }
   });
+}
+
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final end = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(end)) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+  expect(finder, findsWidgets);
 }

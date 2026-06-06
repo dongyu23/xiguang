@@ -36,6 +36,7 @@ class AppText {
 
   // 页面大标题
   static const hero = TextStyle(
+    fontFamily: 'PingFangShiGuangTi',
     fontSize: 34,
     height: 1.08,
     fontWeight: FontWeight.w800,

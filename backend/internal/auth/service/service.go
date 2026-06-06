@@ -53,9 +53,6 @@ func (s *Service) Register(ctx context.Context, params domain.RegisterParams) (d
 	if err != nil {
 		return domain.User{}, domain.TokenPair{}, err
 	}
-	if err := s.repo.EnsureDefaultIsland(ctx, user.ID); err != nil {
-		return domain.User{}, domain.TokenPair{}, err
-	}
 	tokens, err := s.IssueTokens(ctx, user.ID)
 	return user, tokens, err
 }

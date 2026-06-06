@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"xiguang/backend/internal/ai"
+	"xiguang/backend/internal/asr"
 	"xiguang/backend/internal/auth"
 	"xiguang/backend/internal/emotion"
 	"xiguang/backend/internal/fragment"
@@ -61,6 +62,7 @@ func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 			private.Mount("/whitenoise", whitenoise.Routes())
 			private.Mount("/sync", sync.New(pool).Routes())
 			private.Mount("/ai", ai.New(pool, cfg).Routes())
+			private.Mount("/asr", asr.New(cfg).Routes())
 		})
 	})
 	return r

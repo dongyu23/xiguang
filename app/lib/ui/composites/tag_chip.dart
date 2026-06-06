@@ -80,27 +80,38 @@ class MiniTag extends StatelessWidget {
     required this.label,
     this.filled = false,
     this.nightMode = false,
+    this.compact = false,
   });
 
   final String label;
   final bool filled;
   final bool nightMode;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 8,
+        vertical: compact ? 3 : 5,
+      ),
       decoration: BoxDecoration(
         color: nightMode
             ? (filled
                 ? AppColors.teaGreen.withValues(alpha: .72)
                 : AppColors.white.withValues(alpha: .10))
-            : (filled ? AppColors.ink : AppColors.paper),
+            : (filled
+                ? AppColors.ink
+                : (compact
+                    ? AppColors.ink.withValues(alpha: .08)
+                    : AppColors.paper)),
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
         label,
         style: AppText.caption.copyWith(
+          fontSize: compact ? 10 : null,
+          fontWeight: compact ? FontWeight.w600 : null,
           color: nightMode
               ? (filled ? AppColors.ink : AppText.nightInkMuted)
               : (filled ? Colors.white : AppColors.inkMuted),

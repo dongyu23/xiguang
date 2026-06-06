@@ -27,6 +27,7 @@ class _WeavePageState extends ConsumerState<WeavePage> {
   final _noteController = TextEditingController();
   int? _targetId;
   String _relationType = 'reminds_me';
+  _CandidateSort _candidateSort = _CandidateSort.newest;
   bool _isSubmitting = false;
   bool _completed = false;
 
@@ -69,13 +70,14 @@ class _WeavePageState extends ConsumerState<WeavePage> {
   ) {
     final source =
         items.where((item) => item.id == widget.sourceId).firstOrNull;
-    final candidates =
-        items.where((item) => item.id != widget.sourceId).toList();
-
     if (source == null) {
       return _NotFoundState(onBack: () => context.pop());
     }
 
+    final candidates = _sortedCandidates(
+      items.where((item) => item.id != widget.sourceId).toList(),
+      source,
+    );
     final hasSelectedTarget =
         candidates.any((fragment) => fragment.id == _targetId);
     final effectiveTargetId =
@@ -117,7 +119,11 @@ class _WeavePageState extends ConsumerState<WeavePage> {
                         _SectionLabel(
                           icon: Icons.blur_circular_rounded,
                           label: '选择另一束光',
-                          trailing: _SortPill(),
+                          trailing: _SortPill(
+                            value: _candidateSort,
+                            onChanged: (value) =>
+                                setState(() => _candidateSort = value),
+                          ),
                           nightMode: nightMode,
                         ),
                         const SizedBox(height: 10),
@@ -197,6 +203,24 @@ class _WeavePageState extends ConsumerState<WeavePage> {
     ]);
   }
 
+  List<LightFragmentModel> _sortedCandidates(
+    List<LightFragmentModel> candidates,
+    LightFragmentModel source,
+  ) {
+    final sorted = [...candidates];
+    sorted.sort((a, b) {
+      return switch (_candidateSort) {
+        _CandidateSort.newest => b.createdAt.compareTo(a.createdAt),
+        _CandidateSort.oldest => a.createdAt.compareTo(b.createdAt),
+        _CandidateSort.nearSourceTime => (a.createdAt
+            .difference(source.createdAt)
+            .abs()
+            .compareTo(b.createdAt.difference(source.createdAt).abs())),
+      };
+    });
+    return sorted;
+  }
+
   Future<void> _submit(
     LightFragmentModel source,
     LightFragmentModel selected,
@@ -214,6 +238,7 @@ class _WeavePageState extends ConsumerState<WeavePage> {
         );
     if (!mounted) return;
     ref.invalidate(fragmentRelationsProvider(source.id));
+    ref.invalidate(relationsProvider);
     ref.invalidate(starGraphProvider);
     setState(() {
       _isSubmitting = false;
@@ -221,6 +246,8 @@ class _WeavePageState extends ConsumerState<WeavePage> {
     });
   }
 }
+
+enum _CandidateSort { newest, oldest, nearSourceTime }
 
 class _ExistingRelations extends ConsumerWidget {
   const _ExistingRelations({required this.sourceId, required this.fragments});
@@ -241,8 +268,7 @@ class _ExistingRelations extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('已经织好的线',
-                style: AppText.onNight(AppText.caption, nightMode)),
+            Text('已经织好的线', style: AppText.onNight(AppText.caption, nightMode)),
             const SizedBox(height: 8),
             ...items.take(4).map((relation) {
               final other = _otherFragment(relation);
@@ -281,14 +307,19 @@ class _ExistingRelations extends ConsumerWidget {
 
   String _relationLabel(String value) {
     return switch (value) {
+      'reminds_me' => '回声',
+      'inspiration' => '伏笔',
+      'emotion_continue' => '余震',
+      'same_phase' => '平行宇宙',
+      'cause' => '小小救命',
+      'custom' => '旧光',
       'echo' => '回声',
       'foreshadow' => '伏笔',
       'aftershock' => '余震',
       'parallel' => '平行宇宙',
       'lifeline' => '小小救命',
-      'tide' => '潮汐',
       'old_light' => '旧光',
-      _ => '有点相似',
+      _ => '旧光',
     };
   }
 }
@@ -318,10 +349,7 @@ class _Header extends StatelessWidget {
       Column(mainAxisSize: MainAxisSize.min, children: [
         Text(
           '织线',
-          style: AppText.onNight(
-            AppText.hero.copyWith(fontSize: 30),
-            nightMode,
-          ),
+          style: AppText.onNight(AppText.hero, nightMode),
         ),
         const SizedBox(height: 6),
         Text(
@@ -349,13 +377,14 @@ class _CurrentLightCard extends StatelessWidget {
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(fragment.title, style: AppText.titleSmall),
-            const SizedBox(height: 6),
             Text(
               fragment.contentText,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: AppText.body,
+              style: AppText.body.copyWith(
+                height: 1.46,
+                fontWeight: FontWeight.w400,
+              ),
             ),
             const SizedBox(height: 10),
             Text('${fragment.dateLabel} · ${fragment.emotion}',
@@ -538,20 +567,44 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _SortPill extends StatelessWidget {
+  const _SortPill({required this.value, required this.onChanged});
+
+  final _CandidateSort value;
+  final ValueChanged<_CandidateSort> onChanged;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.white.withValues(alpha: .5),
-        borderRadius: BorderRadius.circular(AppRadius.md),
+    return PopupMenuButton<_CandidateSort>(
+      tooltip: '选择排序方式',
+      initialValue: value,
+      onSelected: onChanged,
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: _CandidateSort.newest, child: Text('按时间：最新')),
+        PopupMenuItem(value: _CandidateSort.oldest, child: Text('按时间：最早')),
+        PopupMenuItem(
+            value: _CandidateSort.nearSourceTime, child: Text('靠近当前光片时间')),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.white.withValues(alpha: .5),
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(_label, style: AppText.caption.copyWith(color: AppColors.ink)),
+          const SizedBox(width: 4),
+          const Icon(Icons.expand_more_rounded, size: 16, color: AppColors.ink),
+        ]),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('按时间', style: AppText.caption.copyWith(color: AppColors.ink)),
-        const SizedBox(width: 4),
-        const Icon(Icons.expand_more_rounded, size: 16, color: AppColors.ink),
-      ]),
     );
+  }
+
+  String get _label {
+    return switch (value) {
+      _CandidateSort.newest => '最新',
+      _CandidateSort.oldest => '最早',
+      _CandidateSort.nearSourceTime => '近当前',
+    };
   }
 }
 

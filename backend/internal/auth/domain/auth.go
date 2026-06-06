@@ -34,6 +34,6 @@ type LoginParams struct {
 type UpdateUserParams struct {
 	Nickname    string
 	AvatarKey   string
-	AIEnabled   bool
+	AIEnabled   *bool
 	PrivacyMode string
 }

@@ -22,8 +22,9 @@ class MediaImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final value = source.trim();
     if (value.isEmpty) return fallback;
-    if (_isRemote(value)) {
-      return Image.network(value, fit: fit, errorBuilder: (_, __, ___) {
+    final networkSource = _networkSource(value);
+    if (networkSource != null) {
+      return Image.network(networkSource, fit: fit, errorBuilder: (_, __, ___) {
         return fallback;
       });
     }
@@ -36,8 +37,14 @@ class MediaImage extends StatelessWidget {
     return localFileImage(value, fit: fit) ?? fallback;
   }
 
-  bool _isRemote(String value) =>
-      value.startsWith('http://') || value.startsWith('https://');
+  String? _networkSource(String value) {
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    if (value.startsWith('/media/')) return value;
+    if (value.startsWith('users/')) return '/media/$value';
+    return null;
+  }
 
   Uint8List? _dataUrlBytes(String value) {
     if (!value.startsWith('data:image/')) return null;

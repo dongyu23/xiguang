@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../ui/spaces/space_canvas.dart';
 import '../../domain/star_graph.dart';
 import '../providers/starmap_provider.dart';
-import '../../../../ui/spaces/space_canvas.dart';
 
 /// 织线页 — 可视化个人星图
 ///
@@ -31,7 +33,10 @@ class StarmapPage extends ConsumerWidget {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _Header(nightMode: nightMode),
+                    _Header(
+                      nightMode: nightMode,
+                      onExit: () => _exit(context),
+                    ),
                     const SizedBox(height: 20),
                     graph.when(
                       data: (value) => _GraphPanel(graph: value),
@@ -44,9 +49,8 @@ class StarmapPage extends ConsumerWidget {
                         ),
                         child: const CircularProgressIndicator(),
                       ),
-                      error: (error, _) =>
-                          Text('星图暂时无法展开：$error',
-                              style: AppText.onNight(AppText.body, nightMode)),
+                      error: (error, _) => Text('星图暂时无法展开：$error',
+                          style: AppText.onNight(AppText.body, nightMode)),
                     ),
                     const SizedBox(height: 16),
                     Text('这里展示已经确认的织线关系。',
@@ -57,6 +61,14 @@ class StarmapPage extends ConsumerWidget {
         ),
       ),
     ]);
+  }
+
+  void _exit(BuildContext context) {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go('/universe');
   }
 }
 
@@ -136,14 +148,21 @@ class _GraphPainter extends CustomPainter {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.nightMode});
+  const _Header({required this.nightMode, required this.onExit});
 
   final bool nightMode;
+  final VoidCallback onExit;
 
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('WEAVE', style: AppText.onNight(AppText.eyebrow, nightMode)),
+      Row(children: [
+        Expanded(
+          child:
+              Text('WEAVE', style: AppText.onNight(AppText.eyebrow, nightMode)),
+        ),
+        _ExitButton(nightMode: nightMode, onTap: onExit),
+      ]),
       const SizedBox(height: 8),
       Row(children: [
         Expanded(
@@ -159,8 +178,55 @@ class _Header extends StatelessWidget {
                 const Icon(Icons.blur_circular_rounded, color: AppColors.ink)),
       ]),
       const SizedBox(height: 8),
-      Text('星点之间，有一条细细的线。',
-          style: AppText.onNight(AppText.body, nightMode)),
+      Text('星点之间，有一条细细的线。', style: AppText.onNight(AppText.body, nightMode)),
     ]);
+  }
+}
+
+class _ExitButton extends StatelessWidget {
+  const _ExitButton({required this.nightMode, required this.onTap});
+
+  final bool nightMode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = nightMode ? AppColors.white : AppColors.ink;
+    final background = nightMode
+        ? AppColors.white.withValues(alpha: .12)
+        : AppColors.white.withValues(alpha: .92);
+    final border =
+        nightMode ? AppColors.white.withValues(alpha: .22) : AppColors.line;
+    return Tooltip(
+      message: '退出已织线',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Container(
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: border),
+              boxShadow: nightMode ? null : softShadow,
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.close_rounded, size: 18, color: foreground),
+              const SizedBox(width: 5),
+              Text(
+                '退出',
+                style: AppText.caption.copyWith(
+                  color: foreground,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 }

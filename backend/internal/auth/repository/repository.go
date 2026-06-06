@@ -67,24 +67,21 @@ type execQuerier interface {
 }
 
 func seedDefaultIsland(ctx context.Context, tx execQuerier, userID int64) error {
-	var exists bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (
-		SELECT 1 FROM fragments f
+	var fragmentID int64
+	err := tx.QueryRow(ctx, `SELECT f.id FROM fragments f
 		JOIN fragment_tags ft ON ft.fragment_id=f.id
 		JOIN tags t ON t.id=ft.tag_id AND t.deleted_at IS NULL
 		WHERE f.user_id=$1 AND f.is_deleted=FALSE AND t.name=$2
-	)`, userID, defaultSeedIslandName).Scan(&exists); err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-
-	var fragmentID int64
-	if err := tx.QueryRow(ctx, `INSERT INTO fragments(user_id, content_text, emotion, status, updated_at)
-		VALUES($1,$2,$3,$4,now()) RETURNING id`,
-		userID, defaultSeedFragmentText, defaultSeedEmotion, defaultSeedStatus).Scan(&fragmentID); err != nil {
-		return err
+		ORDER BY f.created_at ASC, f.id ASC LIMIT 1`, userID, defaultSeedIslandName).Scan(&fragmentID)
+	if err != nil {
+		if err != pgx.ErrNoRows {
+			return err
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO fragments(user_id, content_text, emotion, status, updated_at)
+			VALUES($1,$2,$3,$4,now()) RETURNING id`,
+			userID, defaultSeedFragmentText, defaultSeedEmotion, defaultSeedStatus).Scan(&fragmentID); err != nil {
+			return err
+		}
 	}
 
 	var tagID int64
@@ -147,7 +144,7 @@ func (r *PG) UpdateUser(ctx context.Context, id int64, params domain.UpdateUserP
 	var user domain.User
 	err := r.db.QueryRow(ctx, `UPDATE users
 		SET nickname=COALESCE(NULLIF($2,''), nickname), avatar_key=COALESCE(NULLIF($3,''), avatar_key),
-		    ai_enabled=$4, privacy_mode=$5, updated_at=now()
+		    ai_enabled=COALESCE($4, ai_enabled), privacy_mode=$5, updated_at=now()
 		WHERE id=$1 AND deleted_at IS NULL
 		RETURNING id, public_id::text, username, nickname, avatar_key, ai_enabled, privacy_mode, created_at`,
 		id, params.Nickname, params.AvatarKey, params.AIEnabled, params.PrivacyMode).

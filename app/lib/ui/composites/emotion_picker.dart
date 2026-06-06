@@ -65,26 +65,34 @@ class _EmotionPickerState extends State<EmotionPicker> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('心绪收录', style: AppText.titleSmall),
-        const SizedBox(height: 12),
-        GridView.builder(
-          physics: const NeverScrollableScrollPhysics(),
-          shrinkWrap: true,
-          itemCount: EmotionPicker.emotions.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              mainAxisExtent: 42),
-          itemBuilder: (context, index) {
-            final emotion = EmotionPicker.emotions[index];
-            return _EmotionChip(
-              emotion: emotion,
-              isSelected: widget.selected == emotion.label ||
-                  (emotion.label == '自定义' &&
-                      (widget.selected == null ||
-                          widget.selected == '说不清' ||
-                          widget.customValue.trim().isNotEmpty)),
-              onTap: () => widget.onSelected?.call(emotion.label),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final veryNarrow = constraints.maxWidth < 300;
+            final compact = constraints.maxWidth < 380;
+            return GridView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              shrinkWrap: true,
+              itemCount: EmotionPicker.emotions.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: veryNarrow ? 2 : 4,
+                mainAxisSpacing: compact ? 6 : 8,
+                crossAxisSpacing: compact ? 6 : 8,
+                mainAxisExtent: compact ? 38 : 40,
+              ),
+              itemBuilder: (context, index) {
+                final emotion = EmotionPicker.emotions[index];
+                return _EmotionChip(
+                  emotion: emotion,
+                  isSelected: widget.selected == emotion.label ||
+                      (emotion.label == '自定义' &&
+                          (widget.selected == null ||
+                              widget.selected == '说不清' ||
+                              widget.customValue.trim().isNotEmpty)),
+                  compact: compact,
+                  onTap: () => widget.onSelected?.call(emotion.label),
+                );
+              },
             );
           },
         ),
@@ -102,6 +110,11 @@ class _EmotionPickerState extends State<EmotionPicker> {
                       counterText: '',
                       hintText: '写一个自己的感觉',
                       prefixIcon: const Icon(Icons.edit_outlined),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 11,
+                      ),
                       filled: true,
                       fillColor: AppColors.white.withValues(alpha: .72),
                     ),
@@ -123,10 +136,14 @@ class _Emotion {
 
 class _EmotionChip extends StatelessWidget {
   const _EmotionChip(
-      {required this.emotion, required this.isSelected, required this.onTap});
+      {required this.emotion,
+      required this.isSelected,
+      required this.compact,
+      required this.onTap});
 
   final _Emotion emotion;
   final bool isSelected;
+  final bool compact;
   final VoidCallback onTap;
 
   @override
@@ -144,37 +161,40 @@ class _EmotionChip extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: EdgeInsets.symmetric(horizontal: compact ? 5 : 7, vertical: 5),
         decoration: BoxDecoration(
           color: isSelected
               ? emotion.color
               : AppColors.white.withValues(alpha: .72),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(7),
           border: Border.all(
             color: isSelected ? emotion.color : AppColors.line,
-            width: isSelected ? 1.2 : 1,
+            width: isSelected ? 1.1 : .85,
           ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 9,
-              height: 9,
+              width: compact ? 7 : 8,
+              height: compact ? 7 : 8,
               decoration:
                   BoxDecoration(color: emotion.color, shape: BoxShape.circle),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: compact ? 4 : 5),
             Flexible(
-              child: Text(
-                emotion.label,
-                style: AppText.chip.copyWith(
-                  color: isSelected ? Colors.white : AppColors.ink,
-                  height: 1.35,
-                  fontWeight: FontWeight.w700,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  emotion.label,
+                  softWrap: false,
+                  style: AppText.chip.copyWith(
+                    color: isSelected ? Colors.white : AppColors.ink,
+                    height: 1.08,
+                    fontSize: compact ? 11.5 : 12,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

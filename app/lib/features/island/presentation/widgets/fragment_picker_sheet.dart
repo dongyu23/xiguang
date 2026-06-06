@@ -8,9 +8,14 @@ import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/typography.dart';
 
 class FragmentPickerSheet extends ConsumerStatefulWidget {
-  const FragmentPickerSheet({super.key, required this.onConfirm});
+  const FragmentPickerSheet({
+    super.key,
+    required this.onConfirm,
+    this.excludedFragmentIds = const {},
+  });
 
-  final FutureOr<void> Function(List<int> fragmentIds) onConfirm;
+  final FutureOr<bool> Function(List<int> fragmentIds) onConfirm;
+  final Set<int> excludedFragmentIds;
 
   @override
   ConsumerState<FragmentPickerSheet> createState() =>
@@ -81,12 +86,28 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
               Expanded(
                 child: fragmentsAsync.when(
                   data: (fragments) {
-                    final allTags = fragments
+                    final available = fragments
+                        .where((fragment) =>
+                            !widget.excludedFragmentIds.contains(fragment.id))
+                        .toList();
+                    if (available.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Text(
+                            '没有可继续添加的光片。',
+                            style: AppText.body,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                    }
+                    final allTags = available
                         .expand((f) => f.tags)
                         .toSet()
                         .toList()
                       ..sort();
-                    var filtered = fragments;
+                    var filtered = available;
                     if (_search.isNotEmpty) {
                       filtered = filtered
                           .where((f) =>
@@ -222,14 +243,24 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
                             ? null
                             : () async {
                                 setState(() => _submitting = true);
+                                var shouldClose = false;
                                 try {
-                                  await widget.onConfirm(_selected.toList());
+                                  shouldClose = await widget
+                                      .onConfirm(_selected.toList());
+                                } catch (_) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('暂时无法添加这些光片。'),
+                                      ),
+                                    );
+                                  }
                                 } finally {
                                   if (mounted) {
                                     setState(() => _submitting = false);
                                   }
                                 }
-                                if (!context.mounted) return;
+                                if (!context.mounted || !shouldClose) return;
                                 Navigator.of(context).pop();
                               },
                         icon: _submitting

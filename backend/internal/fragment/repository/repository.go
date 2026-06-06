@@ -15,7 +15,7 @@ import (
 
 type Repository interface {
 	Create(ctx context.Context, userID int64, text, emotion, status string, tags, media []string) (domain.Fragment, error)
-	Update(ctx context.Context, userID int64, id int64, text, emotion, status string, tags []string) (domain.Fragment, error)
+	Update(ctx context.Context, userID int64, id int64, text, emotion, status string, tags []string, media *[]string) (domain.Fragment, error)
 	Delete(ctx context.Context, userID, id int64) (bool, error)
 	List(ctx context.Context, userID int64, query domain.ListQuery) ([]domain.Fragment, error)
 	FindByID(ctx context.Context, userID, id int64) (domain.Fragment, error)
@@ -62,7 +62,7 @@ func (r *PG) Create(ctx context.Context, userID int64, text, emotion, status str
 	return dto, nil
 }
 
-func (r *PG) Update(ctx context.Context, userID int64, id int64, text, emotion, status string, tags []string) (domain.Fragment, error) {
+func (r *PG) Update(ctx context.Context, userID int64, id int64, text, emotion, status string, tags []string, media *[]string) (domain.Fragment, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return domain.Fragment{}, err
@@ -79,6 +79,11 @@ func (r *PG) Update(ctx context.Context, userID int64, id int64, text, emotion, 
 	}
 	if err := r.replaceFragmentTags(ctx, tx, userID, updatedID, tags); err != nil {
 		return domain.Fragment{}, err
+	}
+	if media != nil {
+		if err := r.replaceFragmentMedia(ctx, tx, userID, updatedID, *media); err != nil {
+			return domain.Fragment{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return domain.Fragment{}, err
@@ -198,8 +203,9 @@ func (r *PG) replaceFragmentTags(ctx context.Context, tx pgx.Tx, userID, fragmen
 }
 
 func (r *PG) replaceFragmentMedia(ctx context.Context, tx pgx.Tx, userID, fragmentID int64, media []string) error {
-	if len(media) == 0 {
-		return nil
+	if _, err := tx.Exec(ctx, `UPDATE media_files SET deleted_at=now()
+		WHERE user_id=$1 AND fragment_id=$2 AND deleted_at IS NULL`, userID, fragmentID); err != nil {
+		return err
 	}
 	for _, raw := range media {
 		objectKey := strings.TrimSpace(raw)
@@ -218,7 +224,8 @@ func (r *PG) replaceFragmentMedia(ctx context.Context, tx pgx.Tx, userID, fragme
 }
 
 func fileNameFromObjectKey(objectKey, mime string) string {
-	if strings.HasPrefix(objectKey, "data:image/") {
+	if strings.HasPrefix(objectKey, "data:image/") ||
+		strings.HasPrefix(objectKey, "data:audio/") {
 		return "light-media" + extFromMime(mime)
 	}
 	fileName := filepath.Base(objectKey)
@@ -232,10 +239,12 @@ func fileNameFromObjectKey(objectKey, mime string) string {
 }
 
 func mimeFromObjectKey(objectKey string) string {
-	if strings.HasPrefix(objectKey, "data:image/") {
+	if strings.HasPrefix(objectKey, "data:image/") ||
+		strings.HasPrefix(objectKey, "data:audio/") {
 		header := strings.SplitN(objectKey, ",", 2)[0]
 		mime := strings.TrimPrefix(strings.SplitN(header, ";", 2)[0], "data:")
-		if strings.HasPrefix(mime, "image/") {
+		if strings.HasPrefix(mime, "image/") ||
+			strings.HasPrefix(mime, "audio/") {
 			return mime
 		}
 	}
@@ -254,10 +263,14 @@ func mimeFromName(fileName string) string {
 		return "image/gif"
 	case ".m4a":
 		return "audio/mp4"
+	case ".aac":
+		return "audio/aac"
 	case ".mp3":
 		return "audio/mpeg"
 	case ".wav":
 		return "audio/wav"
+	case ".ogg", ".opus":
+		return "audio/ogg"
 	default:
 		return "image/jpeg"
 	}
@@ -271,6 +284,16 @@ func extFromMime(mime string) string {
 		return ".webp"
 	case "image/gif":
 		return ".gif"
+	case "audio/wav":
+		return ".wav"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/mp4":
+		return ".m4a"
+	case "audio/aac":
+		return ".aac"
+	case "audio/ogg":
+		return ".ogg"
 	default:
 		return ".jpg"
 	}

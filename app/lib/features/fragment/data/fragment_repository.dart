@@ -43,13 +43,8 @@ class LightFragmentModel {
   }
 
   String get dateLabel {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final day = DateTime(createdAt.year, createdAt.month, createdAt.day);
-    final diff = today.difference(day).inDays;
-    if (diff == 0) return '今天';
-    if (diff == 1) return '昨天';
-    return '${createdAt.month}月${createdAt.day}日';
+    final local = createdAt.toLocal();
+    return '${local.year}年${local.month}月${local.day}日';
   }
 
   Color get color => AppColors.emotionColor(emotion);
@@ -153,10 +148,11 @@ class FragmentRepository {
 
   bool _isLocalOnlyMedia(String value) {
     final trimmed = value.trim();
+    if (trimmed.startsWith('data:image/')) return false;
+    if (trimmed.startsWith('data:audio/')) return false;
     return !trimmed.startsWith('users/') ||
         trimmed.startsWith('/') ||
         trimmed.startsWith('file:') ||
-        trimmed.startsWith('data:') ||
         trimmed.contains('\\');
   }
 
@@ -172,6 +168,43 @@ class FragmentRepository {
       }
     }
     return local;
+  }
+
+  Future<void> updateFragmentText(
+    int id,
+    String newText, {
+    String emotion = '说不清',
+    List<String> tags = const [],
+    List<String>? mediaUrls,
+  }) async {
+    await _auth.ensureSession();
+    final localIndex = _local.indexWhere((item) => item.id == id);
+    if (_api.hasToken) {
+      final payload = {
+        'content_text': newText,
+        'emotion': emotion,
+        'tag_names': tags,
+        if (mediaUrls != null) 'media_urls': mediaUrls,
+      };
+      final body = await _api.put('/fragments/$id', payload);
+      final updated = LightFragmentModel.fromJson(body);
+      if (localIndex != -1) {
+        _local[localIndex] = updated;
+      }
+      return;
+    }
+    if (localIndex != -1) {
+      final current = _local[localIndex];
+      _local[localIndex] = LightFragmentModel(
+        id: current.id,
+        contentText: newText,
+        emotion: emotion,
+        tags: tags,
+        createdAt: current.createdAt,
+        status: current.status,
+        mediaUrls: mediaUrls ?? current.mediaUrls,
+      );
+    }
   }
 
   Future<void> deleteFragment(int id) async {

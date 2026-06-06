@@ -157,7 +157,15 @@ func (h *Handler) removeFragments(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) fragments(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
 	name := chi.URLParam(r, "name")
-	items, err := h.service.Fragments(r.Context(), userID, name, r.URL.Query().Get("limit"))
+	var (
+		items []domain.FragmentPreview
+		err   error
+	)
+	if islandID, parseErr := strconv.ParseInt(name, 10, 64); parseErr == nil {
+		items, err = h.service.FragmentsByID(r.Context(), userID, islandID, r.URL.Query().Get("limit"))
+	} else {
+		items, err = h.service.Fragments(r.Context(), userID, name, r.URL.Query().Get("limit"))
+	}
 	if err != nil {
 		shared.WriteError(w, http.StatusInternalServerError, "island_failed", "暂时无法读取岛内光片。")
 		return

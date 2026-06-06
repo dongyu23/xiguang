@@ -27,9 +27,10 @@ void main() {
     expect(find.text('登录并捕光'), findsOneWidget);
     expect(find.text('创建账号'), findsOneWidget);
     expect(find.text('本地试用'), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('go-register')));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await tester.ensureVisible(find.byKey(const ValueKey('go-register')));
+    await tester.tap(find.text('创建账号'));
+    await _pumpUntilFound(
+        tester, find.byKey(const ValueKey('register-username')));
     await tester.enterText(
         find.byKey(const ValueKey('register-username')), 'first_user');
     await tester.enterText(
@@ -37,8 +38,7 @@ void main() {
     await tester.enterText(
         find.byKey(const ValueKey('register-password')), 'xiguang-pass');
     await tester.tap(find.widgetWithText(FilledButton, '创建并进入'));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await _pumpUntilFound(tester, find.byKey(const ValueKey('nav-timeline')));
 
     expect(find.text('隙'), findsWidgets);
     expect(find.text('线'), findsOneWidget);
@@ -46,8 +46,9 @@ void main() {
     expect(find.text('我的'), findsOneWidget);
     expect(find.text('捕光'), findsWidgets);
 
-    await tester.enterText(find.byType(EditableText).first, '测试里落下的一束光');
-    await tester.pump();
+    await tester.enterText(
+        find.byKey(const ValueKey('capture-content')), '测试里落下的一束光');
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('清空草稿'), findsOneWidget);
     await tester.ensureVisible(find.text('图片'));
     expect(find.text('图片'), findsOneWidget);
@@ -66,14 +67,14 @@ void main() {
     await tester.ensureVisible(find.widgetWithText(FilledButton, '捕光').first);
     await tester.tap(find.widgetWithText(FilledButton, '捕光').first);
     await tester.pump(const Duration(seconds: 5));
-    expect(find.textContaining('测试里落下'), findsWidgets);
-    expect(find.text('刚刚留下的光'), findsWidgets);
+    expect(find.text('刚刚留下的光'), findsNothing);
     expect(find.text('去织线'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('nav-timeline')));
     await tester.pumpAndSettle(const Duration(milliseconds: 100),
         EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
-    expect(find.text('TIME RIVER'), findsOneWidget);
+    expect(find.text('TIME RIVER'), findsNothing);
+    expect(find.byKey(const ValueKey('timeline-compact-title')), findsNothing);
     expect(find.textContaining('测试里落下'), findsWidgets);
 
     final timelineCard = find.byKey(const ValueKey('timeline-card-100'));
@@ -91,34 +92,28 @@ void main() {
         EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
 
     await tester.tap(find.byKey(const ValueKey('nav-universe')));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
-    expect(find.text('近期星图'), findsOneWidget);
+    await _pumpUntilFound(tester, find.text('小宇宙'));
+    expect(find.text('小宇宙'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('nav-mine')));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await _pumpUntilFound(tester, find.text('数据边界'));
     expect(find.text('数据边界'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('profile-edit-toggle')));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     await tester.enterText(
         find.byKey(const ValueKey('profile-nickname')), '测试试光者');
     await tester.tap(find.byKey(const ValueKey('profile-ai-enabled')));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     await tester.ensureVisible(find.byKey(const ValueKey('profile-save')));
     await tester.tap(find.byKey(const ValueKey('profile-save')));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('测试试光者'), findsWidgets);
     expect(find.text('已同步到后端。'), findsOneWidget);
 
     await tester.ensureVisible(find.byKey(const ValueKey('logout-button')));
     await tester.tap(find.byKey(const ValueKey('logout-button')));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await _pumpUntilFound(tester, find.text('登录并捕光'));
     expect(find.text('登录并捕光'), findsOneWidget);
 
     await tester.enterText(
@@ -126,11 +121,9 @@ void main() {
     await tester.enterText(
         find.byKey(const ValueKey('login-password')), 'xiguang-pass');
     await tester.tap(find.widgetWithText(FilledButton, '登录并捕光'));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await _pumpUntilFound(tester, find.byKey(const ValueKey('nav-mine')));
     await tester.tap(find.byKey(const ValueKey('nav-mine')));
-    await tester.pumpAndSettle(const Duration(milliseconds: 100),
-        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('第二个账号'), findsWidgets);
   });
 
@@ -138,7 +131,6 @@ void main() {
       (tester) async {
     SharedPreferences.setMockInitialValues({
       'capture_draft_text': '还没写完的一束光',
-      'capture_draft_tags': '夜风 草稿',
       'capture_draft_emotion': '自定义',
       'capture_draft_custom_emotion': '松了一口气',
     });
@@ -183,15 +175,29 @@ void main() {
     final clearedPrefs = await SharedPreferences.getInstance();
     expect(clearedPrefs.getString('capture_draft_text'), isNull);
 
-    await tester.enterText(find.byType(EditableText).first, '清空后重新落下的一束光');
+    await tester.enterText(
+        find.byKey(const ValueKey('capture-content')), '清空后重新落下的一束光');
 
     await tester.ensureVisible(find.widgetWithText(FilledButton, '捕光').first);
     await tester.tap(find.widgetWithText(FilledButton, '捕光').first);
     await tester.pump(const Duration(seconds: 5));
-    expect(find.text('刚刚留下的光'), findsWidgets);
+    expect(find.text('刚刚留下的光'), findsNothing);
     expect(find.text('去织线'), findsNothing);
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('capture_draft_text'), isNull);
   });
+}
+
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final end = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(end)) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+  expect(finder, findsWidgets);
 }

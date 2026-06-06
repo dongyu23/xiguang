@@ -8,21 +8,29 @@ import (
 )
 
 type Config struct {
-	Env                 string
-	Port                string
-	JWTSecret           string
-	AccessExpiry        time.Duration
-	RefreshExpiry       time.Duration
-	DatabaseURL         string
-	RedisAddr           string
-	MinIOEndpoint       string
-	MinIOBucket         string
-	AIProvider          string
-	DeepSeekAPIKey      string
-	DeepSeekBaseURL     string
-	DeepSeekModel       string
-	AIDailyQuotaPerUser int
-	AllowedOrigin       string
+	Env                    string
+	Port                   string
+	JWTSecret              string
+	AccessExpiry           time.Duration
+	RefreshExpiry          time.Duration
+	DatabaseURL            string
+	RedisAddr              string
+	MinIOEndpoint          string
+	MinIOBucket            string
+	AIProvider             string
+	DeepSeekAPIKey         string
+	DeepSeekBaseURL        string
+	DeepSeekModel          string
+	AIDailyQuotaPerUser    int
+	ASRProvider            string
+	TencentASRAppID        string
+	TencentASRSecretID     string
+	TencentASRSecretKey    string
+	TencentASRRegion       string
+	TencentASREndpoint     string
+	TencentASREngine       string
+	TencentASRRealtimeHost string
+	AllowedOrigin          string
 }
 
 func Load() Config {
@@ -36,21 +44,29 @@ func Load() Config {
 			"?sslmode=" + env("DB_SSLMODE", "disable")
 	}
 	cfg := Config{
-		Env:                 env("APP_ENV", "development"),
-		Port:                env("APP_PORT", "8080"),
-		JWTSecret:           env("JWT_SECRET", "dev_only_change_me_64_chars_minimum_for_real_deployments"),
-		AccessExpiry:        accessExpiry,
-		RefreshExpiry:       refreshExpiry,
-		DatabaseURL:         dbURL,
-		RedisAddr:           env("REDIS_HOST", "localhost") + ":" + env("REDIS_PORT", "6379"),
-		MinIOEndpoint:       env("MINIO_ENDPOINT", "localhost:9000"),
-		MinIOBucket:         env("MINIO_BUCKET", "glimmer-media"),
-		AIProvider:          env("AI_PROVIDER", "deepseek"),
-		DeepSeekAPIKey:      os.Getenv("AI_DEEPSEEK_API_KEY"),
-		DeepSeekBaseURL:     env("AI_DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
-		DeepSeekModel:       env("AI_DEEPSEEK_MODEL", "deepseek-chat"),
-		AIDailyQuotaPerUser: quota,
-		AllowedOrigin:       env("ALLOWED_ORIGIN", "*"),
+		Env:                    env("APP_ENV", "development"),
+		Port:                   env("APP_PORT", "8080"),
+		JWTSecret:              env("JWT_SECRET", "dev_only_change_me_64_chars_minimum_for_real_deployments"),
+		AccessExpiry:           accessExpiry,
+		RefreshExpiry:          refreshExpiry,
+		DatabaseURL:            dbURL,
+		RedisAddr:              env("REDIS_HOST", "localhost") + ":" + env("REDIS_PORT", "6379"),
+		MinIOEndpoint:          env("MINIO_ENDPOINT", "localhost:9000"),
+		MinIOBucket:            env("MINIO_BUCKET", "glimmer-media"),
+		AIProvider:             env("AI_PROVIDER", "deepseek"),
+		DeepSeekAPIKey:         os.Getenv("AI_DEEPSEEK_API_KEY"),
+		DeepSeekBaseURL:        env("AI_DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+		DeepSeekModel:          env("AI_DEEPSEEK_MODEL", "deepseek-chat"),
+		AIDailyQuotaPerUser:    quota,
+		ASRProvider:            env("ASR_PROVIDER", "tencent"),
+		TencentASRAppID:        os.Getenv("TENCENT_ASR_APP_ID"),
+		TencentASRSecretID:     os.Getenv("TENCENT_ASR_SECRET_ID"),
+		TencentASRSecretKey:    os.Getenv("TENCENT_ASR_SECRET_KEY"),
+		TencentASRRegion:       env("TENCENT_ASR_REGION", "ap-shanghai"),
+		TencentASREndpoint:     env("TENCENT_ASR_ENDPOINT", "asr.tencentcloudapi.com"),
+		TencentASREngine:       env("TENCENT_ASR_ENGINE_MODEL_TYPE", "16k_zh"),
+		TencentASRRealtimeHost: env("TENCENT_ASR_REALTIME_HOST", "asr.cloud.tencent.com"),
+		AllowedOrigin:          env("ALLOWED_ORIGIN", "*"),
 	}
 	if err := cfg.Validate(); err != nil {
 		panic(err)

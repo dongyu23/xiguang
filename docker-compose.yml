@@ -5,8 +5,11 @@ services:
     image: nginx:alpine
     ports:
       - "8088:80"
+      - "8443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./app/build/web:/usr/share/nginx/html:ro
     depends_on:
       app:
         condition: service_healthy
@@ -43,6 +46,18 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-glimmer_minio_password}
       MINIO_BUCKET: ${MINIO_BUCKET:-glimmer-media}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-*}
+      AI_DEEPSEEK_API_KEY: ${AI_DEEPSEEK_API_KEY}
+      AI_DEEPSEEK_BASE_URL: ${AI_DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      AI_DEEPSEEK_MODEL: ${AI_DEEPSEEK_MODEL:-deepseek-v4-flash}
+      AI_DAILY_QUOTA_PER_USER: ${AI_DAILY_QUOTA_PER_USER:-50}
+      ASR_PROVIDER: ${ASR_PROVIDER:-tencent}
+      TENCENT_ASR_APP_ID: ${TENCENT_ASR_APP_ID}
+      TENCENT_ASR_SECRET_ID: ${TENCENT_ASR_SECRET_ID}
+      TENCENT_ASR_SECRET_KEY: ${TENCENT_ASR_SECRET_KEY}
+      TENCENT_ASR_REGION: ${TENCENT_ASR_REGION:-ap-shanghai}
+      TENCENT_ASR_ENDPOINT: ${TENCENT_ASR_ENDPOINT:-asr.tencentcloudapi.com}
+      TENCENT_ASR_ENGINE_MODEL_TYPE: ${TENCENT_ASR_ENGINE_MODEL_TYPE:-16k_zh}
+      TENCENT_ASR_REALTIME_HOST: ${TENCENT_ASR_REALTIME_HOST:-asr.cloud.tencent.com}
     depends_on:
       postgres:
         condition: service_healthy

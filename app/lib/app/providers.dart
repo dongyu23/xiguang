@@ -25,6 +25,7 @@ import '../features/shared/data/api_client.dart';
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
 
 final nightModeProvider = StateProvider<bool>((ref) => false);
+final aiPolishEnabledProvider = StateProvider<bool>((ref) => false);
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(ref.watch(apiClientProvider));
@@ -74,7 +75,9 @@ final whiteNoiseRepositoryProvider = Provider<WhiteNoiseRepositoryImpl>((ref) {
 });
 
 final sessionProvider = FutureProvider<AuthSession>((ref) {
-  return ref.watch(authRepositoryProvider).me();
+  final current = ref.watch(authSessionProvider);
+  if (current != null) return current;
+  return ref.watch(authRepositoryProvider).ensureSession();
 });
 
 final authRestoreProvider = FutureProvider<AuthSession?>((ref) {
@@ -153,6 +156,25 @@ class FragmentsNotifier extends AsyncNotifier<List<LightFragmentModel>> {
     state = await AsyncValue.guard(
         () => ref.watch(fragmentRepositoryProvider).listFragments());
   }
+
+  Future<void> deleteMany(Set<int> ids) async {
+    if (ids.isEmpty) return;
+    final previous = state.value ?? const [];
+    state =
+        AsyncData(previous.where((item) => !ids.contains(item.id)).toList());
+    try {
+      final repository = ref.watch(fragmentRepositoryProvider);
+      for (final id in ids) {
+        await repository.deleteFragment(id);
+      }
+      ref.invalidate(islandsProvider);
+      ref.invalidate(localTimelineGroupsProvider);
+    } catch (error, stackTrace) {
+      state = AsyncError<List<LightFragmentModel>>(error, stackTrace)
+          .copyWithPrevious(AsyncData(previous));
+      rethrow;
+    }
+  }
 }
 
 final islandsProvider = FutureProvider<List<IslandModel>>((ref) async {
@@ -167,4 +189,8 @@ final localTimelineGroupsProvider =
 final fragmentRelationsProvider =
     FutureProvider.family<List<Relation>, int>((ref, fragmentId) {
   return ref.watch(relationRepositoryProvider).list(fragmentId: fragmentId);
+});
+
+final relationsProvider = FutureProvider<List<Relation>>((ref) {
+  return ref.watch(relationRepositoryProvider).list();
 });

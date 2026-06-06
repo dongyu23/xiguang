@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,9 +8,6 @@ import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
-import '../../../../features/stats/presentation/providers/stats_provider.dart';
-import '../../../../features/stats/presentation/widgets/emotion_density_chart.dart';
-import '../../../../features/stats/presentation/widgets/freq_words_cloud.dart';
 import '../../data/island_repository.dart';
 import '../../../../ui/composites/night_mode_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
@@ -20,8 +19,6 @@ class UniversePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final islands = ref.watch(islandsProvider);
-    final emotionDensity = ref.watch(emotionDensityProvider);
-    final freqWords = ref.watch(freqWordsProvider);
     final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
@@ -38,25 +35,19 @@ class UniversePage extends ConsumerWidget {
                     _Header(nightMode: nightMode),
                     const SizedBox(height: 20),
                     islands.when(
-                      data: (items) => _UniverseSkyBanner(
-                        topicCount: items.length,
-                        wovenHintCount: items
-                            .where((item) =>
-                                item.status == 'formed' ||
-                                item.status == 'growing')
-                            .length,
-                      ),
+                      data: (items) => _UniverseSkyBanner(islands: items),
                       loading: () => const _UniverseSkyBanner(),
                       error: (_, __) => const _UniverseSkyBanner(),
                     ),
                     const SizedBox(height: 20),
-                    _ManualIslandPanel(nightMode: nightMode),
-                    const SizedBox(height: 20),
+                    _RelationLedgerPanel(nightMode: nightMode),
+                    const SizedBox(height: 12),
+                    _CreateIslandPanel(nightMode: nightMode),
+                    const SizedBox(height: 18),
                     _SectionTitle(
-                        title: '正在生长的主题',
-                        action: '轻轻回看',
-                        nightMode: nightMode,
-                        onTap: () => context.push('/starmap')),
+                      title: '我的小岛',
+                      nightMode: nightMode,
+                    ),
                     const SizedBox(height: 12),
                     islands.when(
                       data: (items) => _TopicIslandGrid(
@@ -72,59 +63,6 @@ class UniversePage extends ConsumerWidget {
                         nightMode: nightMode,
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: nightMode
-                          ? _nightPanelDecoration()
-                          : softDecoration(AppColors.white),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('近期微光',
-                              style: AppText.onNight(
-                                  AppText.titleMedium, nightMode)),
-                          const SizedBox(height: 12),
-                          freqWords.when(
-                            data: (result) => result.words.isEmpty
-                                ? Text('高频主题会在这里慢慢浮现。',
-                                    style: AppText.onNight(
-                                        AppText.caption, nightMode))
-                                : FreqWordsCloud(
-                                    words: result.words
-                                        .take(8)
-                                        .map((word) =>
-                                            '${word.text} · ${word.count}')
-                                        .toList(),
-                                  ),
-                            loading: () => const LinearProgressIndicator(),
-                            error: (_, __) => Text('高频主题暂时不可用。',
-                                style: AppText.onNight(
-                                    AppText.caption, nightMode)),
-                          ),
-                          const SizedBox(height: 14),
-                          emotionDensity.when(
-                            data: (density) => density.emotions.isEmpty
-                                ? Text('情绪密度会在留下更多光后出现。',
-                                    style: AppText.onNight(
-                                        AppText.caption, nightMode))
-                                : EmotionDensityChart(
-                                    values: {
-                                      for (final item
-                                          in density.emotions.take(6))
-                                        item.name: item.percentage,
-                                    },
-                                  ),
-                            loading: () => const SizedBox.shrink(),
-                            error: (_, __) => Text('情绪密度暂时不可用。',
-                                style: AppText.onNight(
-                                    AppText.caption, nightMode)),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    _SoftAiPanel(nightMode: nightMode),
                   ]),
             ),
           ),
@@ -148,12 +86,6 @@ class _Header extends StatelessWidget {
         Expanded(
           child: Text('屿', style: AppText.onNight(AppText.hero, nightMode)),
         ),
-        IconButton.filledTonal(
-          tooltip: '新建小岛',
-          onPressed: () => context.push('/islands/create'),
-          icon: const Icon(Icons.add_rounded, size: 20),
-        ),
-        const SizedBox(width: 8),
         const NightModeButton(),
       ]),
       const SizedBox(height: 8),
@@ -165,41 +97,68 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _UniverseSkyBanner extends StatelessWidget {
-  const _UniverseSkyBanner({this.topicCount = 0, this.wovenHintCount = 0});
+class _UniverseSkyBanner extends StatefulWidget {
+  const _UniverseSkyBanner({this.islands = const []});
 
-  final int topicCount;
-  final int wovenHintCount;
+  final List<IslandModel> islands;
+
+  @override
+  State<_UniverseSkyBanner> createState() => _UniverseSkyBannerState();
+}
+
+class _UniverseSkyBannerState extends State<_UniverseSkyBanner>
+    with TickerProviderStateMixin {
+  late final AnimationController _breathe;
+
+  @override
+  void initState() {
+    super.initState();
+    _breathe = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _breathe.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final items = widget.islands;
+
     return Container(
-      height: 286,
+      height: 276,
       decoration: softDecoration(AppColors.ink)
           .copyWith(gradient: AppColors.gradientNight),
       child: Stack(children: [
-        const Positioned.fill(child: _StarMapPainterWidget()),
+        // Data-driven star map
+        Positioned.fill(
+          child: AnimatedBuilder(
+            animation: _breathe,
+            builder: (_, __) => CustomPaint(
+              painter: _UniversePainter(
+                islands: items,
+                breathe: _breathe.value,
+              ),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+        // Island name labels
+        if (items.isNotEmpty)
+          Positioned.fill(
+            child: _IslandLabels(islands: items),
+          ),
+        // Top bar
         Positioned(
             left: 20,
             top: 18,
             right: 20,
-            child: Row(children: [
-              Expanded(child: Text('近期星图', style: AppText.inverseTitle)),
-              _SkyPillButton(
-                label: '已织线',
-                icon: Icons.timeline_rounded,
-                onTap: () => context.push('/starmap'),
-              ),
-            ])),
-        Positioned(
-          left: 20,
-          top: 58,
-          child: Row(children: [
-            _SkyMetric(value: '$topicCount', label: '主题星点'),
-            const SizedBox(width: 8),
-            _SkyMetric(value: '$wovenHintCount', label: '线索靠近'),
-          ]),
-        ),
+            child: Text('小宇宙', style: AppText.inverseTitle)),
+        // Bottom actions
         Positioned(
             left: 20,
             bottom: 20,
@@ -207,26 +166,14 @@ class _UniverseSkyBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('反复出现的标签会先变成主题星点，靠近之后会被织成一条线。',
-                    style: AppText.inverseBody),
+                if (items.isEmpty)
+                  Text('第一座小岛会在这里亮起。', style: AppText.inverseBody)
+                else
+                  Text(
+                    '每一座小岛，都先安静地发着自己的光。',
+                    style: AppText.inverseBody,
+                  ),
                 const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(
-                    child: _SkyActionButton(
-                      label: '查看已织线',
-                      icon: Icons.account_tree_outlined,
-                      onTap: () => context.push('/starmap'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _SkyActionButton(
-                      label: '聊聊星图',
-                      icon: Icons.auto_awesome_outlined,
-                      onTap: () => context.push('/glow-organize'),
-                    ),
-                  ),
-                ]),
               ],
             )),
       ]),
@@ -234,8 +181,176 @@ class _UniverseSkyBanner extends StatelessWidget {
   }
 }
 
-class _ManualIslandPanel extends StatelessWidget {
-  const _ManualIslandPanel({required this.nightMode});
+/// Data-driven star map painter — each island is a glowing star.
+class _UniversePainter extends CustomPainter {
+  _UniversePainter({required this.islands, required this.breathe});
+
+  final List<IslandModel> islands;
+  final double breathe;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+
+    // Background star dust
+    final dustPaint = Paint()
+      ..color = AppColors.white.withValues(alpha: .08 + breathe * .04);
+    final rng = Random(17);
+    for (var i = 0; i < 40; i++) {
+      final x = (rng.nextDouble() * 0.9 + 0.05) * size.width;
+      final y = (rng.nextDouble() * 0.85 + 0.05) * size.height;
+      final r = (rng.nextDouble() * 1.4 + 0.4) * (1 + breathe * 0.3);
+      canvas.drawCircle(Offset(x, y), r, dustPaint);
+    }
+
+    if (islands.isEmpty) {
+      // Empty state: single soft glow at center
+      final emptyGlow = Paint()
+        ..shader = RadialGradient(colors: [
+          AppColors.white.withValues(alpha: .12 + breathe * .04),
+          Colors.transparent,
+        ]).createShader(Rect.fromCircle(center: center, radius: 80));
+      canvas.drawCircle(center, 80, emptyGlow);
+      return;
+    }
+
+    // Position islands in a gentle spiral from center
+    final points = <_IslandPoint>[];
+    for (var i = 0; i < islands.length; i++) {
+      final angle = i * 2.4 + 0.5; // golden-angle-ish spiral
+      final dist = 50.0 + i * 38.0;
+      final x = center.dx + cos(angle) * dist;
+      final y = center.dy + sin(angle) * dist;
+      points.add(_IslandPoint(
+        x: x.clamp(30, size.width - 30),
+        y: y.clamp(30, size.height - 50),
+        radius: 7.0 + islands[i].fragmentCount.clamp(0, 8) * 1.2,
+        color: AppColors.emotionColor(islands[i].name),
+        name: islands[i].name,
+        status: islands[i].status,
+        fragmentCount: islands[i].fragmentCount,
+      ));
+    }
+
+    // Draw subtle connecting lines between nearby islands
+    final linePaint = Paint()
+      ..color = AppColors.white.withValues(alpha: .10)
+      ..strokeWidth = 0.7;
+    for (var i = 0; i < points.length; i++) {
+      for (var j = i + 1; j < points.length; j++) {
+        final dx = points[i].x - points[j].x;
+        final dy = points[i].y - points[j].y;
+        final dist = sqrt(dx * dx + dy * dy);
+        if (dist < 160) {
+          final alpha = (1 - dist / 160) * 0.16;
+          linePaint.color = AppColors.white.withValues(alpha: alpha);
+          canvas.drawLine(
+            Offset(points[i].x, points[i].y),
+            Offset(points[j].x, points[j].y),
+            linePaint,
+          );
+        }
+      }
+    }
+
+    // Draw each star
+    for (final pt in points) {
+      final glowAlpha = 0.14 + breathe * 0.06;
+      final glowPaint = Paint()
+        ..shader = RadialGradient(colors: [
+          pt.color.withValues(alpha: glowAlpha * 2),
+          pt.color.withValues(alpha: glowAlpha),
+          Colors.transparent,
+        ]).createShader(Rect.fromCircle(
+            center: Offset(pt.x, pt.y), radius: pt.radius * 3.0));
+      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius * 3.0, glowPaint);
+
+      // Outer halo
+      final haloPaint = Paint()
+        ..color = AppColors.white.withValues(alpha: .18 + breathe * .08);
+      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius + 2.6, haloPaint);
+
+      // Core
+      final corePaint = Paint()..color = pt.color.withValues(alpha: .9);
+      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius, corePaint);
+
+      // Bright center
+      final brightPaint = Paint()
+        ..color = AppColors.white.withValues(alpha: .72 + breathe * .12);
+      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius * 0.35, brightPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _UniversePainter old) =>
+      old.breathe != breathe || old.islands != islands;
+}
+
+class _IslandPoint {
+  final double x, y;
+  final double radius;
+  final Color color;
+  final String name;
+  final String status;
+  final int fragmentCount;
+
+  _IslandPoint({
+    required this.x,
+    required this.y,
+    required this.radius,
+    required this.color,
+    required this.name,
+    required this.status,
+    required this.fragmentCount,
+  });
+}
+
+/// Subtle island name labels positioned near their stars.
+class _IslandLabels extends StatelessWidget {
+  const _IslandLabels({required this.islands});
+  final List<IslandModel> islands;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final center = Offset(
+      (size.width - 40) / 2,
+      (size.height - 50) / 2,
+    );
+    return Stack(
+      children: List.generate(islands.length, (i) {
+        final angle = i * 2.4 + 0.5;
+        final dist = 50.0 + i * 38.0;
+        final x = center.dx + cos(angle) * dist - 40;
+        final y = center.dy + sin(angle) * dist + 18;
+        return Positioned(
+          left: x.clamp(0, size.width - 100),
+          top: y.clamp(0, size.height - 30),
+          child: GestureDetector(
+            onTap: () => context.push(_islandDetailPath(islands[i])),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 80),
+              child: Text(
+                islands[i].name,
+                style: AppText.inverseBody.copyWith(
+                  fontSize: 10,
+                  color: AppColors.white.withValues(alpha: .68),
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+class _CreateIslandPanel extends StatelessWidget {
+  const _CreateIslandPanel({required this.nightMode});
 
   final bool nightMode;
 
@@ -246,17 +361,17 @@ class _ManualIslandPanel extends StatelessWidget {
       onTap: () => context.push('/islands/create'),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
         decoration: nightMode
             ? _nightPanelDecoration()
             : softDecoration(AppColors.white),
         child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
           Container(
-            width: 46,
-            height: 46,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: AppColors.sunsetCoral
-                  .withValues(alpha: nightMode ? .28 : .20),
+                  .withValues(alpha: nightMode ? .24 : .16),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
                 color: nightMode
@@ -267,18 +382,18 @@ class _ManualIslandPanel extends StatelessWidget {
             child: Icon(
               Icons.add_location_alt_outlined,
               color: nightMode ? AppText.nightInk : AppColors.ink,
-              size: 22,
+              size: 19,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('手动创建小岛',
+              Text('创建小岛',
                   style: AppText.onNight(AppText.titleMedium, nightMode)),
-              const SizedBox(height: 5),
+              const SizedBox(height: 3),
               Text(
-                '先取一个名字，再慢慢把任意光片放进来。',
+                '以一方小岛，安放细碎情绪。',
                 style: AppText.onNight(AppText.bodyMuted, nightMode),
               ),
             ]),
@@ -294,144 +409,63 @@ class _ManualIslandPanel extends StatelessWidget {
   }
 }
 
-class _SkyMetric extends StatelessWidget {
-  const _SkyMetric({required this.value, required this.label});
+class _RelationLedgerPanel extends StatelessWidget {
+  const _RelationLedgerPanel({required this.nightMode});
 
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: AppColors.white.withValues(alpha: .13),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.white.withValues(alpha: .16)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(value,
-            style: AppText.inverseBody.copyWith(
-              fontWeight: FontWeight.w800,
-              height: 1,
-            )),
-        const SizedBox(width: 5),
-        Text(label,
-            style: AppText.inverseBody.copyWith(
-              fontSize: 11,
-              color: AppColors.white.withValues(alpha: .82),
-            )),
-      ]),
-    );
-  }
-}
-
-class _SkyPillButton extends StatelessWidget {
-  const _SkyPillButton(
-      {required this.label, required this.icon, required this.onTap});
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
+  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
+      onTap: () => context.push('/relations/ledger'),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.white.withValues(alpha: .9),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 15, color: AppColors.ink),
-          const SizedBox(width: 5),
-          Text(label,
-              style: AppText.chip.copyWith(
-                color: AppColors.ink,
-                fontWeight: FontWeight.w800,
-              )),
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+        decoration: nightMode
+            ? _nightPanelDecoration()
+            : softDecoration(AppColors.white),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.teaGreen.withValues(alpha: nightMode ? .24 : .14),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: nightMode
+                    ? AppColors.white.withValues(alpha: .12)
+                    : AppColors.teaGreen.withValues(alpha: .24),
+              ),
+            ),
+            child: Icon(
+              Icons.account_tree_outlined,
+              color: nightMode ? AppText.nightInk : AppColors.ink,
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('查看已织线',
+                  style: AppText.onNight(AppText.titleMedium, nightMode)),
+              const SizedBox(height: 3),
+              Text(
+                '回看已经确认过的光与光之间的关系。',
+                style: AppText.onNight(AppText.bodyMuted, nightMode),
+              ),
+            ]),
+          ),
+          const SizedBox(width: 10),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted,
+          ),
         ]),
       ),
     );
   }
-}
-
-class _SkyActionButton extends StatelessWidget {
-  const _SkyActionButton(
-      {required this.label, required this.icon, required this.onTap});
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton.icon(
-      style: FilledButton.styleFrom(
-        backgroundColor: AppColors.white,
-        foregroundColor: AppColors.ink,
-        minimumSize: const Size(0, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-      onPressed: onTap,
-      icon: Icon(icon, size: 17),
-      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-    );
-  }
-}
-
-class _StarMapPainterWidget extends StatelessWidget {
-  const _StarMapPainterWidget();
-  @override
-  Widget build(_) =>
-      CustomPaint(painter: _StarMapPainter(), child: const SizedBox.expand());
-}
-
-class _StarMapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final pts = [
-      Offset(size.width * .18, size.height * .38),
-      Offset(size.width * .40, size.height * .28),
-      Offset(size.width * .70, size.height * .42),
-      Offset(size.width * .34, size.height * .62),
-      Offset(size.width * .76, size.height * .72),
-      Offset(size.width * .58, size.height * .56),
-    ];
-    final lp = Paint()
-      ..color = AppColors.white.withValues(alpha: .24)
-      ..strokeWidth = 1.2;
-    final pairs = [
-      (0, 1),
-      (1, 2),
-      (2, 5),
-      (5, 3),
-      (3, 4),
-      (3, 0),
-    ];
-    for (final pair in pairs) {
-      canvas.drawLine(pts[pair.$1], pts[pair.$2], lp);
-    }
-    final gp = Paint()..color = AppColors.white.withValues(alpha: .22);
-    final sp = Paint()..color = AppColors.white.withValues(alpha: .86);
-    for (var i = 0; i < pts.length; i++) {
-      canvas.drawCircle(pts[i], 18 + i * 2, gp);
-      canvas.drawCircle(pts[i], 5 + i.toDouble(), sp);
-    }
-    final tp = Paint()..color = AppColors.white.withValues(alpha: .12);
-    for (var i = 0; i < 22; i++) {
-      final x = (i * 37 % size.width).toDouble();
-      final y = (i * 53 % size.height).toDouble();
-      canvas.drawCircle(Offset(x, y), i.isEven ? 1.4 : 2.1, tp);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
 }
 
 class _TopicIsland extends StatelessWidget {
@@ -463,13 +497,11 @@ class _TopicIsland extends StatelessWidget {
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                  width: 34 + count * 4,
-                  height: 34 + count * 4,
-                  decoration:
-                      BoxDecoration(color: color, shape: BoxShape.circle),
-                  child: const Icon(Icons.blur_on_rounded,
-                      color: Colors.white, size: 18)),
+              _IslandGlyph(
+                color: color,
+                size: 34 + count * 4,
+                nightMode: nightMode,
+              ),
               const Spacer(),
               Icon(Icons.chevron_right_rounded,
                   size: 18,
@@ -505,6 +537,126 @@ class _TopicIsland extends StatelessWidget {
   }
 }
 
+class _IslandGlyph extends StatelessWidget {
+  const _IslandGlyph({
+    required this.color,
+    required this.size,
+    required this.nightMode,
+  });
+
+  final Color color;
+  final double size;
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _IslandGlyphPainter(
+          color: color,
+          ink: nightMode ? AppText.nightInk : AppColors.ink,
+        ),
+      ),
+    );
+  }
+}
+
+class _IslandGlyphPainter extends CustomPainter {
+  const _IslandGlyphPainter({required this.color, required this.ink});
+
+  final Color color;
+  final Color ink;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide / 2;
+    final wash = Paint()
+      ..color = color.withValues(alpha: .62)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, radius, wash);
+
+    final stroke = Paint()
+      ..color = AppColors.white.withValues(alpha: .88)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = max(1.6, radius * .08)
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final land = Path()
+      ..moveTo(size.width * .22, size.height * .68)
+      ..quadraticBezierTo(
+        size.width * .40,
+        size.height * .58,
+        size.width * .56,
+        size.height * .66,
+      )
+      ..quadraticBezierTo(
+        size.width * .70,
+        size.height * .73,
+        size.width * .82,
+        size.height * .62,
+      );
+    canvas.drawPath(land, stroke);
+
+    final trunkBase = Offset(size.width * .50, size.height * .63);
+    final trunkTop = Offset(size.width * .54, size.height * .38);
+    canvas.drawLine(trunkBase, trunkTop, stroke);
+
+    final leafLeft = Path()
+      ..moveTo(trunkTop.dx, trunkTop.dy)
+      ..quadraticBezierTo(
+        size.width * .36,
+        size.height * .31,
+        size.width * .28,
+        size.height * .42,
+      );
+    final leafMid = Path()
+      ..moveTo(trunkTop.dx, trunkTop.dy)
+      ..quadraticBezierTo(
+        size.width * .55,
+        size.height * .22,
+        size.width * .67,
+        size.height * .34,
+      );
+    final leafRight = Path()
+      ..moveTo(trunkTop.dx, trunkTop.dy)
+      ..quadraticBezierTo(
+        size.width * .72,
+        size.height * .35,
+        size.width * .75,
+        size.height * .49,
+      );
+    canvas.drawPath(leafLeft, stroke);
+    canvas.drawPath(leafMid, stroke);
+    canvas.drawPath(leafRight, stroke);
+
+    final shadow = Paint()
+      ..color = ink.withValues(alpha: .12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = max(1, radius * .05)
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: Offset(size.width * .48, size.height * .78),
+        width: size.width * .46,
+        height: size.height * .12,
+      ),
+      .08,
+      pi * .82,
+      false,
+      shadow,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _IslandGlyphPainter oldDelegate) {
+    return oldDelegate.color != color || oldDelegate.ink != ink;
+  }
+}
+
 class _TopicIslandGrid extends StatelessWidget {
   const _TopicIslandGrid({required this.items, required this.nightMode});
 
@@ -537,14 +689,18 @@ class _TopicIslandGrid extends StatelessWidget {
                     island: island,
                     width: width,
                     nightMode: nightMode,
-                    onTap: () => context
-                        .push('/islands/${Uri.encodeComponent(island.name)}'),
+                    onTap: () => context.push(_islandDetailPath(island)),
                   ))
               .toList(),
         );
       },
     );
   }
+}
+
+String _islandDetailPath(IslandModel island) {
+  final routeId = island.islandId > 0 ? '${island.islandId}' : island.name;
+  return '/islands/${Uri.encodeComponent(routeId)}';
 }
 
 class _TopicStatusPill extends StatelessWidget {
@@ -562,8 +718,8 @@ class _TopicStatusPill extends StatelessWidget {
     final String label;
     final IconData icon;
     if (_isFormed) {
-      label = '已织线';
-      icon = Icons.account_tree_outlined;
+      label = '已成岛';
+      icon = Icons.terrain_outlined;
     } else if (_isGrowing) {
       label = '生长中';
       icon = Icons.auto_awesome_outlined;
@@ -616,98 +772,15 @@ class _TopicStatusPill extends StatelessWidget {
   }
 }
 
-class _SoftAiPanel extends StatelessWidget {
-  const _SoftAiPanel({required this.nightMode});
-
-  final bool nightMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => context.push('/glow-organize'),
-      child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: nightMode
-              ? _nightPanelDecoration()
-              : softDecoration(AppColors.white),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                      color: AppColors.lilac,
-                      borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.auto_awesome_outlined,
-                      color: AppColors.ink)),
-              const SizedBox(width: 12),
-              Expanded(
-                  child: Text('AI 星图对话',
-                      style: AppText.onNight(AppText.titleMedium, nightMode))),
-              Icon(Icons.chevron_right_rounded,
-                  color:
-                      nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
-            ]),
-            const SizedBox(height: 12),
-            Text('可以从这里问：这些线为什么靠近？哪个主题先继续写？我只在你点开时回应。',
-                style: AppText.onNight(AppText.body, nightMode)),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-              decoration: BoxDecoration(
-                color: nightMode
-                    ? AppColors.white.withValues(alpha: .08)
-                    : AppColors.paper.withValues(alpha: .86),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: nightMode
-                        ? AppColors.white.withValues(alpha: .12)
-                        : AppColors.line),
-              ),
-              child: Row(children: [
-                Expanded(
-                  child: Text('聊聊这些已织好的线...',
-                      style: AppText.onNight(AppText.placeholder, nightMode),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: AppColors.teaGreen.withValues(alpha: .18),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.arrow_forward_rounded,
-                      size: 18, color: AppColors.teaGreen),
-                ),
-              ]),
-            ),
-          ])),
-    );
-  }
-}
-
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(
-      {required this.title,
-      required this.action,
-      required this.nightMode,
-      required this.onTap});
-  final String title, action;
+  const _SectionTitle({required this.title, required this.nightMode});
+
+  final String title;
   final bool nightMode;
-  final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
-      Expanded(
-          child: Text(title,
-              style: AppText.onNight(AppText.titleMedium, nightMode))),
-      TextButton(onPressed: onTap, child: Text(action)),
-    ]);
+    return Text(title, style: AppText.onNight(AppText.titleMedium, nightMode));
   }
 }
 

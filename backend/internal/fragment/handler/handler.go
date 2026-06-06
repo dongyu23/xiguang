@@ -117,9 +117,10 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	var req struct {
-		ContentText string   `json:"content_text"`
-		Emotion     string   `json:"emotion"`
-		Tags        []string `json:"tag_names"`
+		ContentText string    `json:"content_text"`
+		Emotion     string    `json:"emotion"`
+		Tags        []string  `json:"tag_names"`
+		MediaURLs   *[]string `json:"media_urls"`
 	}
 	if err := shared.DecodeJSON(r, &req); err != nil {
 		shared.WriteError(w, http.StatusBadRequest, "bad_request", "请求格式不正确。")
@@ -130,9 +131,14 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		ContentText: req.ContentText,
 		Emotion:     req.Emotion,
 		Tags:        req.Tags,
+		MediaURLs:   req.MediaURLs,
 	})
 	if errors.Is(err, service.ErrEmptyLight) {
 		shared.WriteError(w, http.StatusBadRequest, "empty_light", "文字内容不能为空。")
+		return
+	}
+	if errors.Is(err, service.ErrInvalidMedia) {
+		shared.WriteError(w, http.StatusBadRequest, "invalid_media", "图片需要先完成上传，再放进这束光。")
 		return
 	}
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -82,6 +82,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: Stack(children: [
         const Positioned.fill(child: AtmosphereBackground()),
         const Positioned.fill(child: _IntroLightField()),

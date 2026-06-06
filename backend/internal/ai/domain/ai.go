@@ -28,6 +28,17 @@ type AISuggestedIsland struct {
 	Confidence  string  `json:"confidence"`
 }
 
+type PolishRequest struct {
+	ContentText string `json:"content_text"`
+	Emotion     string `json:"emotion"`
+}
+
+type PolishResponse struct {
+	Status       string `json:"status"`
+	Message      string `json:"message"`
+	PolishedText string `json:"polished_text"`
+}
+
 type RequestLog struct {
 	ID        int64     `json:"id"`
 	Mode      string    `json:"mode"`

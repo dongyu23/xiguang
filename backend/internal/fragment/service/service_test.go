@@ -17,7 +17,7 @@ func (f fakeRepo) Create(ctx context.Context, userID int64, text, emotion, statu
 	return domain.Fragment{ID: 1, UserID: userID, ContentText: text, Emotion: emotion, Status: status, Tags: tags, MediaURLs: media, CreatedAt: time.Now()}, nil
 }
 
-func (f fakeRepo) Update(ctx context.Context, userID int64, id int64, text, emotion, status string, tags []string) (domain.Fragment, error) {
+func (f fakeRepo) Update(ctx context.Context, userID int64, id int64, text, emotion, status string, tags []string, media *[]string) (domain.Fragment, error) {
 	return domain.Fragment{}, nil
 }
 
@@ -75,6 +75,22 @@ func TestCreateAcceptsInlineImageMedia(t *testing.T) {
 		t.Fatalf("expected inline image media to be accepted: %v", err)
 	}
 	if len(dto.MediaURLs) != 1 || dto.MediaURLs[0] != "data:image/png;base64,abc" {
+		t.Fatalf("unexpected media urls: %+v", dto.MediaURLs)
+	}
+}
+
+func TestCreateAcceptsInlineAudioMedia(t *testing.T) {
+	svc := New(fakeRepo{}, nil)
+
+	dto, err := svc.Create(context.Background(), 7, domain.CreateParams{
+		ContentText: "hello",
+		Emotion:     "平静",
+		MediaURLs:   []string{"data:audio/mp4;base64,abc"},
+	})
+	if err != nil {
+		t.Fatalf("expected inline audio media to be accepted: %v", err)
+	}
+	if len(dto.MediaURLs) != 1 || dto.MediaURLs[0] != "data:audio/mp4;base64,abc" {
 		t.Fatalf("unexpected media urls: %+v", dto.MediaURLs)
 	}
 }

@@ -88,7 +88,17 @@ func (s *Service) Update(ctx context.Context, userID int64, params domain.Update
 		params.Emotion = "说不清"
 	}
 	tags := cleanTags(params.Tags)
-	return s.repo.Update(ctx, userID, params.ID, params.ContentText, params.Emotion, statusFor(params.Emotion, len(tags), 0), tags)
+	mediaCount := 0
+	var media *[]string
+	if params.MediaURLs != nil {
+		cleaned, err := s.cleanMedia(ctx, userID, *params.MediaURLs)
+		if err != nil {
+			return domain.Fragment{}, err
+		}
+		mediaCount = len(cleaned)
+		media = &cleaned
+	}
+	return s.repo.Update(ctx, userID, params.ID, params.ContentText, params.Emotion, statusFor(params.Emotion, len(tags), mediaCount), tags, media)
 }
 
 func (s *Service) Delete(ctx context.Context, userID, id int64) (bool, error) {
@@ -121,7 +131,7 @@ func (s *Service) cleanMedia(ctx context.Context, userID int64, media []string) 
 	prefix := "users/" + strconv.FormatInt(userID, 10) + "/media/"
 	objectKeys := make([]string, 0, len(items))
 	for _, item := range items {
-		if isInlineImage(item) {
+		if isInlineMedia(item) {
 			continue
 		}
 		if strings.HasPrefix(item, "file:") ||
@@ -162,11 +172,17 @@ func cleanMediaKeys(media []string) []string {
 	return result
 }
 
-func isInlineImage(value string) bool {
-	if len(value) > 750_000 {
+func isInlineMedia(value string) bool {
+	isImage := strings.HasPrefix(value, "data:image/")
+	isAudio := strings.HasPrefix(value, "data:audio/")
+	if !isImage && !isAudio {
 		return false
 	}
-	if !strings.HasPrefix(value, "data:image/") {
+	limit := 750_000
+	if isAudio {
+		limit = 3_000_000
+	}
+	if len(value) > limit {
 		return false
 	}
 	header, payload, ok := strings.Cut(value, ",")
@@ -177,7 +193,13 @@ func isInlineImage(value string) bool {
 	case strings.HasPrefix(header, "data:image/jpeg"),
 		strings.HasPrefix(header, "data:image/png"),
 		strings.HasPrefix(header, "data:image/webp"),
-		strings.HasPrefix(header, "data:image/gif"):
+		strings.HasPrefix(header, "data:image/gif"),
+		strings.HasPrefix(header, "data:audio/wav"),
+		strings.HasPrefix(header, "data:audio/mpeg"),
+		strings.HasPrefix(header, "data:audio/mp4"),
+		strings.HasPrefix(header, "data:audio/aac"),
+		strings.HasPrefix(header, "data:audio/ogg"),
+		strings.HasPrefix(header, "data:audio/opus"):
 		return true
 	default:
 		return false

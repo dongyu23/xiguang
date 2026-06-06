@@ -56,9 +56,8 @@ class IslandRepository {
         counts[tag] = (counts[tag] ?? 0) + 1;
       }
     }
-    final islands = counts.entries
-        .where((entry) => entry.value >= 3)
-        .map((entry) {
+    final islands =
+        counts.entries.where((entry) => entry.value >= 3).map((entry) {
       final count = entry.value;
       final String status;
       if (count >= 5) {
@@ -72,9 +71,7 @@ class IslandRepository {
         name: entry.key,
         status: status,
         fragmentCount: count,
-        description: status == 'formed'
-            ? '这座小岛已经成形。'
-            : '这个主题星点正在靠近更多旧光。',
+        description: status == 'formed' ? '这座小岛已经成形。' : '这个主题星点正在靠近更多旧光。',
       );
     }).toList();
     islands.sort((a, b) => b.fragmentCount.compareTo(a.fragmentCount));
@@ -120,12 +117,17 @@ class IslandRepository {
     return IslandModel.fromJson(body);
   }
 
-  Future<List<LightFragmentModel>> listIslandFragments(String name) async {
+  Future<List<LightFragmentModel>> listIslandFragments(
+    String name, {
+    int? islandId,
+  }) async {
     await _auth.ensureSession();
     if (_api.hasToken) {
       try {
-        final body =
-            await _api.get('/islands/${Uri.encodeComponent(name)}/fragments');
+        final idOrName = islandId != null && islandId > 0
+            ? '$islandId'
+            : Uri.encodeComponent(name);
+        final body = await _api.get('/islands/$idOrName/fragments');
         final items = body['fragments'] as List<dynamic>? ?? const [];
         return items
             .map((item) =>

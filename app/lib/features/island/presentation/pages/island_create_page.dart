@@ -30,13 +30,15 @@ class _IslandCreatePageState extends ConsumerState<IslandCreatePage> {
     if (name.isEmpty) return;
     setState(() => _creating = true);
     try {
-      await ref.read(islandRepositoryProvider).createIsland(
+      final island = await ref.read(islandRepositoryProvider).createIsland(
             name,
             _descController.text.trim(),
           );
       ref.invalidate(islandsProvider);
       if (mounted) {
-        context.push('/islands/${Uri.encodeComponent(name)}');
+        final routeId =
+            island.islandId > 0 ? '${island.islandId}' : island.name;
+        context.push('/islands/${Uri.encodeComponent(routeId)}');
       }
     } catch (_) {
       if (mounted) {

@@ -19,8 +19,9 @@ import '../features/space/presentation/pages/space_page.dart';
 import '../features/starmap/presentation/widgets/starmap_page.dart';
 import '../features/whitenoise/presentation/pages/whitenoise_page.dart';
 import '../features/profile/presentation/pages/mine_page.dart';
-import '../features/profile/presentation/pages/settings_page.dart';
+import '../features/relation/presentation/pages/relation_ledger_page.dart';
 import '../features/relation/presentation/pages/weave_page.dart';
+import '../ui/spaces/space_canvas.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -28,6 +29,7 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 ///
 /// 四个底部 Tab 作为一级入口；光片详情/织线保留为上下文页面。
 GoRouter createRouter(WidgetRef ref) {
+  final shellRouteKey = GlobalKey<StatefulNavigationShellState>();
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/login',
@@ -49,11 +51,27 @@ GoRouter createRouter(WidgetRef ref) {
     routes: [
       GoRoute(
         path: '/auth-restoring',
-        builder: (_, __) => const _AuthRestoringPage(),
+        pageBuilder: (_, state) => NoTransitionPage(
+          key: state.pageKey,
+          child: const _AuthRestoringPage(),
+        ),
       ),
-      GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
-      GoRoute(path: '/register', builder: (_, __) => const RegisterPage()),
+      GoRoute(
+        path: '/login',
+        pageBuilder: (_, state) => NoTransitionPage(
+          key: state.pageKey,
+          child: const LoginPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/register',
+        pageBuilder: (_, state) => NoTransitionPage(
+          key: state.pageKey,
+          child: const RegisterPage(),
+        ),
+      ),
       StatefulShellRoute.indexedStack(
+        key: shellRouteKey,
         builder: (context, state, navigationShell) =>
             _AppShell(navigationShell),
         branches: [
@@ -85,12 +103,13 @@ GoRouter createRouter(WidgetRef ref) {
                 path: '/islands/:id',
                 builder: (_, state) =>
                     IslandDetailPage(id: state.pathParameters['id']!)),
+            GoRoute(
+                path: '/relations/ledger',
+                builder: (_, __) => const RelationLedgerPage()),
           ]),
           // Tab 4: 我的
           StatefulShellBranch(routes: [
             GoRoute(path: '/mine', builder: (_, __) => const MinePage()),
-            GoRoute(
-                path: '/settings', builder: (_, __) => const SettingsPage()),
           ]),
         ],
       ),
@@ -123,7 +142,13 @@ class _AuthRestoringPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return const Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(children: [
+        Positioned.fill(child: AtmosphereBackground()),
+        Center(child: CircularProgressIndicator()),
+      ]),
+    );
   }
 }
 
@@ -135,15 +160,17 @@ class _AppShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: navigationShell,
       bottomNavigationBar: _XiguangNavBar(
         selectedIndex: navigationShell.currentIndex,
-        onTap: (i) => navigationShell.goBranch(i,
-            initialLocation: i == navigationShell.currentIndex),
+        onTap: (i) => context.go(_tabRootPaths[i]),
       ),
     );
   }
 }
+
+const _tabRootPaths = ['/capture', '/timeline', '/universe', '/mine'];
 
 /// 底部导航栏 — 隙 / 线 / 屿 / 我的
 class _XiguangNavBar extends ConsumerWidget {
@@ -156,10 +183,10 @@ class _XiguangNavBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final nightMode = ref.watch(nightModeProvider);
     const items = [
-      ('assets/nav_icons/nav_gap.png', '隙', 'capture'),
-      ('assets/nav_icons/nav_thread.png', '线', 'timeline'),
-      ('assets/nav_icons/nav_island.png', '屿', 'universe'),
-      ('assets/nav_icons/nav_mine.png', '我的', 'mine'),
+      ('assets/nav_icons/nav_gap.png', '隙', 'capture', 34.0, 28.0),
+      ('assets/nav_icons/nav_thread.png', '线', 'timeline', 28.0, 23.0),
+      ('assets/nav_icons/nav_island.png', '屿', 'universe', 34.0, 28.0),
+      ('assets/nav_icons/nav_mine.png', '我的', 'mine', 34.0, 28.0),
     ];
 
     return Container(
@@ -206,6 +233,8 @@ class _XiguangNavBar extends ConsumerWidget {
                       assetPath: items[i].$1,
                       selected: selected,
                       nightMode: nightMode,
+                      width: items[i].$4,
+                      height: items[i].$5,
                     ),
                     const SizedBox(height: 4),
                     Text(items[i].$2,
@@ -235,11 +264,15 @@ class _NavIcon extends StatelessWidget {
     required this.assetPath,
     required this.selected,
     required this.nightMode,
+    required this.width,
+    required this.height,
   });
 
   final String assetPath;
   final bool selected;
   final bool nightMode;
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -248,8 +281,8 @@ class _NavIcon extends StatelessWidget {
       opacity: selected ? 1 : (nightMode ? .72 : .66),
       child: Image.asset(
         assetPath,
-        width: 34,
-        height: 28,
+        width: width,
+        height: height,
         fit: BoxFit.contain,
         filterQuality: FilterQuality.high,
       ),
@@ -261,5 +294,8 @@ class FragmentEditPlaceholder extends StatelessWidget {
   const FragmentEditPlaceholder({super.key, required this.id});
   final String id;
   @override
-  Widget build(_) => Scaffold(body: Center(child: Text('编辑光片: $id')));
+  Widget build(_) => Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(child: Text('编辑光片: $id')),
+      );
 }

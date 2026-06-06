@@ -31,6 +31,7 @@ func TestRouterMountsCLAUDEMVPModules(t *testing.T) {
 		`private.Mount("/whitenoise"`,
 		`private.Mount("/sync"`,
 		`private.Mount("/ai"`,
+		`private.Mount("/asr"`,
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(source, snippet) {
