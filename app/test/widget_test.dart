@@ -83,10 +83,10 @@ void main() {
     await tester.pumpAndSettle(const Duration(milliseconds: 100),
         EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
     expect(tester.takeException(), isNull);
-    expect(find.text('光片详情'), findsOneWidget);
     expect(find.text('织线'), findsOneWidget);
-    expect(find.text('和另一束光织在一起'), findsOneWidget);
-    await tester.pageBack();
+    expect(find.text('当前这束光'), findsOneWidget);
+    expect(find.text('选择另一束光'), findsOneWidget);
+    await tester.tap(find.byTooltip('返回'));
     await tester.pumpAndSettle(const Duration(milliseconds: 100),
         EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
 
@@ -178,7 +178,7 @@ void main() {
     await tester.pumpAndSettle(const Duration(milliseconds: 100),
         EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
     expect(find.text('还没写完的一束光'), findsNothing);
-    expect(find.text('可以只留一句'), findsOneWidget);
+    expect(find.text('可以只留一句'), findsNothing);
 
     final clearedPrefs = await SharedPreferences.getInstance();
     expect(clearedPrefs.getString('capture_draft_text'), isNull);

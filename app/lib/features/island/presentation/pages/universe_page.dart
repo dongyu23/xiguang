@@ -50,6 +50,8 @@ class UniversePage extends ConsumerWidget {
                       error: (_, __) => const _UniverseSkyBanner(),
                     ),
                     const SizedBox(height: 20),
+                    _ManualIslandPanel(nightMode: nightMode),
+                    const SizedBox(height: 20),
                     _SectionTitle(
                         title: '正在生长的主题',
                         action: '轻轻回看',
@@ -146,11 +148,12 @@ class _Header extends StatelessWidget {
         Expanded(
           child: Text('屿', style: AppText.onNight(AppText.hero, nightMode)),
         ),
-        TextButton.icon(
+        IconButton.filledTonal(
+          tooltip: '新建小岛',
           onPressed: () => context.push('/islands/create'),
-          icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('新建小岛'),
+          icon: const Icon(Icons.add_rounded, size: 20),
         ),
+        const SizedBox(width: 8),
         const NightModeButton(),
       ]),
       const SizedBox(height: 8),
@@ -227,6 +230,66 @@ class _UniverseSkyBanner extends StatelessWidget {
               ],
             )),
       ]),
+    );
+  }
+}
+
+class _ManualIslandPanel extends StatelessWidget {
+  const _ManualIslandPanel({required this.nightMode});
+
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => context.push('/islands/create'),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: nightMode
+            ? _nightPanelDecoration()
+            : softDecoration(AppColors.white),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: AppColors.sunsetCoral
+                  .withValues(alpha: nightMode ? .28 : .20),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: nightMode
+                    ? AppColors.white.withValues(alpha: .12)
+                    : AppColors.sunsetCoral.withValues(alpha: .24),
+              ),
+            ),
+            child: Icon(
+              Icons.add_location_alt_outlined,
+              color: nightMode ? AppText.nightInk : AppColors.ink,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('手动创建小岛',
+                  style: AppText.onNight(AppText.titleMedium, nightMode)),
+              const SizedBox(height: 5),
+              Text(
+                '先取一个名字，再慢慢把任意光片放进来。',
+                style: AppText.onNight(AppText.bodyMuted, nightMode),
+              ),
+            ]),
+          ),
+          const SizedBox(width: 10),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted,
+          ),
+        ]),
+      ),
     );
   }
 }
@@ -448,39 +511,28 @@ class _TopicIslandGrid extends StatelessWidget {
   final List<IslandModel> items;
   final bool nightMode;
 
-  static const _fallbackItems = [
-    IslandModel(
-        name: '微光',
-        status: 'star_point',
-        fragmentCount: 1,
-        description: '先有一束光就好。'),
-    IslandModel(
-        name: '通勤',
-        status: 'star_point',
-        fragmentCount: 1,
-        description: '这个主题星点正在靠近更多旧光。'),
-    IslandModel(
-        name: '奶茶',
-        status: 'star_point',
-        fragmentCount: 1,
-        description: '这个主题星点正在靠近更多旧光。'),
-    IslandModel(
-        name: '小小救命',
-        status: 'star_point',
-        fragmentCount: 1,
-        description: '这个主题星点正在靠近更多旧光。'),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final visibleItems = items.isEmpty ? _fallbackItems : items;
+    if (items.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: nightMode
+            ? _nightPanelDecoration()
+            : softDecoration(AppColors.white),
+        child: Text(
+          '留下第一束光后，真实的小岛会在这里出现。',
+          style: AppText.onNight(AppText.bodyMuted, nightMode),
+        ),
+      );
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = (constraints.maxWidth - 12) / 2;
         return Wrap(
           spacing: 12,
           runSpacing: 12,
-          children: visibleItems
+          children: items
               .map((island) => _TopicIsland(
                     island: island,
                     width: width,

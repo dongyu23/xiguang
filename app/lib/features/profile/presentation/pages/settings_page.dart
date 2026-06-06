@@ -61,6 +61,42 @@ class SettingsPage extends ConsumerWidget {
                     ]),
                     const SizedBox(height: 14),
                     _Panel(children: [
+                      Row(children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: AppColors.lilac.withValues(alpha: .22),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.auto_awesome_outlined,
+                              color: AppColors.ink, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text('人工生成岛', style: AppText.titleMedium),
+                        ),
+                      ]),
+                      const SizedBox(height: 12),
+                      Text(
+                        '让星图管理员读取你的光片，给出候选小岛；确认后才会创建。',
+                        style: AppText.body,
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        key: const ValueKey('settings-build-islands'),
+                        onPressed: () => context.push('/ai/build-islands'),
+                        icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                        label: const Text('让 AI 帮我发现小岛'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor:
+                              AppColors.lilac.withValues(alpha: .18),
+                          foregroundColor: AppColors.ink,
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 14),
+                    _Panel(children: [
                       Text('产品边界', style: AppText.titleMedium),
                       const SizedBox(height: 10),
                       Text('AI 只作为星图管理员预留，不后台分析，不替你解释。', style: AppText.body),

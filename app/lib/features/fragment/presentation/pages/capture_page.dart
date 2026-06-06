@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,7 +15,6 @@ import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../data/fragment_repository.dart';
-import 'fragment_detail_page.dart';
 import '../../../../ui/composites/emotion_picker.dart';
 import '../../../../ui/composites/light_card.dart';
 import '../../../../ui/composites/night_mode_button.dart';
@@ -60,9 +60,9 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
             subtitle: '不用解释，也不用整理。先把这一束光轻轻放下。',
             nightMode: nightMode,
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 12),
           _BreathingLightBanner(moodColor: moodColor, nightMode: nightMode),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           _QuickRecordComposer(
             selectedEmotion: _emotion,
             customEmotion: _customEmotion,
@@ -87,12 +87,7 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
                     .map((f) => LightFragmentCard(
                           fragment: f.toLightFragment(),
                           compact: true,
-                          onTap: () =>
-                              Navigator.of(context, rootNavigator: true).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => FragmentDetailPage(id: '${f.id}'),
-                            ),
-                          ),
+                          onTap: () => context.push('/weave/${f.id}'),
                         ))
                     .toList()),
             loading: () => const Center(
@@ -245,14 +240,14 @@ class _PageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: AppText.onNight(AppText.eyebrow, nightMode)),
-      const SizedBox(height: 8),
+      const SizedBox(height: 4),
       Row(children: [
         Expanded(
           child: Text(title, style: AppText.onNight(AppText.hero, nightMode)),
         ),
         const NightModeButton(),
       ]),
-      const SizedBox(height: 8),
+      const SizedBox(height: 4),
       Text(subtitle, style: AppText.onNight(AppText.body, nightMode)),
     ]);
   }
@@ -271,7 +266,7 @@ class _BreathingLightBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 430;
     return Container(
-      height: compact ? 158 : 210,
+      height: compact ? 154 : 204,
       decoration: softDecoration(AppColors.ink).copyWith(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -294,44 +289,37 @@ class _BreathingLightBanner extends StatelessWidget {
         child: Stack(children: [
           Positioned.fill(child: _CalmWavePainterWidget(color: moodColor)),
           Positioned(
-            right: compact ? 18 : 34,
-            bottom: compact ? 16 : 24,
-            child: _LightTrailNotes(compact: compact),
-          ),
-          Positioned(
-              right: 28,
-              top: compact ? 22 : 34,
-              child: Container(
-                width: compact ? 88 : 112,
-                height: compact ? 88 : 112,
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.white.withValues(alpha: .18),
-                    border: Border.all(
-                        color: AppColors.white.withValues(alpha: .44),
-                        width: 1.2)),
-                child: Center(
-                    child: Container(
-                        width: compact ? 44 : 58,
-                        height: compact ? 44 : 58,
-                        decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: AppColors.white.withValues(alpha: .7)))),
-              )),
-          Positioned(
               left: 20,
-              right: compact ? 112 : 150,
-              bottom: compact ? 14 : 22,
+              right: compact ? 116 : 164,
+              top: compact ? 18 : 26,
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('留下一束光', style: AppText.inverseTitle),
+                    Text(
+                      '留下一束光',
+                      style: AppText.inverseTitle,
+                    ),
                     const SizedBox(height: 8),
                     Text(
                       nightMode ? '夜间轻开：慢一点放下。' : '沿着今天的节律，轻轻落下。',
                       style: AppText.inverseBody,
                     ),
                   ])),
+          Positioned(
+            right: compact ? 15 : 28,
+            top: compact ? 18 : 28,
+            child: _VinylLightSource(
+              size: compact ? 96 : 124,
+              moodColor: moodColor,
+              nightMode: nightMode,
+            ),
+          ),
+          Positioned.fill(
+            child: _AnimatedMusicTrail(
+              compact: compact,
+              color: moodColor,
+            ),
+          ),
         ]),
       ),
     );
@@ -427,79 +415,310 @@ class _CalmWavePainter extends CustomPainter {
   }
 }
 
-class _LightTrailNotes extends StatelessWidget {
-  const _LightTrailNotes({required this.compact});
+class _VinylLightSource extends StatefulWidget {
+  const _VinylLightSource({
+    required this.size,
+    required this.moodColor,
+    required this.nightMode,
+  });
 
-  final bool compact;
+  final double size;
+  final Color moodColor;
+  final bool nightMode;
+
+  @override
+  State<_VinylLightSource> createState() => _VinylLightSourceState();
+}
+
+class _VinylLightSourceState extends State<_VinylLightSource>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4200),
+    );
+    if (!_isRunningWidgetTest) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: compact ? 120 : 160,
-      height: compact ? 42 : 58,
-      child: CustomPaint(painter: _LightTrailNotesPainter(compact: compact)),
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) => SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: CustomPaint(
+          painter: _VinylLightPainter(
+            phase: _controller.value * pi * 2,
+            moodColor: widget.moodColor,
+            nightMode: widget.nightMode,
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _LightTrailNotesPainter extends CustomPainter {
-  const _LightTrailNotesPainter({required this.compact});
+class _VinylLightPainter extends CustomPainter {
+  const _VinylLightPainter({
+    required this.phase,
+    required this.moodColor,
+    required this.nightMode,
+  });
 
-  final bool compact;
+  final double phase;
+  final Color moodColor;
+  final bool nightMode;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide / 2;
+    final outerRadius = radius * .84;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(phase);
+    final outerRect = Rect.fromCircle(center: Offset.zero, radius: outerRadius);
+    canvas.drawCircle(
+      Offset.zero,
+      outerRadius,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [
+            const Color(0xFF0F1D1B).withValues(alpha: .98),
+            const Color(0xFF263936).withValues(alpha: .96),
+            const Color(0xFF52615C).withValues(alpha: .82),
+          ],
+          stops: const [0, .68, 1],
+        ).createShader(outerRect),
+    );
+    canvas.drawCircle(
+      Offset.zero,
+      outerRadius,
+      Paint()
+        ..color = AppColors.white.withValues(alpha: .24)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+    final discRect = Rect.fromCircle(center: Offset.zero, radius: radius * .61);
+    canvas.drawCircle(
+      Offset.zero,
+      radius * .61,
+      Paint()
+        ..shader = RadialGradient(
+          colors: [
+            const Color(0xFF162422).withValues(alpha: .95),
+            const Color(0xFF31413D).withValues(alpha: .92),
+            AppColors.ink.withValues(alpha: .88),
+          ],
+        ).createShader(discRect),
+    );
+    final groove = Paint()
+      ..color = AppColors.white.withValues(alpha: .18)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    for (final r in [.28, .39, .50, .61, .72, .82]) {
+      canvas.drawCircle(Offset.zero, radius * r, groove);
+    }
+    final shine = Paint()
+      ..color = AppColors.white.withValues(alpha: .22)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCircle(center: Offset.zero, radius: radius * .46),
+      -1.1,
+      .58,
+      false,
+      shine,
+    );
+    canvas.restore();
+
+    canvas.drawCircle(
+      center,
+      radius * .20,
+      Paint()..color = AppColors.white.withValues(alpha: .88),
+    );
+    canvas.drawCircle(
+      center,
+      radius * .07,
+      Paint()..color = moodColor.withValues(alpha: .78),
+    );
+    final toneArm = Paint()
+      ..color = AppColors.ink.withValues(alpha: .92)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.2
+      ..strokeCap = StrokeCap.round;
+    final armStart = Offset(size.width * .83, size.height * .14);
+    final armEnd = Offset(size.width * .72, size.height * .78);
+    canvas.drawLine(armStart, armEnd, toneArm);
+    canvas.drawCircle(armStart, 5, Paint()..color = AppColors.ink);
+    canvas.drawCircle(armEnd, 5, Paint()..color = AppColors.ink);
+    canvas.drawLine(
+      armEnd,
+      Offset(size.width * .66, size.height * .88),
+      toneArm,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _VinylLightPainter oldDelegate) {
+    return oldDelegate.phase != phase ||
+        oldDelegate.moodColor != moodColor ||
+        oldDelegate.nightMode != nightMode;
+  }
+}
+
+class _AnimatedMusicTrail extends StatefulWidget {
+  const _AnimatedMusicTrail({
+    required this.compact,
+    required this.color,
+  });
+
+  final bool compact;
+  final Color color;
+
+  @override
+  State<_AnimatedMusicTrail> createState() => _AnimatedMusicTrailState();
+}
+
+class _AnimatedMusicTrailState extends State<_AnimatedMusicTrail>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4800),
+    );
+    if (!_isRunningWidgetTest) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => CustomPaint(
+          painter: _MusicTrailPainter(
+            compact: widget.compact,
+            color: widget.color,
+            phase: _controller.value,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MusicTrailPainter extends CustomPainter {
+  const _MusicTrailPainter({
+    required this.compact,
+    required this.color,
+    required this.phase,
+  });
+
+  final bool compact;
+  final Color color;
+  final double phase;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final start = Offset(size.width * .52, size.height * .79);
+    final control = Offset(size.width * .72, size.height * .93);
+    final end = Offset(size.width * .91, size.height * .69);
+    final path = Path()
+      ..moveTo(start.dx, start.dy)
+      ..quadraticBezierTo(control.dx, control.dy, end.dx, end.dy);
     final trail = Paint()
       ..color = AppColors.white.withValues(alpha: .34)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.4
       ..strokeCap = StrokeCap.round;
-    final path = Path()
-      ..moveTo(4, size.height * .70)
-      ..quadraticBezierTo(
-        size.width * .38,
-        size.height * .92,
-        size.width * .72,
-        size.height * .60,
-      )
-      ..quadraticBezierTo(
-        size.width * .88,
-        size.height * .44,
-        size.width - 4,
-        size.height * .50,
-      );
     canvas.drawPath(path, trail);
 
-    final notePaint = Paint()
-      ..color = AppColors.ink.withValues(alpha: .84)
+    for (var i = 0; i < 5; i++) {
+      final t = (phase + i * .18) % 1.0;
+      final point = _quadratic(start, control, end, t);
+      final lift = sin(t * pi) * (compact ? 18 : 26);
+      final alpha = sin(t * pi).clamp(.0, 1.0);
+      _drawNote(
+        canvas,
+        Offset(point.dx, point.dy - lift),
+        i,
+        alpha,
+        compact ? .82 : 1,
+      );
+    }
+  }
+
+  Offset _quadratic(Offset a, Offset b, Offset c, double t) {
+    final mt = 1 - t;
+    return Offset(
+      mt * mt * a.dx + 2 * mt * t * b.dx + t * t * c.dx,
+      mt * mt * a.dy + 2 * mt * t * b.dy + t * t * c.dy,
+    );
+  }
+
+  void _drawNote(
+      Canvas canvas, Offset p, int index, double alpha, double scale) {
+    final noteColor = index.isEven ? AppColors.ink : color;
+    final fill = Paint()
+      ..color = noteColor.withValues(alpha: .35 + alpha * .55)
       ..style = PaintingStyle.fill;
     final stroke = Paint()
-      ..color = AppColors.ink.withValues(alpha: .84)
+      ..color = noteColor.withValues(alpha: .35 + alpha * .55)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
+      ..strokeWidth = 2 * scale
       ..strokeCap = StrokeCap.round;
-    final notes = [
-      Offset(size.width * .18, size.height * .70),
-      Offset(size.width * .45, size.height * .63),
-      Offset(size.width * .66, size.height * .52),
-      Offset(size.width * .84, size.height * .40),
-    ];
-    for (var i = 0; i < notes.length; i++) {
-      final p = notes[i];
-      canvas.drawCircle(p, compact ? 3.4 : 4.2, notePaint);
-      if (i.isOdd) {
-        canvas.drawLine(
-          Offset(p.dx + 3, p.dy),
-          Offset(p.dx + 3, p.dy - (compact ? 16 : 20)),
-          stroke,
-        );
-      }
+    canvas.drawCircle(p, 4.2 * scale, fill);
+    if (index == 1 || index == 3) {
+      canvas.drawLine(
+        Offset(p.dx + 3 * scale, p.dy),
+        Offset(p.dx + 3 * scale, p.dy - 20 * scale),
+        stroke,
+      );
+      canvas.drawLine(
+        Offset(p.dx + 3 * scale, p.dy - 20 * scale),
+        Offset(p.dx + 12 * scale, p.dy - 16 * scale),
+        stroke,
+      );
+    } else if (index == 4) {
+      canvas.drawLine(
+        Offset(p.dx + 3 * scale, p.dy),
+        Offset(p.dx + 3 * scale, p.dy - 15 * scale),
+        stroke,
+      );
     }
   }
 
   @override
-  bool shouldRepaint(covariant _LightTrailNotesPainter oldDelegate) {
-    return oldDelegate.compact != compact;
+  bool shouldRepaint(covariant _MusicTrailPainter oldDelegate) {
+    return oldDelegate.compact != compact ||
+        oldDelegate.color != color ||
+        oldDelegate.phase != phase;
   }
 }
 
@@ -579,7 +798,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 430;
     return Container(
-      padding: EdgeInsets.fromLTRB(18, compact ? 20 : 22, 18, 18),
+      padding: EdgeInsets.fromLTRB(18, compact ? 18 : 20, 18, 18),
       decoration: softDecoration(AppColors.white),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('把这一瞬间放在这里', style: AppText.titleMedium),
@@ -606,19 +825,19 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
                 )
               : const SizedBox.shrink(),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Container(
-          constraints: BoxConstraints(minHeight: compact ? 132 : 150),
+          constraints: BoxConstraints(minHeight: compact ? 122 : 144),
           decoration: BoxDecoration(
               color: AppColors.paper,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: AppColors.line)),
           child: TextField(
             controller: _controller,
-            minLines: compact ? 5 : 6,
+            minLines: compact ? 4 : 6,
             maxLines: 8,
             decoration: const InputDecoration(
-              hintText: '今天发生了什么？可以只写一句，也可以什么都不解释。',
+              hintText: '今天发生了什么？',
               border: InputBorder.none,
               contentPadding: EdgeInsets.all(14),
             ),
@@ -1051,7 +1270,7 @@ class _ComposerMetaRow extends StatelessWidget {
         : restoredDraft
             ? '上次的光已找回'
             : writtenCount == 0
-                ? '可以只留一句'
+                ? ''
                 : '已写 $writtenCount 字';
     return Row(children: [
       Icon(

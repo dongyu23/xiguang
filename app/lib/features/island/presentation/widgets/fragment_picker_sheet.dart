@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,7 +10,7 @@ import '../../../../design/tokens/typography.dart';
 class FragmentPickerSheet extends ConsumerStatefulWidget {
   const FragmentPickerSheet({super.key, required this.onConfirm});
 
-  final void Function(List<int> fragmentIds) onConfirm;
+  final FutureOr<void> Function(List<int> fragmentIds) onConfirm;
 
   @override
   ConsumerState<FragmentPickerSheet> createState() =>
@@ -19,6 +21,7 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
   final _selected = <int>{};
   String _search = '';
   String? _activeTag;
+  bool _submitting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -104,8 +107,7 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
                           height: 40,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 22),
+                            padding: const EdgeInsets.symmetric(horizontal: 22),
                             itemCount: allTags.length + 1,
                             separatorBuilder: (_, __) =>
                                 const SizedBox(width: 8),
@@ -124,8 +126,8 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
                               return FilterChip(
                                 label: Text('#$tag'),
                                 selected: _activeTag == tag,
-                                onSelected: (v) => setState(
-                                    () => _activeTag = v ? tag : null),
+                                onSelected: (v) =>
+                                    setState(() => _activeTag = v ? tag : null),
                                 visualDensity: VisualDensity.compact,
                               );
                             },
@@ -139,8 +141,7 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
                           itemCount: filtered.length,
                           itemBuilder: (context, index) {
                             final fragment = filtered[index];
-                            final isSelected =
-                                _selected.contains(fragment.id);
+                            final isSelected = _selected.contains(fragment.id);
                             return ListTile(
                               leading: Checkbox(
                                 value: isSelected,
@@ -172,7 +173,9 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
                                   ? SizedBox(
                                       width: 80,
                                       child: Text(
-                                        fragment.tags.map((t) => '#$t').join(' '),
+                                        fragment.tags
+                                            .map((t) => '#$t')
+                                            .join(' '),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: AppText.caption.copyWith(
@@ -215,12 +218,33 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
                     child: SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: () {
-                          widget.onConfirm(_selected.toList());
-                          Navigator.of(context).pop();
-                        },
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: Text('添加 ${_selected.length} 束光到小岛'),
+                        onPressed: _submitting
+                            ? null
+                            : () async {
+                                setState(() => _submitting = true);
+                                try {
+                                  await widget.onConfirm(_selected.toList());
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _submitting = false);
+                                  }
+                                }
+                                if (!context.mounted) return;
+                                Navigator.of(context).pop();
+                              },
+                        icon: _submitting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.add_rounded, size: 18),
+                        label: Text(_submitting
+                            ? '添加中...'
+                            : '添加 ${_selected.length} 束光到小岛'),
                       ),
                     ),
                   ),

@@ -14,6 +14,8 @@ import '../features/starmap/data/starmap_api.dart';
 import '../features/starmap/data/starmap_repository_impl.dart';
 import '../features/stats/data/stats_api.dart';
 import '../features/stats/data/stats_repository_impl.dart';
+import '../features/timeline/domain/date_group.dart';
+import '../features/timeline/domain/timeline_query.dart';
 import '../features/timeline/data/timeline_api.dart';
 import '../features/timeline/data/timeline_repository_impl.dart';
 import '../features/whitenoise/data/whitenoise_api.dart';
@@ -128,6 +130,7 @@ class FragmentsNotifier extends AsyncNotifier<List<LightFragmentModel>> {
       state = AsyncData(
           [created, ...previous.where((item) => item.id != created.id)]);
       ref.invalidate(islandsProvider);
+      ref.invalidate(localTimelineGroupsProvider);
       return created;
     } on LocalDraftException catch (error) {
       state = AsyncData([
@@ -135,6 +138,7 @@ class FragmentsNotifier extends AsyncNotifier<List<LightFragmentModel>> {
         ...previous.where((item) => item.id != error.fragment.id)
       ]);
       ref.invalidate(islandsProvider);
+      ref.invalidate(localTimelineGroupsProvider);
       return error.fragment;
     } catch (error, stackTrace) {
       state = AsyncError<List<LightFragmentModel>>(error, stackTrace)
@@ -153,6 +157,11 @@ class FragmentsNotifier extends AsyncNotifier<List<LightFragmentModel>> {
 
 final islandsProvider = FutureProvider<List<IslandModel>>((ref) async {
   return ref.watch(islandRepositoryProvider).listIslands();
+});
+
+final localTimelineGroupsProvider =
+    FutureProvider<List<DateGroup>>((ref) async {
+  return ref.watch(timelineRepositoryProvider).list(const TimelineQuery());
 });
 
 final fragmentRelationsProvider =

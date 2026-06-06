@@ -68,8 +68,3 @@ flutter:
     - assets/nav_icons/nav_thread.png
     - assets/nav_icons/nav_island.png
     - assets/nav_icons/nav_mine.png
-  fonts:
-    - family: PingFangShiGuangTi
-      fonts:
-        - asset: assets/fonts/PingFangShiGuangTi.ttf
-          weight: 400

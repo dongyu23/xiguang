@@ -37,8 +37,6 @@ class FragmentDetailPage extends ConsumerWidget {
               if (fragment == null) {
                 return Center(child: Text('没有找到这束光。', style: AppText.body));
               }
-              final weaveTarget =
-                  items.where((item) => item.id != fragment.id).firstOrNull;
               return SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(22, 12, 22, 104),
                 child: Center(
@@ -72,33 +70,6 @@ class FragmentDetailPage extends ConsumerWidget {
                                     ...fragment.tags
                                         .map((tag) => MiniTag(label: tag)),
                                   ]),
-                                ]),
-                          ),
-                          const SizedBox(height: 14),
-                          Container(
-                            padding: const EdgeInsets.all(18),
-                            decoration: softDecoration(AppColors.white),
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('织线', style: AppText.titleMedium),
-                                  const SizedBox(height: 8),
-                                  Text('织线是上下文动作，不作为一级导航。可以把这束光和另一束旧光轻轻连起来。',
-                                      style: AppText.body),
-                                  const SizedBox(height: 14),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: FilledButton.icon(
-                                      onPressed: weaveTarget == null
-                                          ? null
-                                          : () => context.push(
-                                                '/weave/${fragment.id}',
-                                              ),
-                                      icon: const Icon(
-                                          Icons.blur_circular_rounded),
-                                      label: const Text('和另一束光织在一起'),
-                                    ),
-                                  ),
                                 ]),
                           ),
                           const SizedBox(height: 14),

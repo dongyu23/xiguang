@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../tokens/colors.dart';
 
-/// 隙光 ThemeData 组装 — 完全绕过 Material 默认样式
+/// 隙光 ThemeData 组装 — 在 Material 默认样式上收束颜色和控件形态
 ThemeData xiguangTheme() {
   return ThemeData(
     useMaterial3: true,
-    fontFamily: 'PingFangShiGuangTi',
     scaffoldBackgroundColor: AppColors.paper,
     colorScheme: ColorScheme.fromSeed(
       seedColor: AppColors.teaGreen,

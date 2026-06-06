@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../features/fragment/data/fragment_repository.dart';
-import '../../../../features/fragment/presentation/pages/fragment_detail_page.dart';
 import '../../../../features/timeline/presentation/providers/timeline_provider.dart';
 import '../../../../ui/composites/light_card.dart';
 import '../../../../ui/composites/night_mode_button.dart';
@@ -114,14 +114,8 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
                                 ...group.items.map((f) => LightFragmentCard(
                                       tapKey: ValueKey('timeline-card-${f.id}'),
                                       fragment: f.toLightFragment(),
-                                      onTap: () => Navigator.of(context,
-                                              rootNavigator: true)
-                                          .push(
-                                        MaterialPageRoute<void>(
-                                          builder: (_) =>
-                                              FragmentDetailPage(id: '${f.id}'),
-                                        ),
-                                      ),
+                                      onTap: () =>
+                                          context.push('/weave/${f.id}'),
                                     )),
                                 const SizedBox(height: 8),
                               ],
@@ -243,11 +237,7 @@ class _FallbackTimeline extends StatelessWidget {
               (f) => LightFragmentCard(
                 tapKey: ValueKey('timeline-card-${f.id}'),
                 fragment: f.toLightFragment(),
-                onTap: () => Navigator.of(context, rootNavigator: true).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => FragmentDetailPage(id: '${f.id}'),
-                  ),
-                ),
+                onTap: () => context.push('/weave/${f.id}'),
               ),
             ),
         const SizedBox(height: 8),

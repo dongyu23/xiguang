@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'colors.dart';
 
-/// 隙光字体层级 — 平方时光体，低压力阅读节奏
+/// 隙光字体层级 — 使用系统默认字体，保持低压力阅读节奏
 class AppText {
   AppText._();
 
-  static const _family = 'PingFangShiGuangTi';
   static const nightInk = Color(0xFFF4EFE4);
   static const nightInkMuted = Color(0xFFC9D0C8);
   static const nightAccent = Color(0xFFA6CDBB);
@@ -33,7 +32,6 @@ class AppText {
     fontWeight: FontWeight.w700,
     color: AppColors.teaGreen,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 页面大标题
@@ -43,7 +41,6 @@ class AppText {
     fontWeight: FontWeight.w800,
     color: AppColors.ink,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 区块标题
@@ -53,7 +50,6 @@ class AppText {
     fontWeight: FontWeight.w700,
     color: AppColors.ink,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 卡片标题
@@ -63,7 +59,6 @@ class AppText {
     fontWeight: FontWeight.w700,
     color: AppColors.ink,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 正文
@@ -73,7 +68,6 @@ class AppText {
     fontWeight: FontWeight.w400,
     color: AppColors.ink,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 次要正文
@@ -82,7 +76,6 @@ class AppText {
     height: 1.45,
     color: AppColors.inkMuted,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 占位文字
@@ -91,7 +84,6 @@ class AppText {
     height: 1.5,
     color: AppColors.inkMuted,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 辅助说明
@@ -100,7 +92,6 @@ class AppText {
     height: 1.32,
     color: AppColors.inkMuted,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 芯片/Chip 文字
@@ -109,7 +100,6 @@ class AppText {
     height: 1.2,
     fontWeight: FontWeight.w600,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 底部导航
@@ -118,7 +108,6 @@ class AppText {
     height: 1.1,
     fontWeight: FontWeight.w700,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 深色背景上的标题
@@ -128,7 +117,6 @@ class AppText {
     fontWeight: FontWeight.w800,
     color: Colors.white,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 
   // 深色背景上的正文
@@ -137,6 +125,5 @@ class AppText {
     height: 1.5,
     color: Colors.white,
     letterSpacing: 0,
-    fontFamily: _family,
   );
 }

@@ -1,27 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../features/fragment/data/fragment_repository.dart';
-import '../../../../features/fragment/presentation/pages/fragment_detail_page.dart';
 import '../../../../ui/composites/light_card.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../data/island_repository.dart';
 import '../widgets/fragment_picker_sheet.dart';
 
-class IslandDetailPage extends ConsumerWidget {
+class IslandDetailPage extends ConsumerStatefulWidget {
   const IslandDetailPage({super.key, required this.id});
 
   final String id;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final name = Uri.decodeComponent(id);
+  ConsumerState<IslandDetailPage> createState() => _IslandDetailPageState();
+}
+
+class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
+  late String _name;
+  late Future<_IslandDetailData> _detail;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = Uri.decodeComponent(widget.id);
+    _detail = _load(ref.read(islandRepositoryProvider), _name);
+  }
+
+  @override
+  void didUpdateWidget(covariant IslandDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.id != widget.id) {
+      _name = Uri.decodeComponent(widget.id);
+      _detail = _load(ref.read(islandRepositoryProvider), _name);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final repository = ref.watch(islandRepositoryProvider);
-    final detail = _load(repository, name);
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
       Scaffold(
@@ -32,7 +54,7 @@ class IslandDetailPage extends ConsumerWidget {
           elevation: 0,
         ),
         floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showFragmentPicker(context, ref, repository, name),
+          onPressed: () => _showFragmentPicker(context, repository),
           icon: const Icon(Icons.add_rounded),
           label: const Text('添加光片'),
           backgroundColor: AppColors.teaGreen,
@@ -41,7 +63,7 @@ class IslandDetailPage extends ConsumerWidget {
         body: SafeArea(
           top: false,
           child: FutureBuilder<_IslandDetailData>(
-            future: detail,
+            future: _detail,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
                 return const Center(child: CircularProgressIndicator());
@@ -49,7 +71,7 @@ class IslandDetailPage extends ConsumerWidget {
               final data = snapshot.data ??
                   _IslandDetailData(
                     island: IslandModel(
-                      name: name,
+                      name: _name,
                       status: 'star_point',
                       fragmentCount: 0,
                       description: '这些光因为同一个主题靠近。',
@@ -93,11 +115,7 @@ class IslandDetailPage extends ConsumerWidget {
                           ...data.fragments.map((fragment) => LightFragmentCard(
                                 fragment: fragment.toLightFragment(),
                                 onTap: () =>
-                                    Navigator.of(context, rootNavigator: true)
-                                        .push(MaterialPageRoute<void>(
-                                  builder: (_) =>
-                                      FragmentDetailPage(id: '${fragment.id}'),
-                                )),
+                                    context.push('/weave/${fragment.id}'),
                               )),
                       ],
                     ),
@@ -111,18 +129,21 @@ class IslandDetailPage extends ConsumerWidget {
     ]);
   }
 
-  void _showFragmentPicker(BuildContext context, WidgetRef ref,
-      IslandRepository repository, String islandName) {
+  void _showFragmentPicker(BuildContext context, IslandRepository repository) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => FragmentPickerSheet(
         onConfirm: (fragmentIds) async {
-          final island = await repository.getIsland(islandName);
+          final island = await repository.getIsland(_name);
           if (island != null && island.islandId > 0) {
             await repository.addFragments(island.islandId, fragmentIds);
             ref.invalidate(islandsProvider);
+            if (!mounted) return;
+            setState(() {
+              _detail = _load(repository, _name);
+            });
           }
         },
       ),

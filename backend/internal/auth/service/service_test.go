@@ -18,6 +18,10 @@ func (f *fakeAuthRepo) CreateUser(ctx context.Context, username, passwordHash, n
 	return domain.User{}, nil
 }
 
+func (f *fakeAuthRepo) EnsureDefaultIsland(ctx context.Context, userID int64) error {
+	return nil
+}
+
 func (f *fakeAuthRepo) FindByUsername(ctx context.Context, username string) (domain.User, error) {
 	return domain.User{}, nil
 }

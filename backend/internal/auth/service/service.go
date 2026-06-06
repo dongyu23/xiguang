@@ -53,6 +53,9 @@ func (s *Service) Register(ctx context.Context, params domain.RegisterParams) (d
 	if err != nil {
 		return domain.User{}, domain.TokenPair{}, err
 	}
+	if err := s.repo.EnsureDefaultIsland(ctx, user.ID); err != nil {
+		return domain.User{}, domain.TokenPair{}, err
+	}
 	tokens, err := s.IssueTokens(ctx, user.ID)
 	return user, tokens, err
 }
@@ -68,12 +71,18 @@ func (s *Service) Login(ctx context.Context, params domain.LoginParams) (domain.
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(params.Password)) != nil {
 		return domain.User{}, domain.TokenPair{}, ErrLoginFailed
 	}
+	if err := s.repo.EnsureDefaultIsland(ctx, user.ID); err != nil {
+		return domain.User{}, domain.TokenPair{}, err
+	}
 	user.PasswordHash = ""
 	tokens, err := s.IssueTokens(ctx, user.ID)
 	return user, tokens, err
 }
 
 func (s *Service) Me(ctx context.Context, id int64) (domain.User, error) {
+	if err := s.repo.EnsureDefaultIsland(ctx, id); err != nil {
+		return domain.User{}, err
+	}
 	return s.repo.FindByID(ctx, id)
 }
 

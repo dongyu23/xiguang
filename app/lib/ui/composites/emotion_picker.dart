@@ -64,11 +64,7 @@ class _EmotionPickerState extends State<EmotionPicker> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [
-          Text('心绪收录', style: AppText.titleSmall),
-          const SizedBox(width: 8),
-          Text('轻触一个靠近的感觉', style: AppText.caption),
-        ]),
+        Text('心绪收录', style: AppText.titleSmall),
         const SizedBox(height: 12),
         GridView.builder(
           physics: const NeverScrollableScrollPhysics(),
