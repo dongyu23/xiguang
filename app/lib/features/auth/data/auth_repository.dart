@@ -70,10 +70,20 @@ class AuthRepository {
     _refreshToken = stored.refreshToken;
     _expiresAt = stored.expiresAt;
     _api.accessToken = stored.accessToken;
-    if (stored.expiresAt
-        .isBefore(DateTime.now().add(const Duration(minutes: 1)))) {
-      await _refresh();
+
+    final needsRefresh = stored.expiresAt
+        .isBefore(DateTime.now().add(const Duration(minutes: 1)));
+    if (needsRefresh) {
+      try {
+        await _refresh();
+      } catch (_) {
+        // Refresh failed — try using the stored session anyway.
+        // If it's truly expired, the next API call will 401 and re-auth.
+      }
     }
+    // Skip /users/me when token is still fresh to avoid unnecessary network round-trip.
+    if (!needsRefresh) return _session!;
+
     try {
       return await me();
     } catch (_) {

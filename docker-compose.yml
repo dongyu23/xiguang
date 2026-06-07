@@ -120,6 +120,8 @@ services:
     expose:
       - "9000"
       - "9001"
+    ports:
+      - "9000:9000"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-glimmer_minio}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-glimmer_minio_password}

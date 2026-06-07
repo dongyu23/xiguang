@@ -9,6 +9,7 @@ import '../design/themes/extensions/blur_theme.dart';
 import '../design/themes/extensions/glow_theme.dart';
 import '../design/themes/extensions/space_theme.dart';
 import '../features/auth/data/auth_repository.dart';
+import '../features/sync/presentation/providers/sync_provider.dart';
 import 'router.dart';
 import 'splash_gate.dart';
 
@@ -35,6 +36,12 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
         }
       });
     });
+    // 预初始化 SyncEngine，确保 onFragmentChanged 在首次捕光前就位
+    ref.read(syncEngineProvider);
+    // 启动自动同步（按 syncConfig.frequency）
+    startAutoSync(ref);
+    // App 生命周期监听：回到前台时触发一次同步
+    WidgetsBinding.instance.addObserver(_AppLifecycleObserver(ref));
   }
 
   @override
@@ -45,7 +52,7 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
       return SplashGate(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          title: 'Glimmer',
+          title: '隙光',
           theme: _theme,
           builder: (context, child) =>
               _errorBoundary(context, _fixedTextScaleBuilder(context, child)),
@@ -69,7 +76,7 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
       child: MaterialApp.router(
         key: ValueKey('xiguang-app-${sessionId ?? 'guest'}'),
         debugShowCheckedModeBanner: false,
-        title: 'Glimmer',
+        title: '隙光',
         theme: _theme,
         routerConfig: _router,
         builder: (context, child) =>
@@ -136,5 +143,25 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
         },
       ),
     );
+  }
+}
+
+/// App 回到前台时触发一次同步检查
+class _AppLifecycleObserver with WidgetsBindingObserver {
+  _AppLifecycleObserver(this._ref);
+  final WidgetRef _ref;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final engine = _ref.read(syncEngineProvider);
+      if (!engine.status.isSyncing) {
+        engine.syncNow().then((status) {
+          if (_ref.exists(syncStatusProvider)) {
+            _ref.read(syncStatusProvider.notifier).state = status;
+          }
+        });
+      }
+    }
   }
 }

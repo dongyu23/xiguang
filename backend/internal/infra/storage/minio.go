@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
@@ -26,16 +27,27 @@ func NewMinIOProvider(cfg config.Config) (*MinIOProvider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("minio client: %w", err)
 	}
-	exists, err := client.BucketExists(context.Background(), cfg.MinIOBucket)
-	if err != nil {
-		return nil, fmt.Errorf("minio bucket check: %w", err)
-	}
-	if !exists {
-		if err := client.MakeBucket(context.Background(), cfg.MinIOBucket, minio.MakeBucketOptions{}); err != nil {
-			return nil, fmt.Errorf("minio create bucket: %w", err)
+
+	// MinIO 可能还在启动，重试 bucket 检测
+	var lastErr error
+	for i := 0; i < 5; i++ {
+		if i > 0 {
+			time.Sleep(2 * time.Second)
 		}
+		exists, err := client.BucketExists(context.Background(), cfg.MinIOBucket)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if !exists {
+			if err := client.MakeBucket(context.Background(), cfg.MinIOBucket, minio.MakeBucketOptions{}); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+		return &MinIOProvider{client: client, bucket: cfg.MinIOBucket}, nil
 	}
-	return &MinIOProvider{client: client, bucket: cfg.MinIOBucket}, nil
+	return nil, fmt.Errorf("minio bucket check after retries: %w", lastErr)
 }
 
 func (p *MinIOProvider) PresignedPutObject(ctx context.Context, objectKey, contentType string, ttl time.Duration) (string, error) {
@@ -52,6 +64,13 @@ func (p *MinIOProvider) PresignedGetObject(ctx context.Context, objectKey string
 		return "", err
 	}
 	return url.String(), nil
+}
+
+func (p *MinIOProvider) PutObject(ctx context.Context, objectKey, contentType string, data []byte) error {
+	_, err := p.client.PutObject(ctx, p.bucket, objectKey, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
+		ContentType: contentType,
+	})
+	return err
 }
 
 func (p *MinIOProvider) DeleteObject(ctx context.Context, objectKey string) error {

@@ -32,11 +32,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Routes().ServeHTTP(w, r)
 }
 
+const maxPushBatchSize = 100
+
 func (h *Handler) push(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
 	var req domain.PushRequest
 	if err := shared.DecodeJSON(r, &req); err != nil {
 		shared.WriteError(w, http.StatusBadRequest, "bad_request", "同步请求格式不正确。")
+		return
+	}
+	if len(req.Operations) > maxPushBatchSize {
+		shared.WriteError(w, http.StatusBadRequest, "batch_too_large", "单次最多推送 100 条操作。")
 		return
 	}
 	shared.WriteJSON(w, http.StatusOK, h.service.Push(r.Context(), userID, req))

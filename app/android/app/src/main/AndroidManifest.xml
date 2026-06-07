@@ -8,7 +8,7 @@
         android:maxSdkVersion="32" />
 
     <application
-        android:label="xiguang"
+        android:label="隙光"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

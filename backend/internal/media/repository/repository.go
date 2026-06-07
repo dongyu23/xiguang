@@ -11,6 +11,7 @@ import (
 
 type Repository interface {
 	Confirm(ctx context.Context, userID int64, req domain.ConfirmRequest) (domain.MediaFile, error)
+	Create(ctx context.Context, userID int64, req domain.CreateMediaRequest) (domain.MediaFile, error)
 	Get(ctx context.Context, userID, mediaID int64) (domain.MediaFile, error)
 	Delete(ctx context.Context, userID, mediaID int64) (bool, error)
 }
@@ -33,6 +34,23 @@ func (r *PG) Confirm(ctx context.Context, userID int64, req domain.ConfirmReques
 		userID, req.FragmentID, mediaType(req.MimeType), req.ObjectKey, req.FileName, req.FileSize, req.MimeType).
 		Scan(&item.ID, &item.PublicID)
 	item.ObjectKey = req.ObjectKey
+	item.FileURL = "/media/" + req.ObjectKey
+	return item, err
+}
+
+func (r *PG) Create(ctx context.Context, userID int64, req domain.CreateMediaRequest) (domain.MediaFile, error) {
+	var item domain.MediaFile
+	err := r.db.QueryRow(ctx, `INSERT INTO media_files(user_id, fragment_id, media_type, object_key, file_name, file_size, mime_type)
+		SELECT $1, f.id, $3, $4, $5, $6, $7
+		FROM fragments f
+		WHERE f.user_id=$1 AND f.id=$2 AND f.is_deleted=FALSE
+		RETURNING id, public_id::text`,
+		userID, req.FragmentID, mediaType(req.MimeType), req.ObjectKey, req.FileName, req.FileSize, req.MimeType).
+		Scan(&item.ID, &item.PublicID)
+	item.ObjectKey = req.ObjectKey
+	item.FileName = req.FileName
+	item.MimeType = req.MimeType
+	item.FileSize = req.FileSize
 	item.FileURL = "/media/" + req.ObjectKey
 	return item, err
 }

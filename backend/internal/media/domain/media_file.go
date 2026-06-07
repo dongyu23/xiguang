@@ -14,6 +14,14 @@ type PresignResponse struct {
 	DirectUploadEnabled bool   `json:"direct_upload_enabled"`
 }
 
+type CreateMediaRequest struct {
+	FragmentID int64
+	ObjectKey  string
+	FileName   string
+	MimeType   string
+	FileSize   int64
+}
+
 type ConfirmRequest struct {
 	FragmentID int64
 	ObjectKey  string

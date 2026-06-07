@@ -125,7 +125,7 @@ class _XiguangPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
-      final hp = constraints.maxWidth > 520 ? 34.0 : 16.0;
+      final hp = constraints.maxWidth > 520 ? 24.0 : 10.0;
       return Stack(children: [
         const Positioned.fill(child: AtmosphereBackground()),
         Positioned.fill(
@@ -136,7 +136,7 @@ class _XiguangPage extends StatelessWidget {
             duration: const Duration(milliseconds: 260),
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(hp, 18, hp, 104),
+              padding: EdgeInsets.fromLTRB(hp, 18, hp, 92),
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 560),
@@ -1211,7 +1211,6 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
 
   void _handleDraftInputChanged() {
     if (_suppressDraftSave) return;
-    if (mounted) setState(() {});
     _scheduleDraftSave();
   }
 

@@ -16,6 +16,7 @@ type Config struct {
 	DatabaseURL            string
 	RedisAddr              string
 	MinIOEndpoint          string
+	MinIOPublicEndpoint    string
 	MinIOBucket            string
 	MinIOAccessKey         string
 	MinIOSecretKey         string
@@ -54,6 +55,7 @@ func Load() Config {
 		DatabaseURL:            dbURL,
 		RedisAddr:              env("REDIS_HOST", "localhost") + ":" + env("REDIS_PORT", "6379"),
 		MinIOEndpoint:          env("MINIO_ENDPOINT", "localhost:9000"),
+			MinIOPublicEndpoint:    os.Getenv("MINIO_PUBLIC_ENDPOINT"),
 		MinIOBucket:            env("MINIO_BUCKET", "glimmer-media"),
 		MinIOAccessKey:         os.Getenv("MINIO_ACCESS_KEY"),
 		MinIOSecretKey:         os.Getenv("MINIO_SECRET_KEY"),

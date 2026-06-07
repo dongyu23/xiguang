@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/sync_api.dart';
 import '../domain/oplog.dart';
@@ -26,6 +29,14 @@ class SyncEngine {
   SyncConfig get config => _config;
   bool get hasPending => _pendingOps.isNotEmpty;
 
+  void Function()? onStatusChanged;
+  /// Pull 完成后调用（有新数据时），供上层刷新本地缓存
+  void Function()? onRemoteChangesApplied;
+
+  void _notifyStatus() {
+    onStatusChanged?.call();
+  }
+
   void updateConfig(SyncConfig config) {
     _config = config;
   }
@@ -41,6 +52,30 @@ class SyncEngine {
       connected: _status.connected,
       error: _status.error,
     );
+    _notifyStatus();
+    _persistPendingOps();
+  }
+
+  /// 应用启动时调用，从本地存储恢复未推送的 OpLog 和 lastServerRev。
+  Future<void> restorePendingOps() async {
+    await _restoreSyncMeta();
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_pendingOpsKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      for (final entry in list) {
+        if (entry is Map<String, dynamic>) {
+          _pendingOps.add(OpLog.fromJson(entry));
+        }
+      }
+      if (_pendingOps.isNotEmpty) {
+        _status = _status.copyWith(pendingCount: _pendingOps.length);
+        _notifyStatus();
+      }
+    } catch (_) {
+      await prefs.remove(_pendingOpsKey);
+    }
   }
 
   /// 执行一次完整的 push → pull 同步周期。
@@ -54,6 +89,7 @@ class SyncEngine {
       connected: _status.connected,
     );
 
+    var hasRemoteChanges = false;
     try {
       // 1. Push 本地待推送的 OpLog
       if (_pendingOps.isNotEmpty) {
@@ -73,6 +109,7 @@ class SyncEngine {
             .map((r) => r['client_op_id'] as String)
             .toSet();
         _pendingOps.removeWhere((op) => acceptedIds.contains(op.clientOpId));
+        _persistPendingOps();
 
         _status = _status.copyWith(lastServerRev: newRev);
       }
@@ -81,8 +118,9 @@ class SyncEngine {
       final pullResult = await _api.pull(sinceRev: _status.lastServerRev);
       final operations = pullResult['operations'] as List<dynamic>? ?? [];
       final nextRev = (pullResult['next_since_rev'] as num?)?.toInt() ?? _status.lastServerRev;
+      hasRemoteChanges = operations.isNotEmpty || nextRev > _status.lastServerRev;
 
-      if (operations.isNotEmpty || nextRev > _status.lastServerRev) {
+      if (hasRemoteChanges) {
         _status = _status.copyWith(lastServerRev: nextRev);
       }
 
@@ -104,6 +142,11 @@ class SyncEngine {
       );
     }
 
+    _notifyStatus();
+    _persistSyncMeta();
+    if (hasRemoteChanges) {
+      onRemoteChangesApplied?.call();
+    }
     return _status;
   }
 
@@ -131,17 +174,58 @@ class SyncEngine {
 
   /// 返回当前 server_rev（用于 OpLog 的 base_server_version）。
   int get currentServerRev => _status.lastServerRev;
+
+  // ── OpLog 持久化 ──
+
+  static const _pendingOpsKey = 'xiguang.sync.pending_ops';
+  static const _lastServerRevKey = 'xiguang.sync.last_server_rev';
+  static const _lastSyncAtKey = 'xiguang.sync.last_sync_at';
+
+  Future<void> _persistPendingOps() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_pendingOps.isEmpty) {
+      await prefs.remove(_pendingOpsKey);
+      return;
+    }
+    await prefs.setString(
+      _pendingOpsKey,
+      jsonEncode(_pendingOps.map((op) => op.toJson()).toList()),
+    );
+  }
+
+  Future<void> _persistSyncMeta() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_lastServerRevKey, _status.lastServerRev);
+    if (_status.lastSyncAt != null) {
+      await prefs.setString(_lastSyncAtKey, _status.lastSyncAt!.toIso8601String());
+    }
+  }
+
+  /// 启动时恢复 lastServerRev，避免全量重拉。
+  Future<void> _restoreSyncMeta() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rev = prefs.getInt(_lastServerRevKey) ?? 0;
+    final ts = prefs.getString(_lastSyncAtKey);
+    if (rev > 0) {
+      _status = _status.copyWith(
+        lastServerRev: rev,
+        lastSyncAt: ts != null ? DateTime.tryParse(ts) : null,
+      );
+    }
+  }
 }
 
 extension _StatusCopy on SyncStatus {
   SyncStatus copyWith({
     int? lastServerRev,
+    int? pendingCount,
+    DateTime? lastSyncAt,
     bool? connected,
   }) {
     return SyncStatus(
       lastServerRev: lastServerRev ?? this.lastServerRev,
-      pendingCount: pendingCount,
-      lastSyncAt: lastSyncAt,
+      pendingCount: pendingCount ?? this.pendingCount,
+      lastSyncAt: lastSyncAt ?? this.lastSyncAt,
       isSyncing: isSyncing,
       connected: connected ?? this.connected,
       error: error,

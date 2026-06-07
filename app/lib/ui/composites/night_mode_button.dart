@@ -18,19 +18,18 @@ class _NightModeButtonState extends ConsumerState<NightModeButton> {
   static const _switchSoundAsset =
       'assets/audio/DayNight mode switch sound.m4a';
 
-  late final AudioPlayer _player;
-
-  @override
-  void initState() {
-    super.initState();
-    _player = AudioPlayer();
-    unawaited(_player.setAsset(_switchSoundAsset));
-  }
+  AudioPlayer? _player;
 
   @override
   void dispose() {
-    unawaited(_player.dispose());
+    _player?.dispose();
     super.dispose();
+  }
+
+  Future<void> _ensurePlayer() async {
+    if (_player != null) return;
+    _player = AudioPlayer();
+    await _player!.setAsset(_switchSoundAsset);
   }
 
   @override
@@ -45,7 +44,7 @@ class _NightModeButtonState extends ConsumerState<NightModeButton> {
         tooltip: nightMode ? '切回白天' : '夜间轻开',
         onPressed: () {
           ref.read(nightModeProvider.notifier).state = !nightMode;
-          unawaited(_playSwitchSound());
+          _playSwitchSound();
         },
         constraints: const BoxConstraints.tightFor(width: 40, height: 40),
         padding: EdgeInsets.zero,
@@ -59,11 +58,18 @@ class _NightModeButtonState extends ConsumerState<NightModeButton> {
     );
   }
 
-  Future<void> _playSwitchSound() async {
+  void _playSwitchSound() {
+    unawaited(_playSwitchSoundAsync());
+  }
+
+  Future<void> _playSwitchSoundAsync() async {
     try {
-      await _player.stop();
-      await _player.seek(Duration.zero);
-      await _player.play();
+      await _ensurePlayer();
+      final player = _player;
+      if (player == null) return;
+      await player.stop();
+      await player.seek(Duration.zero);
+      await player.play();
     } catch (_) {}
   }
 }

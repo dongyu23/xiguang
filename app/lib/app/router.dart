@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'providers.dart';
@@ -160,20 +161,59 @@ class _AuthRestoringPage extends StatelessWidget {
   }
 }
 
-/// 底部导航骨架 — 更新 activeTabIndex 以便各页面暂停非活跃动画
-class _AppShell extends ConsumerWidget {
+/// 底部导航骨架 — 双击返回退出 + 更新 activeTabIndex
+class _AppShell extends ConsumerStatefulWidget {
   const _AppShell(this.navigationShell);
   final StatefulNavigationShell navigationShell;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    ref.read(activeTabIndexProvider.notifier).state = navigationShell.currentIndex;
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: navigationShell,
-      bottomNavigationBar: _XiguangNavBar(
-        selectedIndex: navigationShell.currentIndex,
-        onTap: (i) => context.go(_tabRootPaths[i]),
+  ConsumerState<_AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<_AppShell> {
+  DateTime? _lastBackPress;
+
+  @override
+  Widget build(BuildContext context) {
+    ref.read(activeTabIndexProvider.notifier).state =
+        widget.navigationShell.currentIndex;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final now = DateTime.now();
+        if (_lastBackPress != null &&
+            now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+          SystemNavigator.pop();
+          return;
+        }
+        _lastBackPress = now;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: const Text('再按一次退出隙光'),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.fromLTRB(24, 0, 24, 100),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: widget.navigationShell,
+        bottomNavigationBar: _XiguangNavBar(
+          selectedIndex: widget.navigationShell.currentIndex,
+          onTap: (i) {
+            if (i == widget.navigationShell.currentIndex) {
+              ref.read(scrollToTopSignalProvider.notifier).state++;
+            } else {
+              context.go(_tabRootPaths[i]);
+            }
+          },
+        ),
       ),
     );
   }

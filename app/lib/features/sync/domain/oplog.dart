@@ -26,4 +26,16 @@ class OpLog {
         'client_seq': clientSeq,
         'base_server_version': baseServerVersion,
       };
+
+  factory OpLog.fromJson(Map<String, dynamic> json) {
+    return OpLog(
+      clientOpId: json['client_op_id'] as String? ?? '',
+      entityType: json['entity_type'] as String? ?? '',
+      opType: json['op_type'] as String? ?? '',
+      entityPublicId: json['entity_public_id'] as String? ?? '',
+      payload: (json['payload'] as Map<String, dynamic>?) ?? const {},
+      clientSeq: (json['client_seq'] as num?)?.toInt() ?? 0,
+      baseServerVersion: (json['base_server_version'] as num?)?.toInt() ?? 0,
+    );
+  }
 }

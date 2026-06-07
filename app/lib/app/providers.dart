@@ -22,6 +22,7 @@ import '../features/timeline/data/timeline_repository_impl.dart';
 import '../features/whitenoise/data/whitenoise_api.dart';
 import '../features/whitenoise/data/whitenoise_repository_impl.dart';
 import '../features/sync/data/sync_api.dart';
+import '../features/sync/domain/oplog.dart';
 import '../features/sync/domain/sync_config.dart';
 import '../features/sync/domain/sync_status.dart';
 import '../features/sync/engine/sync_engine.dart';
@@ -84,20 +85,22 @@ class ApiBaseUrlNotifier extends AsyncNotifier<String> {
 final _apiClient = ApiClient();
 
 final apiClientProvider = Provider<ApiClient>((ref) {
-  final url = ref.read(apiBaseUrlProvider).valueOrNull;
-  if (url != null) _apiClient.updateBaseUrl(normalizeApiBaseUrl(url));
-  ref.listen(apiBaseUrlProvider, (_, next) {
-    final nextUrl = next.valueOrNull;
-    if (nextUrl != null) {
-      _apiClient.updateBaseUrl(normalizeApiBaseUrl(nextUrl));
-    }
-  });
+  // reactively rebuild when apiBaseUrlProvider changes — no ref.listen leak
+  final urlAsync = ref.watch(apiBaseUrlProvider);
+  final url = urlAsync.valueOrNull ?? _apiClient.baseUrl;
+  final normalized = normalizeApiBaseUrl(url);
+  if (normalized.isNotEmpty && normalized != _apiClient.baseUrl) {
+    _apiClient.updateBaseUrl(normalized);
+  }
   return _apiClient;
 });
 
 final nightModeProvider = StateProvider<bool>((ref) => false);
 final aiPolishEnabledProvider = StateProvider<bool>((ref) => false);
 final activeTabIndexProvider = StateProvider<int>((ref) => 0);
+
+/// 点击当前标签页时递增，触发对应页面滚动到顶部。
+final scrollToTopSignalProvider = StateProvider<int>((ref) => 0);
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(ref.watch(apiClientProvider));
@@ -250,7 +253,10 @@ class FragmentsNotifier extends AsyncNotifier<List<LightFragmentModel>> {
 }
 
 final islandsProvider = FutureProvider<List<IslandModel>>((ref) async {
-  return ref.watch(islandRepositoryProvider).listIslands();
+  final islands = ref.watch(islandRepositoryProvider);
+  // Pass already-loaded fragments to avoid redundant load in offline mode.
+  final fragments = ref.watch(fragmentsProvider).valueOrNull;
+  return islands.listIslands(cachedFragments: fragments);
 });
 
 final localTimelineGroupsProvider =
@@ -273,14 +279,66 @@ final syncConfigProvider = StateProvider<SyncConfig>((ref) {
   return const SyncConfig();
 });
 
+/// 全局 SyncEngine — 生命周期与应用一致，不随 URL/Config 变化重建
 final syncEngineProvider = Provider<SyncEngine>((ref) {
-  final api = SyncApi(ref.watch(apiClientProvider));
-  final config = ref.watch(syncConfigProvider);
-  return SyncEngine(api: api, config: config);
+  // 用 ref.read 而非 ref.watch：config 变化时不应重建引擎
+  final config = ref.read(syncConfigProvider);
+  final api = SyncApi(ref.read(apiClientProvider));
+  final engine = SyncEngine(api: api, config: config);
+
+  // 初始同步
+  ref.read(syncStatusProvider.notifier).state = engine.status;
+
+  // 同步状态变化 → 更新 UI
+  engine.onStatusChanged = () {
+    ref.read(syncStatusProvider.notifier).state = engine.status;
+  };
+
+  // Pull 到远端变更后刷新本地缓存
+  engine.onRemoteChangesApplied = () {
+    ref.invalidate(fragmentsProvider);
+    ref.invalidate(islandsProvider);
+    ref.invalidate(localTimelineGroupsProvider);
+  };
+
+  // Fragment 变更 → 入队 OpLog（仅 UPDATE/DELETE；INSERT 由 API 直接完成无需入队）
+  ref.read(fragmentRepositoryProvider).onFragmentChanged =
+      (entityType, opType, fragmentId, payload) {
+    if (!config.enabled) return;
+    // INSERT 已通过 REST API 直接写入服务端，不需要再次入队
+    if (opType == 'INSERT') return;
+    final op = OpLog(
+      clientOpId: engine.nextOpId(entityType, opType),
+      entityType: entityType,
+      opType: opType,
+      entityPublicId: fragmentId.toString(),
+      payload: payload,
+      clientSeq: 0,
+      baseServerVersion: engine.currentServerRev,
+    );
+    engine.enqueue(op);
+  };
+
+  // 启动时恢复持久化状态
+  engine.restorePendingOps();
+
+  ref.onDispose(() {
+    engine.onStatusChanged = null;
+    engine.onRemoteChangesApplied = null;
+    ref.read(fragmentRepositoryProvider).onFragmentChanged = null;
+  });
+
+  return engine;
 });
 
+/// 同步状态 — engine.onStatusChanged 中更新
 final syncStatusProvider = StateProvider<SyncStatus>((ref) {
-  return ref.watch(syncEngineProvider).status;
+  return const SyncStatus(
+    lastServerRev: 0,
+    pendingCount: 0,
+    lastSyncAt: null,
+    isSyncing: false,
+  );
 });
 
 final syncNowProvider = FutureProvider.autoDispose<void>((ref) async {

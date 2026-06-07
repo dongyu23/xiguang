@@ -12,7 +12,7 @@ class ApiClient {
               sendTimeout: const Duration(seconds: 10),
               headers: {'Content-Type': 'application/json'},
             )) {
-    _dio.interceptors.add(_RetryInterceptor());
+    _dio.interceptors.add(_RetryInterceptor(_dio));
   }
 
   static const defaultBaseUrl = String.fromEnvironment(
@@ -30,11 +30,52 @@ class ApiClient {
   String? debugAccessTokenForVerification() => _accessToken;
 
   void updateBaseUrl(String baseUrl) {
+    final oldUrl = _dio.options.baseUrl;
+    if (baseUrl == oldUrl) return;
     _dio.options.baseUrl = baseUrl;
+    // 切换到新后端时清除旧凭据，避免用旧 JWT 请求新服务器导致反复 401
+    _accessToken = null;
+    _refreshToken = null;
   }
 
   set accessToken(String? token) {
     _accessToken = token;
+  }
+
+  Future<Map<String, dynamic>> uploadFile(
+    String path, {
+    required String filePath,
+    required String fileName,
+    required int fragmentId,
+  }) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath, filename: fileName),
+      'fragment_id': fragmentId,
+    });
+    final response = await _dio.post<Map<String, dynamic>>(
+      path,
+      data: formData,
+      options: Options(headers: _authHeaders()),
+    );
+    return _unwrap(response.data);
+  }
+
+  Future<Map<String, dynamic>> uploadBytes(
+    String path, {
+    required List<int> bytes,
+    required String fileName,
+    required int fragmentId,
+  }) async {
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+      'fragment_id': fragmentId,
+    });
+    final response = await _dio.post<Map<String, dynamic>>(
+      path,
+      data: formData,
+      options: Options(headers: _authHeaders()),
+    );
+    return _unwrap(response.data);
   }
 
   set tokenRefreshCallback(TokenRefreshCallback? callback) {
@@ -152,6 +193,9 @@ class ApiClient {
 }
 
 class _RetryInterceptor extends Interceptor {
+  _RetryInterceptor(this._dio);
+  final Dio _dio;
+
   static const _maxRetries = 3;
   static final _retryableStatuses = {429, 502, 503, 504};
 
@@ -168,7 +212,7 @@ class _RetryInterceptor extends Interceptor {
         Duration(milliseconds: (200 * (1 << attempts)).clamp(0, 3000));
     await Future.delayed(delay);
     try {
-      final response = await Dio().fetch<dynamic>(
+      final response = await _dio.fetch<dynamic>(
         err.requestOptions..extra = extra,
       );
       handler.resolve(response);

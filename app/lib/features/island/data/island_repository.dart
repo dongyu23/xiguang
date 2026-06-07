@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import '../../auth/data/auth_repository.dart';
 import '../../fragment/data/fragment_repository.dart';
 import '../../shared/data/api_client.dart';
@@ -38,7 +40,8 @@ class IslandRepository {
   final AuthRepository _auth;
   final FragmentRepository _fragments;
 
-  Future<List<IslandModel>> listIslands() async {
+  Future<List<IslandModel>> listIslands(
+      {List<LightFragmentModel>? cachedFragments}) async {
     await _auth.ensureSession();
     if (_api.hasToken) {
       try {
@@ -48,11 +51,11 @@ class IslandRepository {
             .map((item) => IslandModel.fromJson(item as Map<String, dynamic>))
             .toList();
         if (remote.isNotEmpty) return remote;
-      } catch (_) {
-        // Use local rule-based islands below.
+      } catch (e) {
+        developer.log('listIslands remote failed, using local rules', error: e);
       }
     }
-    final fragments = await _fragments.listFragments();
+    final fragments = cachedFragments ?? await _fragments.listFragments();
     final counts = <String, int>{};
     for (final fragment in fragments) {
       for (final tag in fragment.tags) {
@@ -87,8 +90,8 @@ class IslandRepository {
       try {
         final body = await _api.get('/islands/${Uri.encodeComponent(name)}');
         return IslandModel.fromJson(body);
-      } catch (_) {
-        // Use local rule-based islands below.
+      } catch (e) {
+        developer.log('getIsland remote failed, using local', error: e);
       }
     }
     final items = await listIslands();
@@ -136,8 +139,8 @@ class IslandRepository {
             .map((item) =>
                 LightFragmentModel.fromJson(item as Map<String, dynamic>))
             .toList();
-      } catch (_) {
-        // Use local tag matching below.
+      } catch (e) {
+        developer.log('listIslandFragments remote failed, using local tags', error: e);
       }
     }
     final fragments = await _fragments.listFragments();

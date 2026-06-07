@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
@@ -75,6 +77,9 @@ class FragmentRepository {
   final List<LightFragmentModel> _local = List.of(seedFragments);
   int _localID = 100;
 
+  /// 每次本地 fragment 变更（create/update/delete）后调用，供 SyncEngine 入队 OpLog
+  void Function(String entityType, String opType, int fragmentId, Map<String, dynamic> payload)? onFragmentChanged;
+
   Future<List<LightFragmentModel>> listFragments() async {
     await _auth.ensureSession();
     if (!_api.hasToken) return List.unmodifiable(_local);
@@ -88,7 +93,8 @@ class FragmentRepository {
               LightFragmentModel.fromJson(item as Map<String, dynamic>))
           .toList();
       return remote.isEmpty ? List.unmodifiable(_local) : remote;
-    } catch (_) {
+    } catch (e) {
+      developer.log('listFragments remote failed, using local', error: e);
       return List.unmodifiable(_local);
     }
   }
@@ -117,7 +123,9 @@ class FragmentRepository {
         'media_urls': mediaUrls,
         'client_op_id': 'flutter-${DateTime.now().microsecondsSinceEpoch}',
       });
-      return LightFragmentModel.fromJson(body);
+      final fragment = LightFragmentModel.fromJson(body);
+      onFragmentChanged?.call('fragment', 'INSERT', fragment.id, body);
+      return fragment;
     }
     return _createLocalFragment(
       text: text,
@@ -191,6 +199,7 @@ class FragmentRepository {
       if (localIndex != -1) {
         _local[localIndex] = updated;
       }
+      onFragmentChanged?.call('fragment', 'UPDATE', id, payload);
       return;
     }
     if (localIndex != -1) {
@@ -212,6 +221,7 @@ class FragmentRepository {
     if (_api.hasToken) {
       try {
         await _api.delete('/fragments/$id');
+        onFragmentChanged?.call('fragment', 'DELETE', id, {'id': id});
       } on DioException {
         // Local fallback keeps the app operable while the backend is offline.
       }

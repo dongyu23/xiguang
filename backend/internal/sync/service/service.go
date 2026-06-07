@@ -24,13 +24,21 @@ func (s *Service) Push(ctx context.Context, userID int64, req domain.PushRequest
 		if op.ClientOpID == "" {
 			continue
 		}
-		if err := s.executeEntityOp(ctx, userID, op); err != nil {
-			slog.Warn("sync push: entity op failed", "client_op_id", op.ClientOpID, "entity_type", op.EntityType, "op_type", op.OpType, "err", err)
-			results = append(results, domain.PushResult{ClientOpID: op.ClientOpID, Status: "failed"})
-			continue
+		var rev int64
+		var err error
+		// Fragment 操作使用事务化方法（entity + oplog 在同一事务中）
+		if op.EntityType == "fragment" {
+			rev, err = s.repo.PushFragmentOp(ctx, userID, req.DeviceID, op)
+		} else {
+			if execErr := s.executeEntityOp(ctx, userID, op); execErr != nil {
+				slog.Warn("sync push: entity op failed", "client_op_id", op.ClientOpID, "entity_type", op.EntityType, "op_type", op.OpType, "err", execErr)
+				results = append(results, domain.PushResult{ClientOpID: op.ClientOpID, Status: "failed"})
+				continue
+			}
+			rev, err = s.repo.InsertOperation(ctx, userID, req.DeviceID, op)
 		}
-		rev, err := s.repo.InsertOperation(ctx, userID, req.DeviceID, op)
 		if err != nil {
+			slog.Warn("sync push: op failed", "client_op_id", op.ClientOpID, "err", err)
 			results = append(results, domain.PushResult{ClientOpID: op.ClientOpID, Status: "failed"})
 			continue
 		}

@@ -12,6 +12,7 @@ import '../../../../features/timeline/domain/date_group.dart';
 import '../../../../features/timeline/presentation/providers/timeline_provider.dart';
 import '../../../../ui/composites/light_card.dart';
 import '../../../../ui/composites/night_mode_button.dart';
+import '../../../../ui/primitives/scroll_to_top.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
 /// 时间河流页 — 按时间自然铺展的光片流
@@ -44,8 +45,10 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
       SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
+        child: ScrollToTop(
+          builder: (context, controller) => SingleChildScrollView(
+            controller: controller,
+            physics: const BouncingScrollPhysics(),
           padding: EdgeInsets.fromLTRB(22, 18, 22, _selectionMode ? 156 : 104),
           child: Center(
             child: ConstrainedBox(
@@ -165,6 +168,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
             ),
           ),
         ),
+          ),
       ),
       if (_selectionMode)
         _SelectionActionBar(
