@@ -34,7 +34,7 @@ dependencies:
   # 图片
   image_picker: ^1.0.0
   file_picker: ^8.0.0
-  flutter_image_compress: ^2.1.0
+  flutter_image_compress: ^2.4.0
 
   # 录音
   record: ^7.0.0

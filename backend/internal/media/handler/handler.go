@@ -56,6 +56,10 @@ func (h *Handler) presign(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, http.StatusBadRequest, "bad_request", "文件信息不完整。")
 		return
 	}
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "presign_failed", "暂时无法签发上传凭证。")
+		return
+	}
 	shared.WriteJSON(w, http.StatusOK, result)
 }
 

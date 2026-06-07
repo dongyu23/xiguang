@@ -57,7 +57,9 @@ class _SplashGateState extends State<SplashGate>
 
   @override
   Widget build(BuildContext context) {
-    return Stack(children: [
+    return Stack(
+      textDirection: TextDirection.ltr,
+      children: [
       widget.child,
       if (_mountSplash)
         IgnorePointer(
@@ -79,47 +81,49 @@ class _OpeningSplash extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        final t = Curves.easeOutCubic.transform(animation.value.clamp(0, 1));
-        final exit = Curves.easeInCubic.transform(
-          ((animation.value - .74) / .26).clamp(0, 1),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final splashSize = Size(
+          constraints.maxWidth,
+          constraints.maxHeight,
         );
-        final logo = Curves.easeOutBack.transform(
-          ((animation.value - .22) / .48).clamp(0, 1),
-        );
-        final curtain = Curves.easeOutQuart.transform(
-          ((animation.value - .02) / .50).clamp(0, 1),
-        );
-        final curtainFade = 1 -
-            Curves.easeInCubic.transform(
-              ((animation.value - .56) / .26).clamp(0, 1),
-            );
-        return Material(
-          color: Colors.transparent,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final splashSize = Size(
-                constraints.maxWidth,
-                constraints.maxHeight,
-              );
-              final logoWidth = min(
-                splashSize.width * .78,
-                splashSize.height * .42,
-              ).clamp(220.0, 430.0);
-              final curtainWidth = min(
-                splashSize.width * .64,
-                splashSize.height * .54,
-              ).clamp(230.0, 430.0);
+        final logoWidth = min(
+          splashSize.width * .78,
+          splashSize.height * .42,
+        ).clamp(220.0, 430.0);
+        final curtainWidth = min(
+          splashSize.width * .64,
+          splashSize.height * .54,
+        ).clamp(230.0, 430.0);
 
-              return Container(
+        return AnimatedBuilder(
+          animation: animation,
+          builder: (context, _) {
+            final t = Curves.easeOutCubic.transform(animation.value.clamp(0, 1));
+            final exit = Curves.easeInCubic.transform(
+              ((animation.value - .74) / .26).clamp(0, 1),
+            );
+            final logo = Curves.easeOutBack.transform(
+              ((animation.value - .22) / .48).clamp(0, 1),
+            );
+            final curtain = Curves.easeOutQuart.transform(
+              ((animation.value - .02) / .50).clamp(0, 1),
+            );
+            final curtainFade = 1 -
+                Curves.easeInCubic.transform(
+                  ((animation.value - .56) / .26).clamp(0, 1),
+                );
+            return Material(
+              color: Colors.transparent,
+              child: Container(
                 color: Color.lerp(
                   const Color(0xFF090D0C),
                   const Color(0xFFFBF7EF),
                   min(t * 1.12, 1),
                 ),
-                child: Stack(children: [
+                child: Stack(
+                  textDirection: TextDirection.ltr,
+                  children: [
                   Positioned.fill(
                     child: CustomPaint(
                       painter: _SplashAtmospherePainter(
@@ -187,9 +191,9 @@ class _OpeningSplash extends StatelessWidget {
                     ),
                   ),
                 ]),
-              );
-            },
-          ),
+              ),
+            );
+          },
         );
       },
     );

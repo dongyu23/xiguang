@@ -194,11 +194,6 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                             onDiscard: _resetPolish,
                           ),
                         const SizedBox(height: 14),
-                        _WeavePanel(
-                          nightMode: nightMode,
-                          onTap: () => context.push('/weave/${fragment.id}'),
-                        ),
-                        const SizedBox(height: 14),
                         _ActionDock(
                           saving: _saving,
                           polishEnabled: polishEnabled &&
@@ -211,6 +206,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                             _emotion,
                           ),
                           onDelete: () => _delete(fragment),
+                          onWeave: () => context.push('/weave/${fragment.id}'),
                         ),
                       ],
                     ),
@@ -1174,52 +1170,6 @@ class _ImagePreviewDialog extends StatelessWidget {
   }
 }
 
-class _WeavePanel extends StatelessWidget {
-  const _WeavePanel({required this.nightMode, required this.onTap});
-
-  final bool nightMode;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: nightMode
-          ? BoxDecoration(
-              color: const Color(0xFF203231).withValues(alpha: .80),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.white.withValues(alpha: .10)),
-            )
-          : softDecoration(AppColors.white),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('织线', style: AppText.onNight(AppText.titleMedium, nightMode)),
-        const SizedBox(height: 8),
-        Text(
-          '可以把这束光和另一束旧光轻轻连起来。',
-          style: AppText.onNight(AppText.body, nightMode),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: onTap,
-            icon: const Icon(Icons.blur_circular_rounded, size: 19),
-            label: const Text('和另一束光织在一起'),
-            style: FilledButton.styleFrom(
-              backgroundColor: nightMode ? AppText.nightAccent : AppColors.ink,
-              foregroundColor: nightMode ? AppColors.ink : AppColors.white,
-              padding: const EdgeInsets.symmetric(vertical: 15),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-        ),
-      ]),
-    );
-  }
-}
-
 class _ActionDock extends StatelessWidget {
   const _ActionDock({
     required this.saving,
@@ -1228,6 +1178,7 @@ class _ActionDock extends StatelessWidget {
     required this.onSave,
     required this.onPolish,
     required this.onDelete,
+    required this.onWeave,
   });
 
   final bool saving;
@@ -1236,6 +1187,7 @@ class _ActionDock extends StatelessWidget {
   final VoidCallback onSave;
   final VoidCallback onPolish;
   final VoidCallback onDelete;
+  final VoidCallback onWeave;
 
   @override
   Widget build(BuildContext context) {
@@ -1280,6 +1232,27 @@ class _ActionDock extends StatelessWidget {
                 color: nightMode
                     ? AppColors.sunsetCoral.withValues(alpha: .62)
                     : AppColors.inkMuted,
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onWeave,
+            icon: const Icon(Icons.blur_circular_rounded, size: 18),
+            label: const Text('织在一起'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor:
+                  nightMode ? AppText.nightAccent : AppColors.ink,
+              side: BorderSide(
+                color: nightMode
+                    ? AppColors.white.withValues(alpha: .18)
+                    : AppColors.line,
               ),
               padding: const EdgeInsets.symmetric(vertical: 13),
               shape: RoundedRectangleBorder(

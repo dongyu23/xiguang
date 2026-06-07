@@ -33,10 +33,10 @@ func NewPG(db *pgxpool.Pool) *PG {
 	return &PG{db: db}
 }
 
-const islandSelectCols = `id::text, id, name, status::text, fragment_count, COALESCE(description,''), updated_at`
+const islandSelectCols = `id::text, id, name, status::text, fragment_count, COALESCE(description,''), source_tag_id IS NULL, updated_at`
 
 func scanIsland(row interface{ Scan(...any) error }, dto *domain.Island) error {
-	return row.Scan(&dto.ID, &dto.IslandID, &dto.Name, &dto.Status, &dto.FragmentCount, &dto.Description, &dto.UpdatedAt)
+	return row.Scan(&dto.ID, &dto.IslandID, &dto.Name, &dto.Status, &dto.FragmentCount, &dto.Description, &dto.Manual, &dto.UpdatedAt)
 }
 
 func islandReturning() string {

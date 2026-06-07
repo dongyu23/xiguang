@@ -24,6 +24,7 @@ func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Post("/push", h.push)
 	r.Get("/pull", h.pull)
+	r.Get("/status", h.status)
 	return r
 }
 
@@ -50,4 +51,14 @@ func (h *Handler) pull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared.WriteJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	status, err := h.service.Status(r.Context(), userID)
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "sync_failed", "暂时无法获取同步状态。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, status)
 }

@@ -71,11 +71,11 @@ void main() {
     expect(router, contains("path: '/universe'"));
     expect(router, contains("path: '/islands/:id'"));
     expect(router, contains("path: '/mine'"));
-    expect(router, contains("path: '/settings'"));
+    expect(router, contains("path: '/sync-settings'"));
     expect(router, contains("path: '/space'"));
     expect(router, contains("path: '/whitenoise'"));
     expect(router, contains("path: '/glow-organize'"));
-    expect(router, isNot(contains("path: '/weave'")));
+    expect(router, isNot(contains("'/weave'")));
   });
 
   test('CLAUDE Flutter dependency choices remain present', () {

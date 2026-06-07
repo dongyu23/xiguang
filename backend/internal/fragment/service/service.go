@@ -35,6 +35,9 @@ func (s *Service) Create(ctx context.Context, userID int64, params domain.Create
 	if params.Emotion == "" {
 		params.Emotion = "说不清"
 	}
+	if len(params.Emotion) > 32 {
+		params.Emotion = string([]rune(params.Emotion)[:32])
+	}
 	tags := cleanTags(params.Tags)
 	media, err := s.cleanMedia(ctx, userID, params.MediaURLs)
 	if err != nil {
@@ -55,9 +58,15 @@ func (s *Service) List(ctx context.Context, userID int64, emotion, tag, rawLimit
 }
 
 func (s *Service) Timeline(ctx context.Context, userID int64, emotion, tag, rawLimit string) (domain.TimelineResponse, error) {
-	items, err := s.repo.List(ctx, userID, domain.ListQuery{Emotion: emotion, Tag: tag, Limit: parseLimit(rawLimit, 100)})
+	limit := parseLimit(rawLimit, 100)
+	// Request one extra to detect has_more.
+	items, err := s.repo.List(ctx, userID, domain.ListQuery{Emotion: emotion, Tag: tag, Limit: limit + 1})
 	if err != nil {
 		return domain.TimelineResponse{}, err
+	}
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
 	}
 	groups := make([]domain.TimelineGroup, 0)
 	index := map[string]int{}
@@ -72,7 +81,7 @@ func (s *Service) Timeline(ctx context.Context, userID int64, emotion, tag, rawL
 		groups[i].Fragments = append(groups[i].Fragments, item)
 		groups[i].Count++
 	}
-	return domain.TimelineResponse{Groups: groups, Items: items, HasMore: false}, nil
+	return domain.TimelineResponse{Groups: groups, Items: items, HasMore: hasMore}, nil
 }
 
 func (s *Service) Get(ctx context.Context, userID, id int64) (domain.Fragment, error) {

@@ -9,6 +9,7 @@ type Island struct {
 	Status        string    `json:"status"`
 	FragmentCount int       `json:"fragment_count"`
 	Description   string    `json:"description"`
+	Manual        bool      `json:"manual"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 

@@ -6,14 +6,19 @@ class ApiClient {
   ApiClient({Dio? dio, String? baseUrl})
       : _dio = dio ??
             Dio(BaseOptions(
-              baseUrl: baseUrl ??
-                  const String.fromEnvironment('API_BASE_URL',
-                      defaultValue: 'http://127.0.0.1:8088/api/v1'),
-              connectTimeout: const Duration(seconds: 2),
-              receiveTimeout: const Duration(seconds: 4),
-              sendTimeout: const Duration(seconds: 4),
+              baseUrl: baseUrl ?? defaultBaseUrl,
+              connectTimeout: const Duration(seconds: 10),
+              receiveTimeout: const Duration(seconds: 15),
+              sendTimeout: const Duration(seconds: 10),
               headers: {'Content-Type': 'application/json'},
-            ));
+            )) {
+    _dio.interceptors.add(_RetryInterceptor());
+  }
+
+  static const defaultBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://127.0.0.1:8088/api/v1',
+  );
 
   final Dio _dio;
   String? _accessToken;
@@ -23,6 +28,10 @@ class ApiClient {
   bool get hasToken => _accessToken != null;
   String? get accessToken => _accessToken;
   String? debugAccessTokenForVerification() => _accessToken;
+
+  void updateBaseUrl(String baseUrl) {
+    _dio.options.baseUrl = baseUrl;
+  }
 
   set accessToken(String? token) {
     _accessToken = token;
@@ -58,20 +67,26 @@ class ApiClient {
 
   Future<Map<String, dynamic>> put(
       String path, Map<String, dynamic> body) async {
-    return _send(() => _dio.put<Map<String, dynamic>>(
-          path,
-          data: body,
-          options: Options(headers: _authHeaders()),
-        ));
+    return _send(
+      () => _dio.put<Map<String, dynamic>>(
+        path,
+        data: body,
+        options: Options(headers: _authHeaders()),
+      ),
+      allowRefresh: path != '/auth/refresh',
+    );
   }
 
   Future<Map<String, dynamic>> delete(String path,
       {Map<String, dynamic>? body}) async {
-    return _send(() => _dio.delete<Map<String, dynamic>>(
-          path,
-          data: body,
-          options: Options(headers: _authHeaders()),
-        ));
+    return _send(
+      () => _dio.delete<Map<String, dynamic>>(
+        path,
+        data: body,
+        options: Options(headers: _authHeaders()),
+      ),
+      allowRefresh: path != '/auth/refresh',
+    );
   }
 
   Future<Map<String, dynamic>> _send(
@@ -133,5 +148,43 @@ class ApiClient {
       return apiError is Map && apiError['code'] == 'unauthorized';
     }
     return false;
+  }
+}
+
+class _RetryInterceptor extends Interceptor {
+  static const _maxRetries = 3;
+  static final _retryableStatuses = {429, 502, 503, 504};
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) async {
+    final extra = err.requestOptions.extra;
+    final attempts = (extra['_retry_attempts'] as int?) ?? 0;
+    if (attempts >= _maxRetries || !_isRetryable(err)) {
+      handler.next(err);
+      return;
+    }
+    extra['_retry_attempts'] = attempts + 1;
+    final delay =
+        Duration(milliseconds: (200 * (1 << attempts)).clamp(0, 3000));
+    await Future.delayed(delay);
+    try {
+      final response = await Dio().fetch<dynamic>(
+        err.requestOptions..extra = extra,
+      );
+      handler.resolve(response);
+    } on DioException catch (retryError) {
+      handler.next(retryError);
+    }
+  }
+
+  bool _isRetryable(DioException err) {
+    if (err.type == DioExceptionType.connectionTimeout ||
+        err.type == DioExceptionType.receiveTimeout ||
+        err.type == DioExceptionType.sendTimeout ||
+        err.type == DioExceptionType.connectionError) {
+      return true;
+    }
+    final status = err.response?.statusCode;
+    return status != null && _retryableStatuses.contains(status);
   }
 }

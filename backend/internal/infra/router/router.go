@@ -34,7 +34,7 @@ func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(cors(cfg.AllowedOrigin))
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {

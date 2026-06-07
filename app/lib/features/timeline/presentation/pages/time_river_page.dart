@@ -252,15 +252,17 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     }
     setState(() => _polishing = true);
     var success = 0;
-    try {
-      final api = AIApi(ref.read(apiClientProvider));
-      final repository = ref.read(fragmentRepositoryProvider);
-      for (final fragment in selected) {
-        if (fragment.contentText.trim().isEmpty) continue;
+    var failed = 0;
+    final api = AIApi(ref.read(apiClientProvider));
+    final repository = ref.read(fragmentRepositoryProvider);
+    for (final fragment in selected) {
+      if (fragment.contentText.trim().isEmpty) continue;
+      try {
         final result =
             await api.polishFragment(fragment.contentText, fragment.emotion);
         if (result['status'] == 'error') {
-          throw StateError(result['message'] as String? ?? 'polish failed');
+          failed++;
+          continue;
         }
         final polished = (result['polished_text'] as String? ?? '').trim();
         if (polished.isEmpty) continue;
@@ -271,30 +273,30 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
           tags: fragment.tags,
         );
         success++;
+      } catch (_) {
+        failed++;
       }
-      ref.invalidate(fragmentsProvider);
-      ref.invalidate(timelineGroupsProvider);
-      if (!mounted) return;
-      setState(() {
-        _selectedIds.clear();
-        _polishing = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success > 0 ? '已润色 $success 束光。' : '没有生成新的润色内容。'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _polishing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('润色失败，请稍后再试。'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
+    ref.invalidate(fragmentsProvider);
+    ref.invalidate(timelineGroupsProvider);
+    if (!mounted) return;
+    setState(() {
+      _selectedIds.clear();
+      _polishing = false;
+    });
+    final msg = StringBuffer();
+    if (success > 0) msg.write('已润色 $success 束光');
+    if (failed > 0) {
+      if (msg.isNotEmpty) msg.write('，');
+      msg.write('$failed 束润色失败');
+    }
+    if (msg.isEmpty) msg.write('没有生成新的润色内容。');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg.toString()),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   List<LightFragmentModel> _selectedFragments(
@@ -439,14 +441,25 @@ extension _LightFragmentAdapter on LightFragmentModel {
 }
 
 LightFragmentModel _fromDomainFragment(dynamic fragment) {
+  int safeId(dynamic v) => v is int ? v : (v is num ? v.toInt() : 0);
+  String safeStr(dynamic v) => v is String ? v : (v?.toString() ?? '');
+  List<String> safeStrList(dynamic v) {
+    if (v is List) return v.map((e) => e.toString()).toList();
+    return const [];
+  }
+  DateTime safeDateTime(dynamic v) {
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
+    return DateTime.now();
+  }
   return LightFragmentModel(
-    id: fragment.id as int,
-    contentText: fragment.contentText as String,
-    emotion: fragment.emotion as String? ?? '说不清',
-    tags: List<String>.from(fragment.tags as List),
-    mediaUrls: List<String>.from(fragment.mediaUrls as List),
-    createdAt: fragment.createdAt as DateTime,
-    status: (fragment.status as Object).toString().split('.').last,
+    id: safeId(fragment.id),
+    contentText: safeStr(fragment.contentText),
+    emotion: safeStr(fragment.emotion).isEmpty ? '说不清' : safeStr(fragment.emotion),
+    tags: safeStrList(fragment.tags),
+    mediaUrls: safeStrList(fragment.mediaUrls),
+    createdAt: safeDateTime(fragment.createdAt),
+    status: safeStr(fragment.status).isEmpty ? 'twilight' : safeStr(fragment.status),
   );
 }
 

@@ -1,12 +1,16 @@
+import 'dart:io' show Platform;
+
 import 'dart:math';
 import 'dart:convert';
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,6 +25,10 @@ import '../../../../ui/spaces/space_canvas.dart';
 import 'audio_capture_file_stub.dart'
     if (dart.library.io) 'audio_capture_file_io.dart';
 import 'image_attachment_picker.dart';
+
+bool _isDesktopPlatform() =>
+    !kIsWeb &&
+    (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
 /// 捕光页 — 首页，快速记录入口
 ///
@@ -50,10 +58,13 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
     final nightMode = ref.watch(nightModeProvider);
     final moodColor = AppColors.emotionColor(_effectiveEmotion);
     final vinylAudioAsset = _vinylAudioForEmotion(_effectiveEmotion);
+    final isActive = ref.watch(activeTabIndexProvider) == 0;
     return _XiguangPage(
       moodColor: moodColor,
       nightMode: nightMode,
-      child: Column(
+      child: TickerMode(
+        enabled: isActive,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _PageHeader(
@@ -78,6 +89,7 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -429,6 +441,7 @@ class _VinylLightSourceState extends State<_VinylLightSource>
   AudioPlayer? _player;
   String? _loadedAsset;
   bool _playing = false;
+  bool _playerInitialized = false;
 
   @override
   void initState() {
@@ -442,11 +455,15 @@ class _VinylLightSourceState extends State<_VinylLightSource>
       duration: const Duration(milliseconds: 360),
     );
     _needleController.value = 1;
-    if (!_isRunningWidgetTest) {
-      _player = AudioPlayer();
-      unawaited(_player!.setLoopMode(LoopMode.one));
-      unawaited(_ensureAudioAsset(widget.audioAsset));
-    }
+  }
+
+  Future<void> _ensurePlayer() async {
+    if (_playerInitialized) return;
+    _playerInitialized = true;
+    _player = AudioPlayer();
+    await _player!.setLoopMode(LoopMode.one);
+    await _player!.setAsset(widget.audioAsset);
+    _loadedAsset = widget.audioAsset;
   }
 
   @override
@@ -459,7 +476,7 @@ class _VinylLightSourceState extends State<_VinylLightSource>
 
   @override
   void dispose() {
-    unawaited(_player?.dispose());
+    _player?.dispose();
     _rotationController.dispose();
     _needleController.dispose();
     super.dispose();
@@ -494,7 +511,7 @@ class _VinylLightSourceState extends State<_VinylLightSource>
 
     _playVisualPlayback();
     try {
-      await _ensureAudioAsset(widget.audioAsset);
+      await _ensurePlayer();
       if (!mounted || !_playing) return;
       await _player?.play();
     } catch (_) {
@@ -1129,6 +1146,8 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     );
   }
 
+  static const _maxInlineImageBytes = 2 * 1024 * 1024; // 2MB per image for inline base64
+
   Future<List<String>> _mediaUrlsForSave() async {
     final urls = <String>[];
     if (!kIsWeb) {
@@ -1136,6 +1155,17 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     } else {
       for (final image in _images) {
         final bytes = await image.readAsBytes();
+        if (bytes.length > _maxInlineImageBytes) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('图片过大 (${(bytes.length / 1024 / 1024).toStringAsFixed(1)}MB)，请使用小于2MB的图片。'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          continue;
+        }
         urls.add('data:${_mimeType(image)};base64,${base64Encode(bytes)}');
       }
     }
@@ -1152,11 +1182,21 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     }
     final path = _audioPath;
     if (path == null || _audioSeconds <= 0) return null;
-    final url = await audioPathToDataUrl(path);
+    final url = await audioPathToDataUrl(path, _audioMimeForPath(path));
     if (url == null) {
       throw StateError('audio_capture_missing');
     }
     return url;
+  }
+
+  String _audioMimeForPath(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.mp3')) return 'audio/mpeg';
+    if (lower.endsWith('.wav')) return 'audio/wav';
+    if (lower.endsWith('.aac')) return 'audio/aac';
+    if (lower.endsWith('.ogg')) return 'audio/ogg';
+    if (lower.endsWith('.opus')) return 'audio/opus';
+    return 'audio/mp4';
   }
 
   int get _writtenCount => _controller.text.trim().runes.length;
@@ -1176,6 +1216,10 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   }
 
   Future<void> _toggleAudio() async {
+    if (_isDesktopPlatform()) {
+      await _pickAudioFile();
+      return;
+    }
     if (_recordingAudio) {
       await _stopAudio();
       return;
@@ -1183,24 +1227,50 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     await _startAudio();
   }
 
+  Future<void> _pickAudioFile() async {
+    if (_audioPath != null) {
+      _clearAudio();
+      return;
+    }
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'opus'],
+        allowMultiple: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.first;
+      if (file.path == null) return;
+      if (!mounted) return;
+      final fileSize = file.size;
+      setState(() {
+        _audioPath = file.path!;
+        _audioSeconds = fileSize > 0 ? (fileSize / 16000).ceil().clamp(1, 9999) : 1;
+        _recordingAudio = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('无法选择音频文件。'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   Future<void> _startAudio() async {
     try {
-      if (!await _attachmentRecorder.hasPermission()) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('需要麦克风权限才能留下声音。'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      final permissionGranted = await _ensureMicrophonePermission();
+      if (!permissionGranted) {
         return;
       }
       final path = await nextAudioCapturePath();
       await _attachmentRecorder.start(
         const RecordConfig(
-          encoder: AudioEncoder.wav,
+          encoder: AudioEncoder.aacLc,
           sampleRate: 44100,
-          bitRate: 128000,
+          bitRate: 64000,
           numChannels: 1,
           echoCancel: true,
           noiseSuppress: true,
@@ -1226,6 +1296,34 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
         ),
       );
     }
+  }
+
+  Future<bool> _ensureMicrophonePermission() async {
+    var status = await Permission.microphone.status;
+    if (status.isGranted) return true;
+
+    status = await Permission.microphone.request();
+    if (status.isGranted) {
+      return await _attachmentRecorder.hasPermission(request: false);
+    }
+
+    if (!mounted) return false;
+    final permanentlyDenied = status.isPermanentlyDenied || status.isRestricted;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          permanentlyDenied ? '需要在系统设置中开启麦克风权限。' : '需要麦克风权限才能留下声音。',
+        ),
+        behavior: SnackBarBehavior.floating,
+        action: permanentlyDenied
+            ? SnackBarAction(
+                label: '去设置',
+                onPressed: () => unawaited(openAppSettings()),
+              )
+            : null,
+      ),
+    );
+    return false;
   }
 
   Future<void> _stopAudio() async {
@@ -1505,7 +1603,9 @@ class _AttachmentBar extends StatelessWidget {
             ? '停止'
             : hasAudioCue
                 ? '声音已贴近'
-                : '音频',
+                : _isDesktopPlatform()
+                    ? '选择音频'
+                    : '音频',
         active: hasAudioCue || recordingAudio,
         enabled: !saving,
         onTap: onToggleAudio,

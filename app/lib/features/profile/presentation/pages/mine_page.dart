@@ -24,6 +24,7 @@ class _MinePageState extends ConsumerState<MinePage> {
   bool _saving = false;
   bool _savingAiPolish = false;
   bool? _aiEnabledDraft;
+  int? _syncedAiPolishSessionId;
   String? _notice;
 
   @override
@@ -74,7 +75,10 @@ class _MinePageState extends ConsumerState<MinePage> {
   Future<void> _toggleAiPolish(AuthSession session, bool enabled) async {
     if (_savingAiPolish) return;
     final previous = ref.read(aiPolishEnabledProvider);
+    final previousSession = ref.read(authSessionProvider);
     ref.read(aiPolishEnabledProvider.notifier).state = enabled;
+    ref.read(authSessionProvider.notifier).state =
+        session.copyWith(aiEnabled: enabled);
     setState(() {
       _savingAiPolish = true;
       _notice = null;
@@ -97,6 +101,7 @@ class _MinePageState extends ConsumerState<MinePage> {
       });
     } catch (_) {
       ref.read(aiPolishEnabledProvider.notifier).state = previous;
+      ref.read(authSessionProvider.notifier).state = previousSession;
       if (!mounted) return;
       setState(() {
         _savingAiPolish = false;
@@ -125,6 +130,7 @@ class _MinePageState extends ConsumerState<MinePage> {
     await ref.read(authRepositoryProvider).logout();
     ref.read(authSessionProvider.notifier).state = null;
     ref.invalidate(sessionProvider);
+    _syncedAiPolishSessionId = null;
     if (!mounted) return;
     context.go('/login');
   }
@@ -135,7 +141,6 @@ class _MinePageState extends ConsumerState<MinePage> {
     final nightMode = ref.watch(nightModeProvider);
     final islandsAsync = ref.watch(islandsProvider);
     final fragmentsAsync = ref.watch(fragmentsProvider);
-    final api = ref.watch(apiClientProvider);
 
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
@@ -317,20 +322,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                         // ── 同步 ──
                         _SectionLabel('同步', nightMode: nightMode),
                         const SizedBox(height: 8),
-                        _Card(nightMode: nightMode, children: [
-                          _InfoRow(
-                              label: '服务',
-                              value: api.baseUrl,
-                              nightMode: nightMode),
-                          _InfoRow(
-                              label: 'Token',
-                              value: api.hasToken ? '已认证' : '未登录',
-                              nightMode: nightMode),
-                          _InfoRow(
-                              label: '策略',
-                              value: '联网后自动推送变更。',
-                              nightMode: nightMode),
-                        ]),
+                        _SyncStatusPanel(nightMode: nightMode),
                         const SizedBox(height: 24),
 
                         // ── 数据概览 ──
@@ -412,6 +404,8 @@ class _MinePageState extends ConsumerState<MinePage> {
   }
 
   void _syncAiPolishProvider(AuthSession session) {
+    if (_syncedAiPolishSessionId == session.id) return;
+    _syncedAiPolishSessionId = session.id;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _savingAiPolish) return;
       final current = ref.read(aiPolishEnabledProvider);
@@ -459,15 +453,18 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(top: 10),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-              width: 56,
-              child: Text(label,
-                  style: AppText.onNight(AppText.caption, nightMode))),
-          Expanded(
-              child:
-                  Text(value, style: AppText.onNight(AppText.body, nightMode))),
-        ]),
+        child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              SizedBox(
+                  width: 56,
+                  child: Text(label,
+                      style: AppText.onNight(AppText.caption, nightMode))),
+              Expanded(
+                  child: Text(value,
+                      style: AppText.onNight(AppText.body, nightMode))),
+            ]),
       );
 }
 
@@ -557,6 +554,133 @@ class _ErrorPanel extends StatelessWidget {
           Text('可以重新登录，或检查后端连接。', style: AppText.body),
         ]),
       );
+}
+
+class _SyncStatusPanel extends ConsumerWidget {
+  const _SyncStatusPanel({required this.nightMode});
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(syncStatusProvider);
+    final api = ref.watch(apiClientProvider);
+    final baseUrl = ref.watch(apiBaseUrlProvider).valueOrNull ?? api.baseUrl;
+
+    return _Card(nightMode: nightMode, children: [
+      InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => context.push('/sync-settings'),
+        child: Row(children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: status.connected ? AppColors.teaGreen : AppColors.inkMuted,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                status.connected ? '云同步已连接' : '云同步未连接',
+                style: AppText.onNight(AppText.titleMedium, nightMode),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                status.lastSyncAt != null
+                    ? '上次同步：${_formatTime(status.lastSyncAt!)} · 待推送 ${status.pendingCount} 条'
+                    : '点击配置同步参数',
+                style: AppText.onNight(AppText.caption, nightMode),
+              ),
+            ]),
+          ),
+          Icon(Icons.chevron_right_rounded,
+              color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
+        ]),
+      ),
+      const SizedBox(height: 14),
+      Row(children: [
+        Expanded(
+          child: _MiniStat(
+            label: '服务',
+            value: _shortBaseUrl(baseUrl),
+            nightMode: nightMode,
+          ),
+        ),
+        Container(
+            width: 1,
+            height: 28,
+            color: nightMode
+                ? AppColors.white.withValues(alpha: .10)
+                : AppColors.line),
+        Expanded(
+          child: _MiniStat(
+            label: 'Token',
+            value: api.hasToken ? '已认证' : '未登录',
+            nightMode: nightMode,
+          ),
+        ),
+        Container(
+            width: 1,
+            height: 28,
+            color: nightMode
+                ? AppColors.white.withValues(alpha: .10)
+                : AppColors.line),
+        Expanded(
+          child: _MiniStat(
+            label: '版本',
+            value: 'Rev ${status.lastServerRev}',
+            nightMode: nightMode,
+          ),
+        ),
+      ]),
+    ]);
+  }
+
+  String _shortBaseUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return '${uri.host}:${uri.port}';
+    } catch (_) {
+      return url.length > 24 ? '${url.substring(0, 22)}…' : url;
+    }
+  }
+
+  String _formatTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({
+    required this.label,
+    required this.value,
+    required this.nightMode,
+  });
+  final String label;
+  final String value;
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(children: [
+        Text(value,
+            style: AppText.onNight(AppText.titleMedium, nightMode).copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            )),
+        const SizedBox(height: 2),
+        Text(label,
+            style: AppText.onNight(AppText.caption, nightMode).copyWith(
+              fontSize: 10,
+            )),
+      ]),
+    );
+  }
 }
 
 BoxDecoration _nightCard() => BoxDecoration(

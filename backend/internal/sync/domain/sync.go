@@ -46,3 +46,8 @@ type PullResponse struct {
 	HasMore          bool            `json:"has_more"`
 	FullSyncRequired bool            `json:"full_sync_required"`
 }
+
+type SyncStatus struct {
+	ServerRev int64 `json:"server_rev"`
+	Connected bool  `json:"connected"`
+}

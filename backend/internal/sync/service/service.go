@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 
 	"xiguang/backend/internal/sync/domain"
 	"xiguang/backend/internal/sync/repository"
@@ -22,15 +24,51 @@ func (s *Service) Push(ctx context.Context, userID int64, req domain.PushRequest
 		if op.ClientOpID == "" {
 			continue
 		}
+		if err := s.executeEntityOp(ctx, userID, op); err != nil {
+			slog.Warn("sync push: entity op failed", "client_op_id", op.ClientOpID, "entity_type", op.EntityType, "op_type", op.OpType, "err", err)
+			results = append(results, domain.PushResult{ClientOpID: op.ClientOpID, Status: "failed"})
+			continue
+		}
 		rev, err := s.repo.InsertOperation(ctx, userID, req.DeviceID, op)
 		if err != nil {
 			results = append(results, domain.PushResult{ClientOpID: op.ClientOpID, Status: "failed"})
 			continue
 		}
 		newRev = rev
-		results = append(results, domain.PushResult{ClientOpID: op.ClientOpID, Status: "accepted", ServerRev: rev})
+		results = append(results, domain.PushResult{ClientOpID: op.ClientOpID, Status: "applied", ServerRev: rev})
 	}
 	return domain.PushResponse{Results: results, NewServerRev: newRev}
+}
+
+func (s *Service) executeEntityOp(ctx context.Context, userID int64, op domain.PushOperation) error {
+	switch op.EntityType {
+	case "fragment":
+		return s.executeFragmentOp(ctx, userID, op)
+	default:
+		return nil
+	}
+}
+
+func (s *Service) executeFragmentOp(ctx context.Context, userID int64, op domain.PushOperation) error {
+	switch op.OpType {
+	case "INSERT":
+		_, err := s.repo.ExecuteFragmentInsert(ctx, userID, op.Payload)
+		return err
+	case "UPDATE":
+		entityID, err := s.repo.FindFragmentByPublicID(ctx, userID, op.EntityPublicID)
+		if err != nil {
+			return fmt.Errorf("find fragment by public_id %s: %w", op.EntityPublicID, err)
+		}
+		return s.repo.ExecuteFragmentUpdate(ctx, userID, entityID, op.Payload)
+	case "DELETE":
+		entityID, err := s.repo.FindFragmentByPublicID(ctx, userID, op.EntityPublicID)
+		if err != nil {
+			return fmt.Errorf("find fragment by public_id %s: %w", op.EntityPublicID, err)
+		}
+		return s.repo.ExecuteFragmentDelete(ctx, userID, entityID)
+	default:
+		return nil
+	}
 }
 
 func (s *Service) Pull(ctx context.Context, userID, sinceRev int64) (domain.PullResponse, error) {
@@ -42,10 +80,22 @@ func (s *Service) Pull(ctx context.Context, userID, sinceRev int64) (domain.Pull
 	if len(items) > 0 {
 		nextRev = items[len(items)-1].ServerRev
 	}
+	hasMore := len(items) >= 100
 	return domain.PullResponse{
 		Operations:       items,
 		NextSinceRev:     nextRev,
-		HasMore:          false,
+		HasMore:          hasMore,
 		FullSyncRequired: false,
+	}, nil
+}
+
+func (s *Service) Status(ctx context.Context, userID int64) (domain.SyncStatus, error) {
+	rev, err := s.repo.FindMostRecentServerRev(ctx, userID)
+	if err != nil {
+		return domain.SyncStatus{}, err
+	}
+	return domain.SyncStatus{
+		ServerRev: rev,
+		Connected: true,
 	}, nil
 }

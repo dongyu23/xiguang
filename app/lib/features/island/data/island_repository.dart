@@ -9,6 +9,7 @@ class IslandModel {
     required this.status,
     required this.fragmentCount,
     required this.description,
+    this.manual = false,
   });
 
   final String name;
@@ -16,6 +17,7 @@ class IslandModel {
   final String status;
   final int fragmentCount;
   final String description;
+  final bool manual;
 
   static IslandModel fromJson(Map<String, dynamic> json) {
     return IslandModel(
@@ -24,6 +26,7 @@ class IslandModel {
       status: json['status'] as String? ?? 'star_point',
       fragmentCount: json['fragment_count'] as int? ?? 0,
       description: json['description'] as String? ?? '',
+      manual: json['manual'] as bool? ?? false,
     );
   }
 }

@@ -62,10 +62,14 @@ class AuthRepositoryImpl implements AuthRepositoryContract {
   }
 
   TokenPair _parseTokens(Map<String, dynamic> json) {
+    final expiresAtStr = json['expires_at'] as String?;
+    final expiresAt = expiresAtStr != null
+        ? DateTime.tryParse(expiresAtStr)
+        : null;
     return TokenPair(
       accessToken: json['access_token'] as String? ?? '',
       refreshToken: json['refresh_token'] as String? ?? '',
-      expiresAt: DateTime.now().add(const Duration(minutes: 15)),
+      expiresAt: expiresAt ?? DateTime.now().add(const Duration(minutes: 15)),
     );
   }
 }

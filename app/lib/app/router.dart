@@ -21,6 +21,7 @@ import '../features/whitenoise/presentation/pages/whitenoise_page.dart';
 import '../features/profile/presentation/pages/mine_page.dart';
 import '../features/relation/presentation/pages/relation_ledger_page.dart';
 import '../features/relation/presentation/pages/weave_page.dart';
+import '../features/sync/presentation/pages/sync_settings_page.dart';
 import '../ui/spaces/space_canvas.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -78,14 +79,6 @@ GoRouter createRouter(WidgetRef ref) {
           // Tab 1: 捕光
           StatefulShellBranch(routes: [
             GoRoute(path: '/capture', builder: (_, __) => const CapturePage()),
-            GoRoute(
-                path: '/fragments/:id',
-                builder: (_, state) =>
-                    FragmentDetailPage(id: state.pathParameters['id']!)),
-            GoRoute(
-                path: '/fragments/:id/edit',
-                builder: (_, state) =>
-                    FragmentEditPage(id: state.pathParameters['id']!)),
           ]),
           // Tab 2: 时间河
           StatefulShellBranch(routes: [
@@ -110,6 +103,9 @@ GoRouter createRouter(WidgetRef ref) {
           // Tab 4: 我的
           StatefulShellBranch(routes: [
             GoRoute(path: '/mine', builder: (_, __) => const MinePage()),
+            GoRoute(
+                path: '/sync-settings',
+                builder: (_, __) => const SyncSettingsPage()),
           ]),
         ],
       ),
@@ -117,6 +113,18 @@ GoRouter createRouter(WidgetRef ref) {
       GoRoute(path: '/space', builder: (_, __) => const SpacePage()),
       GoRoute(path: '/starmap', builder: (_, __) => const StarmapPage()),
       GoRoute(path: '/whitenoise', builder: (_, __) => const WhiteNoisePage()),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/fragments/:id',
+        builder: (_, state) =>
+            FragmentDetailPage(id: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/fragments/:id/edit',
+        builder: (_, state) =>
+            FragmentEditPage(id: state.pathParameters['id']!),
+      ),
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,
         path: '/weave/:sourceId',
@@ -152,13 +160,14 @@ class _AuthRestoringPage extends StatelessWidget {
   }
 }
 
-/// 底部导航骨架
-class _AppShell extends StatelessWidget {
+/// 底部导航骨架 — 更新 activeTabIndex 以便各页面暂停非活跃动画
+class _AppShell extends ConsumerWidget {
   const _AppShell(this.navigationShell);
   final StatefulNavigationShell navigationShell;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.read(activeTabIndexProvider.notifier).state = navigationShell.currentIndex;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: navigationShell,

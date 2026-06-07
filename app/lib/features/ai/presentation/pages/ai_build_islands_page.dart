@@ -25,7 +25,9 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
   String? _error;
   String? _outcomeStatus;
   Map<String, dynamic>? _result;
-  final _accepted = <String>{};
+  final _selectedIslandKeys = <String>{};
+  final _createdIslandKeys = <String>{};
+  bool _confirming = false;
   late final AnimationController _starController;
   late final AnimationController _pulseController;
 
@@ -79,9 +81,19 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
           _error = body['message'] as String? ?? '星图管理员暂时无法工作。';
         });
       } else {
+        final islands = (body['islands'] as List<dynamic>? ?? [])
+            .cast<Map<String, dynamic>>();
         setState(() {
           _outcomeStatus = body['status'] as String? ?? 'success';
           _result = body;
+          _selectedIslandKeys
+            ..clear()
+            ..addAll(List.generate(
+              islands.length,
+              (index) => _islandKey(index, islands[index]),
+            ));
+          _createdIslandKeys.clear();
+          _confirming = false;
         });
       }
     } catch (e) {
@@ -93,7 +105,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     }
   }
 
-  Future<void> _acceptIsland(Map<String, dynamic> island) async {
+  Future<bool> _createIsland(Map<String, dynamic> island) async {
     final name = island['name'] as String;
     final repo = ref.read(islandRepositoryProvider);
     final fragmentIds = (island['fragment_ids'] as List<dynamic>)
@@ -108,14 +120,46 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
       if (created.islandId > 0 && fragmentIds.isNotEmpty) {
         await repo.addFragments(created.islandId, fragmentIds);
       }
-      setState(() => _accepted.add(name));
-      ref.invalidate(islandsProvider);
+      return true;
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('创建「$name」失败，请稍后再试。')),
         );
       }
+      return false;
+    }
+  }
+
+  Future<void> _confirmSelectedIslands(
+    List<Map<String, dynamic>> islands,
+  ) async {
+    if (_confirming) return;
+    final pending = islands.asMap().entries.where((entry) {
+      final key = _islandKey(entry.key, entry.value);
+      return _selectedIslandKeys.contains(key) &&
+          !_createdIslandKeys.contains(key);
+    }).toList();
+    if (pending.isEmpty) return;
+
+    setState(() => _confirming = true);
+    var createdCount = 0;
+    for (final entry in pending) {
+      final key = _islandKey(entry.key, entry.value);
+      final created = await _createIsland(entry.value);
+      if (!mounted) return;
+      if (created) {
+        createdCount += 1;
+        setState(() => _createdIslandKeys.add(key));
+      }
+    }
+    ref.invalidate(islandsProvider);
+    if (!mounted) return;
+    setState(() => _confirming = false);
+    if (createdCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已把 $createdCount 座岛屿加入你的宇宙。')),
+      );
     }
   }
 
@@ -193,6 +237,9 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
                 _error = null;
                 _outcomeStatus = null;
                 _phase = 0;
+                _selectedIslandKeys.clear();
+                _createdIslandKeys.clear();
+                _confirming = false;
               });
               _startAnalysis();
             },
@@ -231,7 +278,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
                 _result!['message'] as String? ?? '发现了一些联系。',
@@ -239,11 +286,14 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
               ),
               const SizedBox(height: 8),
               Text(
-                '要不要让这些岛落进你的宇宙？',
+                '先挑一挑想留下的岛，最后再正式加入你的宇宙。',
                 style: AppText.body,
               ),
               const SizedBox(height: 20),
-              ...islands.map((island) => _buildIslandCard(island)),
+              ...islands.asMap().entries.map(
+                    (entry) => _buildIslandCard(entry.value, entry.key),
+                  ),
+              _buildConfirmPanel(islands),
             ],
           ),
         ),
@@ -251,9 +301,11 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     );
   }
 
-  Widget _buildIslandCard(Map<String, dynamic> island) {
+  Widget _buildIslandCard(Map<String, dynamic> island, int index) {
     final name = island['name'] as String;
-    final accepted = _accepted.contains(name);
+    final key = _islandKey(index, island);
+    final selected = _selectedIslandKeys.contains(key);
+    final created = _createdIslandKeys.contains(key);
     final fragmentIds = (island['fragment_ids'] as List<dynamic>)
         .map((e) => (e as num).toInt())
         .toList();
@@ -262,24 +314,28 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(18),
-      decoration: softDecoration(accepted
+      decoration: softDecoration(created
           ? AppColors.teaGreen.withValues(alpha: .08)
-          : AppColors.white),
+          : selected
+              ? AppColors.white
+              : AppColors.paper),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Container(
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            SizedBox(
               width: 42,
               height: 42,
-              decoration: BoxDecoration(
-                color: AppColors.emotionColor(name),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                accepted ? Icons.check_rounded : Icons.auto_awesome_outlined,
-                color: Colors.white,
-                size: 20,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppColors.emotionColor(name),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  created ? Icons.check_rounded : Icons.auto_awesome_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -287,42 +343,118 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name, style: AppText.titleSmall),
+                  Text(
+                    name,
+                    style: AppText.titleSmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     '${fragmentIds.length} 束光 · ${_confidenceLabel(confidence)}',
                     style: AppText.caption,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            if (accepted)
-              const Icon(Icons.check_circle_rounded,
-                  color: AppColors.teaGreen, size: 28)
-            else
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                TextButton(
-                  onPressed: () => setState(() => _accepted.add(name)),
-                  child: const Text('跳过'),
-                ),
-                const SizedBox(width: 4),
-                FilledButton(
-                  onPressed: () => _acceptIsland(island),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.teaGreen,
-                  ),
-                  child: const Text('就这样'),
-                ),
-              ]),
+            const SizedBox(width: 12),
+            _IslandStatusPill(
+              label: created
+                  ? '已加入'
+                  : selected
+                      ? '待加入'
+                      : '已跳过',
+              selected: selected || created,
+            ),
           ]),
           const SizedBox(height: 12),
           Text(
             island['description'] as String? ?? '',
             style: AppText.body,
           ),
+          if (!created) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    if (selected) {
+                      _selectedIslandKeys.remove(key);
+                    } else {
+                      _selectedIslandKeys.add(key);
+                    }
+                  });
+                },
+                icon: Icon(
+                  selected
+                      ? Icons.remove_circle_outline
+                      : Icons.add_circle_outline,
+                ),
+                label: Text(selected ? '跳过' : '恢复加入'),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Widget _buildConfirmPanel(List<Map<String, dynamic>> islands) {
+    final pendingCount = islands.asMap().entries.where((entry) {
+      final key = _islandKey(entry.key, entry.value);
+      return _selectedIslandKeys.contains(key) &&
+          !_createdIslandKeys.contains(key);
+    }).length;
+    final createdCount = _createdIslandKeys.length;
+    final label = pendingCount > 0
+        ? '确认加入 $pendingCount 座岛屿'
+        : createdCount > 0
+            ? '已加入宇宙'
+            : '选择岛屿后再确认';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.all(18),
+      decoration: softDecoration(AppColors.white),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('最后确认', style: AppText.titleSmall),
+        const SizedBox(height: 6),
+        Text(
+          pendingCount > 0
+              ? '确认后，星图管理员才会把选中的岛屿和光片关系写入你的宇宙。'
+              : '可以恢复上面的岛屿，再一起加入。',
+          style: AppText.bodyMuted,
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: pendingCount == 0 || _confirming
+                ? null
+                : () => _confirmSelectedIslands(islands),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.teaGreen),
+            icon: _confirming
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.check_rounded),
+            label: Text(_confirming ? '正在加入...' : label),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  String _islandKey(int index, Map<String, dynamic> island) {
+    return '$index:${island['name'] as String? ?? ''}';
   }
 
   String _confidenceLabel(String confidence) {
@@ -331,6 +463,34 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
       'low' => '联系较弱',
       _ => '有些联系',
     };
+  }
+}
+
+class _IslandStatusPill extends StatelessWidget {
+  const _IslandStatusPill({required this.label, required this.selected});
+
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.teaGreen : AppColors.inkMuted;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: selected ? .12 : .08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: .26)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Text(
+          label,
+          style: AppText.chip.copyWith(color: color),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
   }
 }
 

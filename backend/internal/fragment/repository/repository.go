@@ -318,9 +318,11 @@ func (r *PG) growIsland(ctx context.Context, tx pgx.Tx, userID, tagID int64, tag
 	}
 
 	// Read current island status to handle dormant→relit→formed transitions.
+	// FOR UPDATE serializes concurrent island growth for the same tag.
 	var currentStatus string
 	_ = tx.QueryRow(ctx, `SELECT status::text FROM islands
-		WHERE user_id=$1 AND source_tag_id=$2 AND deleted_at IS NULL`,
+		WHERE user_id=$1 AND source_tag_id=$2 AND deleted_at IS NULL
+		FOR UPDATE`,
 		userID, tagID).Scan(&currentStatus)
 
 	status := rules.NextStatus(currentStatus, count, true)

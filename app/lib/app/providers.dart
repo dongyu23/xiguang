@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/auth/data/auth_repository.dart';
 import '../features/ai/data/ai_api.dart';
@@ -20,12 +21,83 @@ import '../features/timeline/data/timeline_api.dart';
 import '../features/timeline/data/timeline_repository_impl.dart';
 import '../features/whitenoise/data/whitenoise_api.dart';
 import '../features/whitenoise/data/whitenoise_repository_impl.dart';
+import '../features/sync/data/sync_api.dart';
+import '../features/sync/domain/sync_config.dart';
+import '../features/sync/domain/sync_status.dart';
+import '../features/sync/engine/sync_engine.dart';
 import '../features/shared/data/api_client.dart';
 
-final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
+const _apiBaseUrlPrefsKey = 'xiguang.api_base_url';
+
+String normalizeApiBaseUrl(String value) {
+  final trimmed = value.trim();
+  if (trimmed.endsWith('/') && trimmed.length > 1) {
+    return trimmed.replaceFirst(RegExp(r'/+$'), '');
+  }
+  return trimmed;
+}
+
+String? validateApiBaseUrl(String value) {
+  final normalized = normalizeApiBaseUrl(value);
+  if (normalized.isEmpty) return '请输入后端地址';
+  final uri = Uri.tryParse(normalized);
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+    return '请输入完整地址，例如 http://192.168.1.2:8088/api/v1';
+  }
+  if (uri.scheme != 'http' && uri.scheme != 'https') {
+    return '仅支持 http 或 https 地址';
+  }
+  if (!normalized.endsWith('/api/v1')) {
+    return '地址需要以 /api/v1 结尾';
+  }
+  return null;
+}
+
+final apiBaseUrlProvider =
+    AsyncNotifierProvider<ApiBaseUrlNotifier, String>(ApiBaseUrlNotifier.new);
+
+class ApiBaseUrlNotifier extends AsyncNotifier<String> {
+  @override
+  Future<String> build() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_apiBaseUrlPrefsKey);
+    return normalizeApiBaseUrl(saved ?? ApiClient.defaultBaseUrl);
+  }
+
+  Future<void> save(String value) async {
+    final error = validateApiBaseUrl(value);
+    if (error != null) throw ArgumentError(error);
+    final normalized = normalizeApiBaseUrl(value);
+    state = AsyncData(normalized);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_apiBaseUrlPrefsKey, normalized);
+  }
+
+  Future<void> reset() async {
+    final defaultUrl = normalizeApiBaseUrl(ApiClient.defaultBaseUrl);
+    state = AsyncData(defaultUrl);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_apiBaseUrlPrefsKey);
+  }
+}
+
+final _apiClient = ApiClient();
+
+final apiClientProvider = Provider<ApiClient>((ref) {
+  final url = ref.read(apiBaseUrlProvider).valueOrNull;
+  if (url != null) _apiClient.updateBaseUrl(normalizeApiBaseUrl(url));
+  ref.listen(apiBaseUrlProvider, (_, next) {
+    final nextUrl = next.valueOrNull;
+    if (nextUrl != null) {
+      _apiClient.updateBaseUrl(normalizeApiBaseUrl(nextUrl));
+    }
+  });
+  return _apiClient;
+});
 
 final nightModeProvider = StateProvider<bool>((ref) => false);
 final aiPolishEnabledProvider = StateProvider<bool>((ref) => false);
+final activeTabIndexProvider = StateProvider<int>((ref) => 0);
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return AuthRepository(ref.watch(apiClientProvider));
@@ -193,4 +265,33 @@ final fragmentRelationsProvider =
 
 final relationsProvider = FutureProvider<List<Relation>>((ref) {
   return ref.watch(relationRepositoryProvider).list();
+});
+
+// ── 云同步 ──
+
+final syncConfigProvider = StateProvider<SyncConfig>((ref) {
+  return const SyncConfig();
+});
+
+final syncEngineProvider = Provider<SyncEngine>((ref) {
+  final api = SyncApi(ref.watch(apiClientProvider));
+  final config = ref.watch(syncConfigProvider);
+  return SyncEngine(api: api, config: config);
+});
+
+final syncStatusProvider = StateProvider<SyncStatus>((ref) {
+  return ref.watch(syncEngineProvider).status;
+});
+
+final syncNowProvider = FutureProvider.autoDispose<void>((ref) async {
+  final engine = ref.read(syncEngineProvider);
+  final newStatus = await engine.syncNow();
+  ref.read(syncStatusProvider.notifier).state = newStatus;
+});
+
+final syncConnectionProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final engine = ref.read(syncEngineProvider);
+  final ok = await engine.checkConnection();
+  ref.read(syncStatusProvider.notifier).state = engine.status;
+  return ok;
 });

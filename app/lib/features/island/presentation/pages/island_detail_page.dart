@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:dio/dio.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
@@ -53,12 +54,18 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showFragmentPicker(context, repository),
-          icon: const Icon(Icons.add_rounded),
-          label: const Text('添加光片'),
-          backgroundColor: AppColors.teaGreen,
-          foregroundColor: Colors.white,
+        floatingActionButton: FutureBuilder<_IslandDetailData>(
+          future: _detail,
+          builder: (context, snapshot) {
+            final canAdd = snapshot.data?.island.manual ?? false;
+            return FloatingActionButton.extended(
+              onPressed: () => _showFragmentPicker(context, repository),
+              icon: Icon(canAdd ? Icons.add_rounded : Icons.auto_awesome),
+              label: Text(canAdd ? '添加光片' : '自动小岛'),
+              backgroundColor: canAdd ? AppColors.teaGreen : AppColors.inkMuted,
+              foregroundColor: Colors.white,
+            );
+          },
         ),
         body: SafeArea(
           top: false,
@@ -68,6 +75,29 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
               if (snapshot.connectionState != ConnectionState.done) {
                 return const Center(child: CircularProgressIndicator());
               }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Text('暂时无法打开这座小岛',
+                          style: AppText.body,
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _detail = _load(
+                                ref.read(islandRepositoryProvider), _idOrName);
+                          });
+                        },
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text('重新加载'),
+                      ),
+                    ]),
+                  ),
+                );
+              }
               final data = snapshot.data ??
                   _IslandDetailData(
                     island: IslandModel(
@@ -75,6 +105,7 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
                       status: 'star_point',
                       fragmentCount: 0,
                       description: '这些光因为同一个主题靠近。',
+                      manual: false,
                     ),
                     fragments: const [],
                   );
@@ -147,6 +178,12 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
       return;
     }
     if (!context.mounted) return;
+    if (!current.island.manual) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('这座自动生长的小岛不能手动添加光片。')),
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -165,7 +202,19 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
             );
             return false;
           }
-          final updated = await repository.addFragments(islandId, fragmentIds);
+          final IslandModel updated;
+          try {
+            updated = await repository.addFragments(islandId, fragmentIds);
+          } on DioException catch (error) {
+            if (_apiErrorCode(error) == 'island_not_manual') {
+              if (!context.mounted) return false;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('这座自动生长的小岛不能手动添加光片。')),
+              );
+              return false;
+            }
+            rethrow;
+          }
           final nextDetail = _load(repository, _idOrName, seed: updated);
           if (!mounted) return false;
           setState(() {
@@ -194,6 +243,7 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
             status: 'star_point',
             fragmentCount: 0,
             description: '这些光因为同一个主题靠近。',
+            manual: false,
           ),
       fragments: fragments,
     );
@@ -208,6 +258,21 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
       _ => '主题星点',
     };
   }
+}
+
+String? _apiErrorCode(DioException error) {
+  final apiError = error.error;
+  if (apiError is Map && apiError['code'] is String) {
+    return apiError['code'] as String;
+  }
+  final responseData = error.response?.data;
+  if (responseData is Map) {
+    final nested = responseData['error'];
+    if (nested is Map && nested['code'] is String) {
+      return nested['code'] as String;
+    }
+  }
+  return null;
 }
 
 class _IslandDetailData {

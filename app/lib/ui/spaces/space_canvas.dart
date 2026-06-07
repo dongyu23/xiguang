@@ -36,7 +36,7 @@ class AtmosphereBackground extends ConsumerStatefulWidget {
 }
 
 class _AtmosphereBackgroundState extends ConsumerState<AtmosphereBackground>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _controller;
 
   @override
@@ -48,11 +48,22 @@ class _AtmosphereBackgroundState extends ConsumerState<AtmosphereBackground>
     );
     if (!_isRunningWidgetTest) {
       _controller.repeat();
+      WidgetsBinding.instance.addObserver(this);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (state == AppLifecycleState.paused && _controller.isAnimating) {
+      _controller.stop();
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
   }

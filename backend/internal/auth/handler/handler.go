@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"xiguang/backend/internal/auth/domain"
 	authmw "xiguang/backend/internal/auth/middleware"
@@ -60,8 +61,12 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, http.StatusBadRequest, "invalid_account", "用户名不能为空，密码至少 6 位。")
 		return
 	}
-	if err != nil {
+	if isPGUniqueViolation(err) {
 		shared.WriteError(w, http.StatusConflict, "username_taken", "这个用户名已经被使用。")
+		return
+	}
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "register_failed", "暂时无法注册，请稍后再试。")
 		return
 	}
 	shared.WriteJSON(w, http.StatusCreated, map[string]any{"user": user, "tokens": tokens})
@@ -141,4 +146,9 @@ func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	shared.WriteJSON(w, http.StatusOK, tokens)
+}
+
+func isPGUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

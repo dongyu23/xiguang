@@ -17,6 +17,8 @@ type Config struct {
 	RedisAddr              string
 	MinIOEndpoint          string
 	MinIOBucket            string
+	MinIOAccessKey         string
+	MinIOSecretKey         string
 	AIProvider             string
 	DeepSeekAPIKey         string
 	DeepSeekBaseURL        string
@@ -53,6 +55,8 @@ func Load() Config {
 		RedisAddr:              env("REDIS_HOST", "localhost") + ":" + env("REDIS_PORT", "6379"),
 		MinIOEndpoint:          env("MINIO_ENDPOINT", "localhost:9000"),
 		MinIOBucket:            env("MINIO_BUCKET", "glimmer-media"),
+		MinIOAccessKey:         os.Getenv("MINIO_ACCESS_KEY"),
+		MinIOSecretKey:         os.Getenv("MINIO_SECRET_KEY"),
 		AIProvider:             env("AI_PROVIDER", "deepseek"),
 		DeepSeekAPIKey:         os.Getenv("AI_DEEPSEEK_API_KEY"),
 		DeepSeekBaseURL:        env("AI_DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
@@ -89,6 +93,9 @@ func (c Config) Validate() error {
 	}
 	if os.Getenv("DB_PASSWORD") == "glimmer_dev_password" {
 		return fmt.Errorf("default DB_PASSWORD is not allowed outside development")
+	}
+	if os.Getenv("MINIO_ACCESS_KEY") == "" || os.Getenv("MINIO_SECRET_KEY") == "" {
+		return fmt.Errorf("MINIO_ACCESS_KEY and MINIO_SECRET_KEY must be configured outside development")
 	}
 	return nil
 }

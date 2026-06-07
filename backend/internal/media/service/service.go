@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"xiguang/backend/internal/infra/config"
+	"xiguang/backend/internal/infra/storage"
 	"xiguang/backend/internal/media/domain"
 	"xiguang/backend/internal/media/repository"
 )
@@ -18,13 +20,16 @@ var (
 	ErrInvalidConfirm = errors.New("invalid_confirm")
 )
 
+const presignTTL = 5 * time.Minute
+
 type Service struct {
-	repo repository.Repository
-	cfg  config.Config
+	repo     repository.Repository
+	cfg      config.Config
+	provider storage.Provider
 }
 
-func New(repo repository.Repository, cfg config.Config) *Service {
-	return &Service{repo: repo, cfg: cfg}
+func New(repo repository.Repository, cfg config.Config, provider storage.Provider) *Service {
+	return &Service{repo: repo, cfg: cfg, provider: provider}
 }
 
 func (s *Service) Presign(userID int64, req domain.PresignRequest) (domain.PresignResponse, error) {
@@ -35,13 +40,28 @@ func (s *Service) Presign(userID int64, req domain.PresignRequest) (domain.Presi
 	if ext == "" {
 		ext = ".bin"
 	}
-	objectKey := "users/" + strconv.FormatInt(userID, 10) + "/media/" + time.Now().Format("2006/01/02150405") + ext
-	return domain.PresignResponse{
-		UploadURL:           "/media-upload-placeholder/" + objectKey,
-		ObjectKey:           objectKey,
-		ExpiresInSeconds:    300,
-		DirectUploadEnabled: false,
-	}, nil
+	ts := time.Now().UTC().Format("20060102T150405")
+	objectKey := fmt.Sprintf("users/%d/media/%s/%s_%d%s",
+		userID, time.Now().UTC().Format("2006/01"), ts, time.Now().UnixNano()%100000, ext)
+
+	resp := domain.PresignResponse{
+		ObjectKey:        objectKey,
+		ExpiresInSeconds: int(presignTTL.Seconds()),
+	}
+
+	if s.provider != nil {
+		uploadURL, err := s.provider.PresignedPutObject(context.Background(), objectKey, req.ContentType, presignTTL)
+		if err != nil {
+			return domain.PresignResponse{}, fmt.Errorf("presign: %w", err)
+		}
+		resp.UploadURL = uploadURL
+		resp.DirectUploadEnabled = true
+	} else {
+		resp.UploadURL = "/api/v1/media/direct-upload/" + objectKey
+		resp.DirectUploadEnabled = false
+	}
+
+	return resp, nil
 }
 
 func (s *Service) Confirm(ctx context.Context, userID int64, req domain.ConfirmRequest) (domain.MediaFile, error) {
