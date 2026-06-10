@@ -21,7 +21,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        TARGETARCH: ${DOCKER_TARGETARCH:-arm64}
+        TARGETARCH: ${DOCKER_TARGETARCH:-amd64}
     expose:
       - "8080"
     env_file:

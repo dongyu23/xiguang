@@ -56,13 +56,13 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
-      - name: Build Go binary (linux/arm64)
+      - name: Build Go binary (linux/amd64)
         working-directory: backend
         run: |
           mkdir -p bin
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build \
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build \
             -ldflags="-s -w" \
-            -o bin/xiguang-linux-arm64 \
+            -o bin/xiguang-linux-amd64 \
             ./cmd/server/
 
       - name: Set up Docker Buildx
@@ -91,7 +91,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: backend
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -102,7 +102,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: backend
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
