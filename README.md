@@ -231,13 +231,49 @@ Flutter App ──HTTPS──▶ Nginx :443 ──/api/*──▶ Go Backend :80
 
 ## 部署
 
-### 环境变量
+### 服务器一键部署
 
-复制模板并填入真实值：
+前置条件：已安装 Docker + Docker Compose 的 Linux 服务器（推荐 2C2G 以上）。
 
 ```bash
-cp .env.example .env
+curl -sL https://raw.githubusercontent.com/dongyu23/xiguang/main/deploy.sh | bash
 ```
+
+脚本会自动：
+1. 下载 `docker-compose.yml` 和 `nginx.conf`
+2. 生成 `.env`（JWT 密码、数据库密码、MinIO 密钥全部随机创建）
+3. 拉取所有镜像（Go 后端 + PostgreSQL + Redis + MinIO + Nginx）
+4. 启动全部 5 个容器
+
+部署完成后访问：
+- API：`http://你的服务器IP:8088/api/v1`
+- 健康检查：`http://你的服务器IP:8088/healthz`
+- MinIO 控制台：`http://你的服务器IP:9001`
+
+自定义安装目录：
+```bash
+XIGUANG_INSTALL_DIR=/opt/xiguang bash deploy.sh
+```
+
+### 手动部署
+
+```bash
+# 克隆项目
+git clone https://github.com/dongyu23/xiguang.git
+cd xiguang
+
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env 填入真实值
+
+# 启动
+docker compose up -d
+
+# 验证
+curl http://127.0.0.1:8088/healthz
+```
+
+### 环境变量
 
 关键配置项：
 
@@ -246,6 +282,18 @@ APP_ENV=production          # 生产环境必须改
 JWT_SECRET=<64字符随机串>    # 生产环境必须改
 DB_PASSWORD=<强密码>         # 生产环境必须改
 AI_DEEPSEEK_API_KEY=sk-...  # 使用 AI 功能才需要
+```
+
+### 常用运维命令
+
+```bash
+cd ~/xiguang  # 或你的安装目录
+
+docker compose ps              # 查看容器状态
+docker compose logs -f app     # 查看后端日志
+docker compose restart         # 重启所有服务
+docker compose down            # 停止所有服务
+docker compose pull && docker compose up -d   # 更新到最新版本
 ```
 
 ### 容器资源分配
