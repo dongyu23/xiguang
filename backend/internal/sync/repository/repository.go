@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -120,10 +121,22 @@ func executeFragmentInTx(ctx context.Context, tx pgx.Tx, userID int64, op domain
 	}
 }
 
+// findFragmentByPublicIDInTx looks up a fragment by entity_public_id which may be
+// either a UUID (public_id column) or a numeric ID (id column).
 func findFragmentByPublicIDInTx(ctx context.Context, tx pgx.Tx, userID int64, publicID string) (int64, error) {
 	var id int64
+	// Try numeric ID first (most common for sync UPDATE/DELETE from mobile clients)
+	if _, err := fmt.Sscanf(publicID, "%d", &id); err == nil && id > 0 {
+		err := tx.QueryRow(ctx,
+			`SELECT id FROM fragments WHERE user_id=$1 AND id=$2 AND is_deleted=FALSE`,
+			userID, id).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+	}
+	// Fall back to UUID lookup
 	err := tx.QueryRow(ctx,
-		`SELECT id FROM fragments WHERE user_id=$1 AND public_id=$2 AND is_deleted=FALSE`,
+		`SELECT id FROM fragments WHERE user_id=$1 AND public_id::text=$2 AND is_deleted=FALSE`,
 		userID, publicID).Scan(&id)
 	return id, err
 }

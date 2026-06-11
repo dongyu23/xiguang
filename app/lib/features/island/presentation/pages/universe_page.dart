@@ -10,6 +10,7 @@ import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../data/island_repository.dart';
 import '../../../../ui/composites/night_mode_button.dart';
+import '../../../../ui/primitives/scroll_to_top.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
 /// 小宇宙页 — 主题岛、星点、柔光整理入口
@@ -23,9 +24,11 @@ class UniversePage extends ConsumerWidget {
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
       SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 104),
+        child: ScrollToTop(
+          builder: (context, controller) => SingleChildScrollView(
+            controller: controller,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 104),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
@@ -67,6 +70,7 @@ class UniversePage extends ConsumerWidget {
             ),
           ),
         ),
+          ),
       ),
     ]);
   }

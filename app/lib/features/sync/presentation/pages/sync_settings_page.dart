@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../design/tokens/colors.dart';
@@ -188,7 +189,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _markConnectionUntested();
       ref.invalidate(syncConnectionProvider);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      showOverlaySnackBar(context, const SnackBar(
         content: Text('后端地址已保存。'),
         behavior: SnackBarBehavior.floating,
       ));
@@ -198,7 +199,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       }
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      showOverlaySnackBar(context, const SnackBar(
         content: Text('保存失败，请稍后再试。'),
         behavior: SnackBarBehavior.floating,
       ));
@@ -217,13 +218,13 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _markConnectionUntested();
       ref.invalidate(syncConnectionProvider);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      showOverlaySnackBar(context, const SnackBar(
         content: Text('已恢复默认后端地址。'),
         behavior: SnackBarBehavior.floating,
       ));
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      showOverlaySnackBar(context, const SnackBar(
         content: Text('恢复默认地址失败，请稍后再试。'),
         behavior: SnackBarBehavior.floating,
       ));
@@ -247,13 +248,13 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     try {
       final ok = await ref.read(syncConnectionProvider.future);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      showOverlaySnackBar(context, SnackBar(
         content: Text(ok ? '服务器连接正常。' : '无法连接到服务器，请检查网络和后端状态。'),
         behavior: SnackBarBehavior.floating,
       ));
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      showOverlaySnackBar(context, const SnackBar(
         content: Text('连接测试失败，请检查网络和后端状态。'),
         behavior: SnackBarBehavior.floating,
       ));
@@ -265,19 +266,24 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   Future<void> _syncNow() async {
     setState(() => _syncing = true);
     try {
-      await ref.read(syncNowProvider.future);
+      final engine = ref.read(syncEngineProvider);
+      final status = await engine.syncNow();
+      ref.read(syncStatusProvider.notifier).state = status;
       if (!mounted) return;
-      final pending = ref.read(syncStatusProvider).pendingCount;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content:
-            Text(pending == 0 ? '同步完成，没有待推送的变更。' : '同步完成，仍有 $pending 条待推送。'),
+      final pending = status.pendingCount;
+      final msg = pending == 0
+          ? '同步完成，没有待推送的变更。'
+          : '同步完成，仍有 $pending 条待推送。';
+      showOverlaySnackBar(context, SnackBar(
+        content: Text(msg),
         behavior: SnackBarBehavior.floating,
       ));
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('同步失败，请稍后再试。'),
+      showOverlaySnackBar(context, SnackBar(
+        content: Text('同步失败：$e'),
         behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
       ));
     } finally {
       if (mounted) setState(() => _syncing = false);

@@ -6,6 +6,7 @@ import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../ui/composites/backend_url_tile.dart';
 import '../../../../ui/primitives/glow_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
@@ -123,6 +124,8 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
                           child: const Text('已有账号，去登录'),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      BackendUrlTile(loading: _loading),
                     ],
                   ),
                 ),

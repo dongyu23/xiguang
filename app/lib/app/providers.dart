@@ -301,17 +301,22 @@ final syncEngineProvider = Provider<SyncEngine>((ref) {
     ref.invalidate(localTimelineGroupsProvider);
   };
 
-  // Fragment 变更 → 入队 OpLog（仅 UPDATE/DELETE；INSERT 由 API 直接完成无需入队）
+  // 异步探测连通性（不阻塞 UI）
+  engine.checkConnection().then((_) {
+    ref.read(syncStatusProvider.notifier).state = engine.status;
+  });
+
+  // Fragment 变更 → 入队 OpLog
   ref.read(fragmentRepositoryProvider).onFragmentChanged =
       (entityType, opType, fragmentId, payload) {
     if (!config.enabled) return;
-    // INSERT 已通过 REST API 直接写入服务端，不需要再次入队
-    if (opType == 'INSERT') return;
+    // public_id (UUID) 优先，数字 id 兜底（离线 fragment 无 UUID）
+    final publicId = (payload['public_id'] as String?) ?? fragmentId.toString();
     final op = OpLog(
       clientOpId: engine.nextOpId(entityType, opType),
       entityType: entityType,
       opType: opType,
-      entityPublicId: fragmentId.toString(),
+      entityPublicId: publicId,
       payload: payload,
       clientSeq: 0,
       baseServerVersion: engine.currentServerRev,

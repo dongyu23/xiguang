@@ -8,6 +8,7 @@ import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../ui/composites/backend_url_tile.dart';
 import '../../../../ui/primitives/glow_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../data/auth_repository.dart';
@@ -143,6 +144,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           label: const Text('创建账号'),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      BackendUrlTile(loading: _loading),
                     ],
                   ),
                 ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -42,7 +43,7 @@ class _IslandCreatePageState extends ConsumerState<IslandCreatePage> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showOverlaySnackBar(context, 
           const SnackBar(content: Text('创建小岛失败，请稍后再试。')),
         );
       }

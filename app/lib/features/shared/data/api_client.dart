@@ -33,9 +33,8 @@ class ApiClient {
     final oldUrl = _dio.options.baseUrl;
     if (baseUrl == oldUrl) return;
     _dio.options.baseUrl = baseUrl;
-    // 切换到新后端时清除旧凭据，避免用旧 JWT 请求新服务器导致反复 401
-    _accessToken = null;
-    _refreshToken = null;
+    // 不暴力清 token — 新后端 401 → _refreshToken → refresh 失败 → AuthRepository.logout()
+    // 这个自然流转会正确处理 session 清理
   }
 
   set accessToken(String? token) {

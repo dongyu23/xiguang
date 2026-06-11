@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
@@ -109,12 +110,12 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
       ref.invalidate(localTimelineGroupsProvider);
       if (!mounted) return;
       setState(() => _polishState = _PolishState.idle);
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(content: Text('润色已保存。'), duration: Duration(seconds: 2)),
       );
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showOverlaySnackBar(context, 
           const SnackBar(content: Text('保存失败，请稍后再试。')),
         );
       }
@@ -235,7 +236,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     if (_saving) return;
     final text = _contentController.text.trim();
     if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('至少留下一句话。'),
           behavior: SnackBarBehavior.floating,
@@ -258,7 +259,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
         _saving = false;
         _loadedFragmentId = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('这束光已经重新放好。'),
           behavior: SnackBarBehavior.floating,
@@ -267,7 +268,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('暂时无法保存修改，请稍后再试。'),
           behavior: SnackBarBehavior.floating,
@@ -314,7 +315,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
         _pickingImage = false;
         _loadedFragmentId = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('画面已经附着到这束光。'),
           behavior: SnackBarBehavior.floating,
@@ -323,7 +324,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _pickingImage = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('暂时无法补充图片，请稍后再试。'),
           behavior: SnackBarBehavior.floating,
@@ -379,7 +380,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
         _pickingAudio = false;
         _loadedFragmentId = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('录音文件已经附着到这束光。'),
           behavior: SnackBarBehavior.floating,
@@ -388,7 +389,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _pickingAudio = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('暂时无法补充录音文件，请稍后再试。'),
           behavior: SnackBarBehavior.floating,
@@ -958,7 +959,7 @@ class _AudioAttachmentTileState extends State<_AudioAttachmentTile> {
       await _player.play();
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('暂时无法播放这段声音。'),
           behavior: SnackBarBehavior.floating,

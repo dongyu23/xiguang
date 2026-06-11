@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -221,7 +222,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
         _selectedIds.removeAll(ids);
         _deleting = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         SnackBar(
           content: Text('已删除 ${ids.length} 束光。'),
           behavior: SnackBarBehavior.floating,
@@ -230,7 +231,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _deleting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('删除失败，请稍后再试。'),
           behavior: SnackBarBehavior.floating,
@@ -246,7 +247,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     if (_busy || _selectedIds.isEmpty) return;
     final selected = _selectedFragments(timeline, fragments);
     if (selected.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('没有找到可润色的光。'),
           behavior: SnackBarBehavior.floating,
@@ -295,7 +296,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
       msg.write('$failed 束润色失败');
     }
     if (msg.isEmpty) msg.write('没有生成新的润色内容。');
-    ScaffoldMessenger.of(context).showSnackBar(
+    showOverlaySnackBar(context, 
       SnackBar(
         content: Text(msg.toString()),
         behavior: SnackBarBehavior.floating,
@@ -378,7 +379,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
             month.month == _selectedMonth!.month;
     if (sameSelection) return;
     if (month != null && !months.any((item) => _sameMonth(item, month))) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         SnackBar(
           content: Text('${month.year}年${month.month}月还没有光片。'),
           behavior: SnackBarBehavior.floating,

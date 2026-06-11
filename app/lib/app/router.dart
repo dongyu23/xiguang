@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -25,7 +26,7 @@ import '../features/relation/presentation/pages/weave_page.dart';
 import '../features/sync/presentation/pages/sync_settings_page.dart';
 import '../ui/spaces/space_canvas.dart';
 
-final _rootNavigatorKey = GlobalKey<NavigatorState>();
+import 'navigator.dart';
 
 /// GoRouter + StatefulShellRoute.indexedStack
 ///
@@ -33,16 +34,17 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 GoRouter createRouter(WidgetRef ref) {
   final shellRouteKey = GlobalKey<StatefulNavigationShellState>();
   return GoRouter(
-    navigatorKey: _rootNavigatorKey,
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/login',
     redirect: (context, state) {
       final restore = ref.read(authRestoreProvider);
-      final signedIn = ref.read(authSessionProvider) != null ||
-          ref.read(authRepositoryProvider).currentSession != null;
+      final signedIn = ref.read(authSessionProvider) != null;
       final path = state.uri.path;
       final isRestoreRoute = path == '/auth-restoring';
       final isAuthRoute = path == '/login' || path == '/register';
+      // 已退出登录时，即使 restore 还在 loading 也允许 /login，避免卡白屏
       if (restore.isLoading) {
+        if (signedIn || isAuthRoute) return null;
         return isRestoreRoute ? null : '/auth-restoring';
       }
       if (isRestoreRoute) return signedIn ? '/capture' : '/login';
@@ -115,19 +117,19 @@ GoRouter createRouter(WidgetRef ref) {
       GoRoute(path: '/starmap', builder: (_, __) => const StarmapPage()),
       GoRoute(path: '/whitenoise', builder: (_, __) => const WhiteNoisePage()),
       GoRoute(
-        parentNavigatorKey: _rootNavigatorKey,
+        parentNavigatorKey: rootNavigatorKey,
         path: '/fragments/:id',
         builder: (_, state) =>
             FragmentDetailPage(id: state.pathParameters['id']!),
       ),
       GoRoute(
-        parentNavigatorKey: _rootNavigatorKey,
+        parentNavigatorKey: rootNavigatorKey,
         path: '/fragments/:id/edit',
         builder: (_, state) =>
             FragmentEditPage(id: state.pathParameters['id']!),
       ),
       GoRoute(
-        parentNavigatorKey: _rootNavigatorKey,
+        parentNavigatorKey: rootNavigatorKey,
         path: '/weave/:sourceId',
         builder: (_, state) => WeavePage(
           sourceId: int.tryParse(state.pathParameters['sourceId'] ?? '') ?? 0,
@@ -139,7 +141,7 @@ GoRouter createRouter(WidgetRef ref) {
           path: '/ai/build-islands',
           builder: (_, __) => const AiBuildIslandsPage()),
       GoRoute(
-          parentNavigatorKey: _rootNavigatorKey,
+          parentNavigatorKey: rootNavigatorKey,
           path: '/fragment-detail/:id',
           redirect: (_, state) => '/fragments/${state.pathParameters['id']}'),
     ],
@@ -188,18 +190,17 @@ class _AppShellState extends ConsumerState<_AppShell> {
           return;
         }
         _lastBackPress = now;
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: const Text('再按一次退出隙光'),
-              duration: const Duration(seconds: 2),
-              behavior: SnackBarBehavior.floating,
-              margin: const EdgeInsets.fromLTRB(24, 0, 24, 100),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-          );
+        showOverlaySnackBar(
+          context,
+          SnackBar(
+            content: const Text('再按一次退出隙光'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(24, 0, 24, 100),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -210,7 +211,7 @@ class _AppShellState extends ConsumerState<_AppShell> {
             if (i == widget.navigationShell.currentIndex) {
               ref.read(scrollToTopSignalProvider.notifier).state++;
             } else {
-              context.go(_tabRootPaths[i]);
+              widget.navigationShell.goBranch(i, initialLocation: true);
             }
           },
         ),
@@ -219,89 +220,123 @@ class _AppShellState extends ConsumerState<_AppShell> {
   }
 }
 
-const _tabRootPaths = ['/capture', '/timeline', '/universe', '/mine'];
-
 /// 底部导航栏 — 隙 / 线 / 屿 / 我的
+///
+/// 选中态用滑动 pill 指示器，从旧 tab 平移到新 tab，不用淡入淡出。
 class _XiguangNavBar extends ConsumerWidget {
   const _XiguangNavBar({required this.selectedIndex, required this.onTap});
 
   final int selectedIndex;
   final ValueChanged<int> onTap;
 
+  static const _items = [
+    ('assets/nav_icons/nav_gap.png', '隙', 'capture', 34.0, 28.0),
+    ('assets/nav_icons/nav_thread.png', '线', 'timeline', 28.0, 23.0),
+    ('assets/nav_icons/nav_island.png', '屿', 'universe', 34.0, 28.0),
+    ('assets/nav_icons/nav_mine.png', '我的', 'mine', 34.0, 28.0),
+  ];
+
+  static const _pillHMargin = 4.0;
+  static const _pillVMargin = 2.0;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final nightMode = ref.watch(nightModeProvider);
-    const items = [
-      ('assets/nav_icons/nav_gap.png', '隙', 'capture', 34.0, 28.0),
-      ('assets/nav_icons/nav_thread.png', '线', 'timeline', 28.0, 23.0),
-      ('assets/nav_icons/nav_island.png', '屿', 'universe', 34.0, 28.0),
-      ('assets/nav_icons/nav_mine.png', '我的', 'mine', 34.0, 28.0),
-    ];
 
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final navHeight = 78.0 + bottomInset;
+    final navBottomPadding = bottomInset > 8 ? bottomInset : 8.0;
     return Container(
-      margin: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      height: navHeight,
+      padding: EdgeInsets.fromLTRB(8, 6, 8, navBottomPadding),
       decoration: BoxDecoration(
         color: (nightMode ? const Color(0xFF172625) : const Color(0xFFFFFCF6))
-            .withValues(alpha: nightMode ? .96 : .94),
-        borderRadius: BorderRadius.circular(8),
+            .withValues(alpha: nightMode ? .97 : .96),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
         boxShadow: [
           BoxShadow(
               color: (nightMode ? Colors.black : const Color(0xFF23413F))
-                  .withValues(alpha: nightMode ? .26 : .07),
-              blurRadius: 28,
-              offset: const Offset(0, 16))
+                  .withValues(alpha: nightMode ? .28 : .075),
+              blurRadius: 30,
+              spreadRadius: -8,
+              offset: const Offset(0, -8))
         ],
-        border: Border.all(
+        border: Border(
+          top: BorderSide(
             color: nightMode
                 ? AppColors.white.withValues(alpha: .10)
-                : const Color(0xFFE4DDD0)),
+                : const Color(0xFFE4DDD0),
+          ),
+        ),
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: List.generate(items.length, (i) {
-            final selected = selectedIndex == i;
-            return Expanded(
-              child: InkWell(
-                key: ValueKey('nav-${items[i].$3}'),
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => onTap(i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? const Color(0xFF72A58F)
-                            .withValues(alpha: nightMode ? .24 : .16)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    _NavIcon(
-                      assetPath: items[i].$1,
-                      selected: selected,
-                      nightMode: nightMode,
-                      width: items[i].$4,
-                      height: items[i].$5,
+        bottom: false,
+        minimum: EdgeInsets.zero,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final tabWidth = constraints.maxWidth / _items.length;
+            return Stack(
+              children: [
+                // 滑动 pill — 选中指示器在 tab 之间平移
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeInOutCubic,
+                  left: selectedIndex * tabWidth + _pillHMargin,
+                  top: _pillVMargin,
+                  bottom: _pillVMargin,
+                  child: Container(
+                    width: tabWidth - _pillHMargin * 2,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF72A58F)
+                          .withValues(alpha: nightMode ? .24 : .16),
+                      borderRadius: BorderRadius.circular(18),
                     ),
-                    const SizedBox(height: 4),
-                    Text(items[i].$2,
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: selected
-                                ? (nightMode
-                                    ? AppColors.white
-                                    : const Color(0xFF233332))
-                                : (nightMode
-                                    ? AppColors.white.withValues(alpha: .62)
-                                    : const Color(0xFF78827D)))),
-                  ]),
+                  ),
                 ),
-              ),
+                // Tab 按钮
+                Row(
+                  children: List.generate(_items.length, (i) {
+                    final selected = selectedIndex == i;
+                    return Expanded(
+                      child: InkWell(
+                        key: ValueKey('nav-${_items[i].$3}'),
+                        borderRadius: BorderRadius.circular(18),
+                        onTap: () => onTap(i),
+                        child: Container(
+                          constraints: const BoxConstraints(minHeight: 58),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child:
+                              Column(mainAxisSize: MainAxisSize.min, children: [
+                            _NavIcon(
+                              assetPath: _items[i].$1,
+                              selected: selected,
+                              nightMode: nightMode,
+                              width: _items[i].$4,
+                              height: _items[i].$5,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(_items[i].$2,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: selected
+                                        ? (nightMode
+                                            ? AppColors.white
+                                            : const Color(0xFF233332))
+                                        : (nightMode
+                                            ? AppColors.white
+                                                .withValues(alpha: .62)
+                                            : const Color(0xFF78827D)))),
+                          ]),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ],
             );
-          }),
+          },
         ),
       ),
     );
@@ -325,16 +360,15 @@ class _NavIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 220),
-      opacity: selected ? 1 : (nightMode ? .72 : .66),
-      child: Image.asset(
-        assetPath,
-        width: width,
-        height: height,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-      ),
+    return Image.asset(
+      assetPath,
+      width: width,
+      height: height,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      opacity: selected
+          ? const AlwaysStoppedAnimation(1)
+          : AlwaysStoppedAnimation(nightMode ? .72 : .66),
     );
   }
 }

@@ -4,7 +4,7 @@ class SyncStatus {
     required this.pendingCount,
     required this.lastSyncAt,
     required this.isSyncing,
-    this.connected = false,
+    this.connected = true,
     this.error,
   });
 

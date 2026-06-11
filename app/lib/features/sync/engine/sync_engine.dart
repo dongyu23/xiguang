@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -43,6 +44,7 @@ class SyncEngine {
 
   /// 记录一次本地写操作，入队待推送。
   void enqueue(OpLog op) {
+    developer.log('SYNC: enqueue ${op.opType} ${op.entityType}#${op.entityPublicId} (pending=${_pendingOps.length + 1})');
     _pendingOps.add(op);
     _status = SyncStatus(
       lastServerRev: _status.lastServerRev,
@@ -94,6 +96,7 @@ class SyncEngine {
       // 1. Push 本地待推送的 OpLog
       if (_pendingOps.isNotEmpty) {
         final ops = _pendingOps.toList();
+        developer.log('SYNC: pushing ${ops.length} ops, first op: ${ops.first.clientOpId}');
         final body = <String, dynamic>{
           'device_id': 'flutter-${DateTime.now().millisecondsSinceEpoch}',
           'operations': ops.map((op) => op.toJson()).toList(),
@@ -101,6 +104,7 @@ class SyncEngine {
         final result = await _api.push(body);
         final results = result['results'] as List<dynamic>? ?? [];
         final newRev = (result['new_server_rev'] as num?)?.toInt() ?? _status.lastServerRev;
+        developer.log('SYNC: push response — ${results.length} results, newRev=$newRev');
 
         // 清除已接受的 op
         final acceptedIds = results
@@ -108,10 +112,15 @@ class SyncEngine {
             .where((r) => r['status'] == 'applied')
             .map((r) => r['client_op_id'] as String)
             .toSet();
+        final failedCount = results.length - acceptedIds.length;
+        developer.log('SYNC: accepted=${acceptedIds.length}, failed=$failedCount');
         _pendingOps.removeWhere((op) => acceptedIds.contains(op.clientOpId));
         _persistPendingOps();
+        developer.log('SYNC: after push, pendingCount=${_pendingOps.length}');
 
         _status = _status.copyWith(lastServerRev: newRev);
+      } else {
+        developer.log('SYNC: no pending ops to push');
       }
 
       // 2. Pull 远端增量
@@ -132,6 +141,7 @@ class SyncEngine {
         connected: true,
       );
     } catch (e) {
+      developer.log('SYNC: failed — $e');
       _status = SyncStatus(
         lastServerRev: _status.lastServerRev,
         pendingCount: _pendingOps.length,

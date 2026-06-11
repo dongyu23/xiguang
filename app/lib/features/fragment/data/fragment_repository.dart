@@ -123,16 +123,23 @@ class FragmentRepository {
         'media_urls': mediaUrls,
         'client_op_id': 'flutter-${DateTime.now().microsecondsSinceEpoch}',
       });
-      final fragment = LightFragmentModel.fromJson(body);
-      onFragmentChanged?.call('fragment', 'INSERT', fragment.id, body);
-      return fragment;
+      // INSERT 已通过 REST API 写入服务端，不需要再入队 sync
+      return LightFragmentModel.fromJson(body);
     }
-    return _createLocalFragment(
+    // 离线创建：入队 OpLog，联网后通过 sync push 到服务端
+    final local = _createLocalFragment(
       text: text,
       emotion: emotion,
       tags: tags,
       mediaUrls: mediaUrls,
     );
+    onFragmentChanged?.call('fragment', 'INSERT', local.id, {
+      'content_text': text,
+      'emotion': emotion,
+      'tag_names': tags,
+      'media_urls': mediaUrls,
+    });
+    return local;
   }
 
   LightFragmentModel _createLocalFragment({

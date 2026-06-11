@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
@@ -27,8 +28,7 @@ import 'audio_capture_file_stub.dart'
 import 'image_attachment_picker.dart';
 
 bool _isDesktopPlatform() =>
-    !kIsWeb &&
-    (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+    !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
 /// 捕光页 — 首页，快速记录入口
 ///
@@ -65,31 +65,31 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
       child: TickerMode(
         enabled: isActive,
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _PageHeader(
-            label: 'GAP OF LIGHT',
-            title: '隙',
-            subtitle: '不用解释，也不用整理。先把这一束光轻轻放下。',
-            nightMode: nightMode,
-          ),
-          const SizedBox(height: 12),
-          _BreathingLightBanner(
-            moodColor: moodColor,
-            nightMode: nightMode,
-            audioAsset: vinylAudioAsset,
-          ),
-          const SizedBox(height: 14),
-          _QuickRecordComposer(
-            selectedEmotion: _emotion,
-            customEmotion: _customEmotion,
-            onEmotionChanged: (emotion) => setState(() => _emotion = emotion),
-            onCustomEmotionChanged: (value) =>
-                setState(() => _customEmotion = value),
-          ),
-        ],
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _PageHeader(
+              label: 'GAP OF LIGHT',
+              title: '隙',
+              subtitle: '不用解释，也不用整理。先把这一束光轻轻放下。',
+              nightMode: nightMode,
+            ),
+            const SizedBox(height: 12),
+            _BreathingLightBanner(
+              moodColor: moodColor,
+              nightMode: nightMode,
+              audioAsset: vinylAudioAsset,
+            ),
+            const SizedBox(height: 14),
+            _QuickRecordComposer(
+              selectedEmotion: _emotion,
+              customEmotion: _customEmotion,
+              onEmotionChanged: (emotion) => setState(() => _emotion = emotion),
+              onCustomEmotionChanged: (value) =>
+                  setState(() => _customEmotion = value),
+            ),
+          ],
+        ),
       ),
-    ),
     );
   }
 
@@ -1080,7 +1080,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('暂时无法打开图片选择。'),
           behavior: SnackBarBehavior.floating,
@@ -1092,7 +1092,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   Future<void> _save() async {
     final text = _controller.text.trim();
     if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
             content: Text('至少留下一句话。'), behavior: SnackBarBehavior.floating),
       );
@@ -1111,7 +1111,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
             content: Text('暂时无法保存这束光，请稍后再试。'),
             behavior: SnackBarBehavior.floating),
@@ -1140,13 +1140,14 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     }
     if (!mounted) return;
     setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
+    showOverlaySnackBar(context, 
       const SnackBar(
           content: Text('这束光已经轻轻放好了。'), behavior: SnackBarBehavior.floating),
     );
   }
 
-  static const _maxInlineImageBytes = 2 * 1024 * 1024; // 2MB per image for inline base64
+  static const _maxInlineImageBytes =
+      2 * 1024 * 1024; // 2MB per image for inline base64
 
   Future<List<String>> _mediaUrlsForSave() async {
     final urls = <String>[];
@@ -1157,9 +1158,10 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
         final bytes = await image.readAsBytes();
         if (bytes.length > _maxInlineImageBytes) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            showOverlaySnackBar(context, 
               SnackBar(
-                content: Text('图片过大 (${(bytes.length / 1024 / 1024).toStringAsFixed(1)}MB)，请使用小于2MB的图片。'),
+                content: Text(
+                    '图片过大 (${(bytes.length / 1024 / 1024).toStringAsFixed(1)}MB)，请使用小于2MB的图片。'),
                 behavior: SnackBarBehavior.floating,
               ),
             );
@@ -1244,12 +1246,13 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       final fileSize = file.size;
       setState(() {
         _audioPath = file.path!;
-        _audioSeconds = fileSize > 0 ? (fileSize / 16000).ceil().clamp(1, 9999) : 1;
+        _audioSeconds =
+            fileSize > 0 ? (fileSize / 16000).ceil().clamp(1, 9999) : 1;
         _recordingAudio = false;
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('无法选择音频文件。'),
           behavior: SnackBarBehavior.floating,
@@ -1288,7 +1291,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       });
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(
           content: Text('暂时无法开始录音。'),
           behavior: SnackBarBehavior.floating,
@@ -1308,7 +1311,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
 
     if (!mounted) return false;
     final permanentlyDenied = status.isPermanentlyDenied || status.isRestricted;
-    ScaffoldMessenger.of(context).showSnackBar(
+    showOverlaySnackBar(context, 
       SnackBar(
         content: Text(
           permanentlyDenied ? '需要在系统设置中开启麦克风权限。' : '需要麦克风权限才能留下声音。',
@@ -1376,7 +1379,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     await _clearDraft();
     if (!mounted) return;
     _suppressDraftSave = false;
-    ScaffoldMessenger.of(context).showSnackBar(
+    showOverlaySnackBar(context, 
       const SnackBar(
         content: Text('草稿已经轻轻清空。'),
         behavior: SnackBarBehavior.floating,

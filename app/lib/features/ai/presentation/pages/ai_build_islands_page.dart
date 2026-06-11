@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -123,7 +124,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
       return true;
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showOverlaySnackBar(context, 
           SnackBar(content: Text('创建「$name」失败，请稍后再试。')),
         );
       }
@@ -157,7 +158,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     if (!mounted) return;
     setState(() => _confirming = false);
     if (createdCount > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         SnackBar(content: Text('已把 $createdCount 座岛屿加入你的宇宙。')),
       );
     }

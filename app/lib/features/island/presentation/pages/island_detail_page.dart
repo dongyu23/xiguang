@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
@@ -172,14 +173,14 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
       current = await _detail;
     } catch (_) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(content: Text('小岛还没有加载完成，稍后再试。')),
       );
       return;
     }
     if (!context.mounted) return;
     if (!current.island.manual) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      showOverlaySnackBar(context, 
         const SnackBar(content: Text('这座自动生长的小岛不能手动添加光片。')),
       );
       return;
@@ -197,7 +198,7 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
           final islandId = data.island.islandId;
           if (islandId <= 0) {
             if (!context.mounted) return false;
-            ScaffoldMessenger.of(context).showSnackBar(
+            showOverlaySnackBar(context, 
               const SnackBar(content: Text('这座自动生长的小岛暂时不能手动添加光片。')),
             );
             return false;
@@ -208,7 +209,7 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
           } on DioException catch (error) {
             if (_apiErrorCode(error) == 'island_not_manual') {
               if (!context.mounted) return false;
-              ScaffoldMessenger.of(context).showSnackBar(
+              showOverlaySnackBar(context, 
                 const SnackBar(content: Text('这座自动生长的小岛不能手动添加光片。')),
               );
               return false;

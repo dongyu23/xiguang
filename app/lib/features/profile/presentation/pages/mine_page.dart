@@ -8,6 +8,7 @@ import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../auth/data/auth_repository.dart';
 import '../../../../ui/composites/night_mode_button.dart';
+import '../../../../ui/primitives/scroll_to_top.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
 /// 我的页 — 所有账号、AI、同步、隐私、关于统一放在这里。
@@ -132,7 +133,7 @@ class _MinePageState extends ConsumerState<MinePage> {
     ref.invalidate(sessionProvider);
     _syncedAiPolishSessionId = null;
     if (!mounted) return;
-    context.go('/login');
+    GoRouter.of(context).go('/login');
   }
 
   @override
@@ -145,9 +146,11 @@ class _MinePageState extends ConsumerState<MinePage> {
     return Stack(children: [
       const Positioned.fill(child: AtmosphereBackground()),
       SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 104),
+        child: ScrollToTop(
+          builder: (context, controller) => SingleChildScrollView(
+            controller: controller,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 104),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
@@ -348,23 +351,6 @@ class _MinePageState extends ConsumerState<MinePage> {
                         ),
                         const SizedBox(height: 24),
 
-                        // ── 隐私 ──
-                        _SectionLabel('隐私', nightMode: nightMode),
-                        const SizedBox(height: 8),
-                        _Card(nightMode: nightMode, children: [
-                          _InfoRow(
-                              label: '模式',
-                              value: session.privacyMode == 'local'
-                                  ? '本地优先'
-                                  : '仅自己可见',
-                              nightMode: nightMode),
-                          const SizedBox(height: 10),
-                          Text('所有内容默认仅自己可见。无公开主页、无点赞评论、无社交排名。',
-                              style: AppText.onNight(
-                                  AppText.bodyMuted, nightMode)),
-                        ]),
-                        const SizedBox(height: 24),
-
                         // ── 关于 ──
                         _SectionLabel('关于', nightMode: nightMode),
                         const SizedBox(height: 8),
@@ -399,6 +385,7 @@ class _MinePageState extends ConsumerState<MinePage> {
             ),
           ),
         ),
+          ),
       ),
     ]);
   }

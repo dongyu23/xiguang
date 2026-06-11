@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
 import '../../design/tokens/colors.dart';
 import '../../design/tokens/typography.dart';
@@ -68,17 +69,16 @@ class _EmotionPickerState extends State<EmotionPicker> {
         const SizedBox(height: 10),
         LayoutBuilder(
           builder: (context, constraints) {
-            final veryNarrow = constraints.maxWidth < 300;
             final compact = constraints.maxWidth < 380;
             return GridView.builder(
               physics: const NeverScrollableScrollPhysics(),
               shrinkWrap: true,
               itemCount: EmotionPicker.emotions.length,
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: veryNarrow ? 2 : 4,
-                mainAxisSpacing: compact ? 6 : 8,
-                crossAxisSpacing: compact ? 6 : 8,
-                mainAxisExtent: compact ? 38 : 40,
+                crossAxisCount: 3,
+                mainAxisSpacing: compact ? 7 : 8,
+                crossAxisSpacing: compact ? 7 : 9,
+                mainAxisExtent: compact ? 40 : 42,
               ),
               itemBuilder: (context, index) {
                 final emotion = EmotionPicker.emotions[index];
@@ -151,7 +151,7 @@ class _EmotionChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       onLongPress: () {
-        ScaffoldMessenger.of(context).showSnackBar(
+        showOverlaySnackBar(context, 
           SnackBar(
               content: Text(emotion.hint),
               duration: const Duration(seconds: 2),
@@ -174,6 +174,7 @@ class _EmotionChip extends StatelessWidget {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: compact ? 7 : 8,
@@ -187,6 +188,8 @@ class _EmotionChip extends StatelessWidget {
                 fit: BoxFit.scaleDown,
                 child: Text(
                   emotion.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.visible,
                   softWrap: false,
                   style: AppText.chip.copyWith(
                     color: isSelected ? Colors.white : AppColors.ink,

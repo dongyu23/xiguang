@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/providers.dart';
@@ -249,7 +250,7 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
                                       .onConfirm(_selected.toList());
                                 } catch (_) {
                                   if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    showOverlaySnackBar(context, 
                                       const SnackBar(
                                         content: Text('暂时无法添加这些光片。'),
                                       ),
