@@ -11,6 +11,8 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+*.tmp
+*.bak
 
 # IntelliJ related
 *.iml
@@ -31,9 +33,12 @@ migrate_working_dir/
 **/macos/Pods/
 app/build/
 app/.dart_tool/
+app/.flutter-plugins-dependencies
+app/.metadata
 app/android/build/
 .dart_tool/
 .flutter-plugins-dependencies
+.metadata
 .pub-cache/
 .pub/
 /build/
@@ -50,8 +55,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Local Docker runtime binaries
+# Go backend
 backend/bin/
+backend/tmp/
+*.test
 
 # Local environment/runtime artifacts
 .env
@@ -62,3 +69,6 @@ backend/bin/
 certs/
 *.apk
 app/android/.kotlin/
+
+# IDE & editor (补充)
+*~
