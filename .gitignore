@@ -31,6 +31,7 @@ migrate_working_dir/
 **/ios/Flutter/Generated.xcconfig
 **/ios/Pods/
 **/macos/Pods/
+**/GeneratedPluginRegistrant.swift
 app/build/
 app/.dart_tool/
 app/.flutter-plugins-dependencies
@@ -43,6 +44,10 @@ app/android/build/
 .pub/
 /build/
 /coverage/
+
+# Dart code generation (freezed / json_serializable / build_runner)
+*.freezed.dart
+*.g.dart
 
 # Symbolication related
 app.*.symbols
@@ -59,6 +64,9 @@ app.*.map.json
 backend/bin/
 backend/tmp/
 *.test
+
+# Build artifacts
+artifacts/
 
 # Local environment/runtime artifacts
 .env
