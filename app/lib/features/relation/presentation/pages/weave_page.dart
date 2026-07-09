@@ -1,20 +1,25 @@
+// PAGE_SIZE_EXEMPT: migration in progress; candidate selection and relation sections will be extracted.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../app/providers.dart';
+import '../../../fragment/presentation/providers/fragment_providers.dart';
+import '../../application/weave_controller.dart';
+import '../providers/relation_providers.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../ui/primitives/night_background.dart';
 import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../ui/composites/xiguang_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_empty_state.dart';
 import '../../../../ui/spaces/space_canvas.dart';
-import '../../../fragment/data/fragment_repository.dart';
+import '../../../fragment/domain/fragment.dart';
 import '../../../relation/domain/relation.dart';
-import '../../../starmap/presentation/providers/starmap_provider.dart';
 import '../widgets/relation_note_input.dart';
 import '../widgets/relation_type_picker.dart';
 
@@ -45,7 +50,7 @@ class _WeavePageState extends ConsumerState<WeavePage> {
   @override
   Widget build(BuildContext context) {
     final fragments = ref.watch(fragmentsProvider);
-    final nightMode = ref.watch(nightModeProvider);
+    final theme = NightTheme.of(context);
     return Stack(children: [
       const Positioned.fill(child: NightBackgroundPlaceholder()),
       const Positioned.fill(child: AtmosphereBackground()),
@@ -54,13 +59,13 @@ class _WeavePageState extends ConsumerState<WeavePage> {
         backgroundColor: Colors.transparent,
         body: SafeArea(
           child: fragments.when(
-            data: (items) => _buildContent(context, items, nightMode),
+            data: (items) => _buildContent(context, items),
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (_, __) => Center(
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Text('暂时无法展开这些光，请稍后再试。',
-                    style: AppText.onNight(AppText.body, nightMode)),
+                    style: AppText.body.copyWith(color: theme.foreground)),
               ),
             ),
           ),
@@ -71,8 +76,7 @@ class _WeavePageState extends ConsumerState<WeavePage> {
 
   Widget _buildContent(
     BuildContext context,
-    List<LightFragmentModel> items,
-    bool nightMode,
+    List<Fragment> items,
   ) {
     final source =
         items.where((item) => item.id == widget.sourceId).firstOrNull;
@@ -100,7 +104,7 @@ class _WeavePageState extends ConsumerState<WeavePage> {
           constraints: const BoxConstraints(maxWidth: 560),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _Header(onBack: () => context.pop(), nightMode: nightMode),
+            _Header(onBack: () => context.pop()),
             const SizedBox(height: AppSpacing.s18),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const _StepThread(),
@@ -112,7 +116,6 @@ class _WeavePageState extends ConsumerState<WeavePage> {
                       _SectionLabel(
                         icon: Icons.wb_twilight_rounded,
                         label: '当前这束光',
-                        nightMode: nightMode,
                       ),
                       const SizedBox(height: AppSpacing.s10),
                       _CurrentLightCard(fragment: source),
@@ -130,7 +133,6 @@ class _WeavePageState extends ConsumerState<WeavePage> {
                           onChanged: (value) =>
                               setState(() => _candidateSort = value),
                         ),
-                        nightMode: nightMode,
                       ),
                       const SizedBox(height: AppSpacing.s10),
                       if (candidates.isEmpty)
@@ -152,7 +154,6 @@ class _WeavePageState extends ConsumerState<WeavePage> {
                       _SectionLabel(
                         icon: Icons.hub_rounded,
                         label: '关系类型',
-                        nightMode: nightMode,
                       ),
                       const SizedBox(height: AppSpacing.s12),
                       RelationTypePicker(
@@ -165,7 +166,6 @@ class _WeavePageState extends ConsumerState<WeavePage> {
                         icon: Icons.short_text_rounded,
                         label: '写一句关系说明',
                         suffix: '可选',
-                        nightMode: nightMode,
                       ),
                       const SizedBox(height: AppSpacing.s10),
                       RelationNoteInput(controller: _noteController),
@@ -203,9 +203,9 @@ class _WeavePageState extends ConsumerState<WeavePage> {
     );
   }
 
-  List<LightFragmentModel> _sortedCandidates(
-    List<LightFragmentModel> candidates,
-    LightFragmentModel source,
+  List<Fragment> _sortedCandidates(
+    List<Fragment> candidates,
+    Fragment source,
   ) {
     final sorted = [...candidates];
     sorted.sort((a, b) {
@@ -222,8 +222,8 @@ class _WeavePageState extends ConsumerState<WeavePage> {
   }
 
   Future<void> _submit(
-    LightFragmentModel source,
-    LightFragmentModel selected,
+    Fragment source,
+    Fragment selected,
   ) async {
     if (_isSubmitting) return;
     setState(() {
@@ -232,18 +232,13 @@ class _WeavePageState extends ConsumerState<WeavePage> {
       _submitNotice = null;
     });
     try {
-      final relation = await ref.read(fragmentRepositoryProvider).weave(
+      final relation = await ref.read(weaveControllerProvider.notifier).submit(
             sourceFragmentId: source.id,
             targetFragmentId: selected.id,
             relationType: _relationType,
             note: _noteController.text,
           );
       if (!mounted) return;
-      if (relation != null) {
-        ref.invalidate(fragmentRelationsProvider(source.id));
-        ref.invalidate(relationsProvider);
-        ref.invalidate(starGraphProvider);
-      }
       setState(() {
         _isSubmitting = false;
         _completed = relation != null;
@@ -266,35 +261,39 @@ class _ExistingRelations extends ConsumerWidget {
   const _ExistingRelations({required this.sourceId, required this.fragments});
 
   final int sourceId;
-  final List<LightFragmentModel> fragments;
+  final List<Fragment> fragments;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final relations = ref.watch(fragmentRelationsProvider(sourceId));
-    final nightMode = ref.watch(nightModeProvider);
+    final theme = NightTheme.of(context);
     return relations.when(
       data: (items) {
         if (items.isEmpty) {
           return Text('还没有织好的线。',
-              style: AppText.onNight(AppText.bodyMuted, nightMode));
+              style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted));
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('已经织好的线', style: AppText.onNight(AppText.caption, nightMode)),
+            Text(
+              '已经织好的线',
+              style: AppText.caption.copyWith(color: theme.foregroundMuted),
+            ),
             const SizedBox(height: AppSpacing.sm),
             ...items.take(4).map((relation) {
               final other = _otherFragment(relation);
               return Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.s6),
                 child: Row(children: [
-                  const Icon(Icons.blur_circular_rounded,
-                      size: 16, color: AppColors.teaGreen),
+                  Icon(Icons.blur_circular_rounded,
+                      size: 16, color: theme.accent),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       '${_relationLabel(relation.relationType)} · ${other?.title ?? '另一束光'}',
-                      style: AppText.onNight(AppText.bodyMuted, nightMode),
+                      style: AppText.bodyMuted
+                          .copyWith(color: theme.foregroundMuted),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -307,11 +306,11 @@ class _ExistingRelations extends ConsumerWidget {
       },
       loading: () => const SizedBox.shrink(),
       error: (_, __) => Text('织线暂时无法读取。',
-          style: AppText.onNight(AppText.bodyMuted, nightMode)),
+          style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted)),
     );
   }
 
-  LightFragmentModel? _otherFragment(Relation relation) {
+  Fragment? _otherFragment(Relation relation) {
     final otherId = relation.sourceFragmentId == sourceId
         ? relation.targetFragmentId
         : relation.sourceFragmentId;
@@ -338,48 +337,44 @@ class _ExistingRelations extends ConsumerWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onBack, required this.nightMode});
+  const _Header({required this.onBack});
 
   final VoidCallback onBack;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Stack(alignment: Alignment.center, children: [
       Align(
         alignment: Alignment.centerLeft,
         child: PageBackButton(
           onTap: onBack,
-          nightMode: nightMode,
-          iconColor: nightMode ? AppText.nightInkMuted : AppColors.inkMuted,
         ),
       ),
       Column(mainAxisSize: MainAxisSize.min, children: [
         Text(
           '织线',
-          style: AppText.onNight(AppText.hero, nightMode),
+          style: AppText.hero.copyWith(color: theme.foreground),
         ),
         const SizedBox(height: AppSpacing.s6),
         Text(
           '让两束光轻轻靠近。',
-          style: AppText.onNight(AppText.bodyMuted, nightMode),
+          style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted),
         ),
       ]),
     ]);
   }
 }
 
-class _CurrentLightCard extends ConsumerWidget {
+class _CurrentLightCard extends StatelessWidget {
   const _CurrentLightCard({required this.fragment});
 
-  final LightFragmentModel fragment;
+  final Fragment fragment;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.s18),
-      decoration: _glassDecoration(nightMode: nightMode),
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return XiguangCard(
       child: Row(children: [
         _LightGlyph(color: fragment.color, icon: Icons.graphic_eq_rounded),
         const SizedBox(width: AppSpacing.md),
@@ -390,13 +385,13 @@ class _CurrentLightCard extends ConsumerWidget {
               fragment.contentText,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: AppText.onNight(AppText.body, nightMode).copyWith(
-                height: 1.46,
-              ),
+              style:
+                  AppText.body.copyWith(color: theme.foreground, height: 1.46),
             ),
             const SizedBox(height: AppSpacing.s10),
             Text('${fragment.dateLabel} · ${fragment.emotion}',
-                style: AppText.onNight(AppText.bodyMuted, nightMode)),
+                style:
+                    AppText.bodyMuted.copyWith(color: theme.foregroundMuted)),
           ]),
         ),
       ]),
@@ -404,50 +399,27 @@ class _CurrentLightCard extends ConsumerWidget {
   }
 }
 
-class _CandidateLightTile extends ConsumerWidget {
+class _CandidateLightTile extends StatelessWidget {
   const _CandidateLightTile({
     required this.fragment,
     required this.selected,
     required this.onTap,
   });
 
-  final LightFragmentModel fragment;
+  final Fragment fragment;
   final bool selected;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.md),
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return XiguangCard(
       onTap: onTap,
+      selected: selected,
+      padding: const EdgeInsets.all(AppSpacing.s12),
       child: AnimatedContainer(
         duration: AppMotion.quick,
         curve: AppMotion.easeOut,
-        padding: const EdgeInsets.all(AppSpacing.s12),
-        decoration: BoxDecoration(
-          color: nightMode
-              ? AppColors.white.withValues(alpha: selected ? .12 : .06)
-              : AppColors.white.withValues(alpha: selected ? .9 : .66),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(
-            color: selected
-                ? AppColors.lilac.withValues(alpha: .9)
-                : (nightMode
-                    ? AppColors.white.withValues(alpha: .12)
-                    : AppColors.white.withValues(alpha: .74)),
-            width: selected ? 1.4 : 1,
-          ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: AppColors.lilac.withValues(alpha: .3),
-                    blurRadius: 20,
-                    offset: const Offset(0, 9),
-                  ),
-                ]
-              : null,
-        ),
         child: Row(children: [
           _MiniImage(fragment: fragment),
           const SizedBox(width: AppSpacing.s13),
@@ -458,12 +430,13 @@ class _CandidateLightTile extends ConsumerWidget {
                 fragment.contentText,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: AppText.onNight(AppText.body, nightMode)
-                    .copyWith(height: 1.42),
+                style: AppText.body
+                    .copyWith(color: theme.foreground, height: 1.42),
               ),
               const SizedBox(height: AppSpacing.s7),
               Text('${fragment.dateLabel} · ${fragment.emotion}',
-                  style: AppText.onNight(AppText.bodyMuted, nightMode)),
+                  style:
+                      AppText.bodyMuted.copyWith(color: theme.foregroundMuted)),
             ]),
           ),
           const SizedBox(width: AppSpacing.s10),
@@ -475,11 +448,7 @@ class _CandidateLightTile extends ConsumerWidget {
               shape: BoxShape.circle,
               color: selected ? AppColors.lilac : Colors.transparent,
               border: Border.all(
-                color: selected
-                    ? AppColors.lilac
-                    : (nightMode
-                        ? AppColors.white.withValues(alpha: .18)
-                        : AppColors.inkMuted.withValues(alpha: .35)),
+                color: selected ? AppColors.lilac : theme.border,
                 width: 1.4,
               ),
             ),
@@ -497,7 +466,7 @@ class _CandidateLightTile extends ConsumerWidget {
 class _MiniImage extends StatelessWidget {
   const _MiniImage({required this.fragment});
 
-  final LightFragmentModel fragment;
+  final Fragment fragment;
 
   @override
   Widget build(BuildContext context) {
@@ -547,32 +516,31 @@ class _SectionLabel extends StatelessWidget {
   const _SectionLabel({
     required this.icon,
     required this.label,
-    required this.nightMode,
     this.trailing,
     this.suffix,
   });
 
   final IconData icon;
   final String label;
-  final bool nightMode;
   final Widget? trailing;
   final String? suffix;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(children: [
-      Icon(icon, size: 18, color: AppColors.teaGreen),
+      Icon(icon, size: 18, color: theme.accent),
       const SizedBox(width: AppSpacing.sm),
       Text(
         label,
-        style: AppText.onNight(
-          AppText.titleSmall,
-          nightMode,
-        ),
+        style: AppText.titleSmall.copyWith(color: theme.foreground),
       ),
       if (suffix != null) ...[
         const SizedBox(width: AppSpacing.s6),
-        Text(suffix!, style: AppText.onNight(AppText.caption, nightMode)),
+        Text(
+          suffix!,
+          style: AppText.caption.copyWith(color: theme.foregroundMuted),
+        ),
       ],
       if (trailing != null) ...[
         const Spacer(),
@@ -582,15 +550,15 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _SortPill extends ConsumerWidget {
+class _SortPill extends StatelessWidget {
   const _SortPill({required this.value, required this.onChanged});
 
   final _CandidateSort value;
   final ValueChanged<_CandidateSort> onChanged;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return PopupMenuButton<_CandidateSort>(
       tooltip: '选择排序方式',
       initialValue: value,
@@ -605,18 +573,14 @@ class _SortPill extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.s10, vertical: AppSpacing.s6),
         decoration: BoxDecoration(
-          color: nightMode
-              ? AppColors.white.withValues(alpha: .08)
-              : AppColors.white.withValues(alpha: .5),
+          color: theme.surfaceHigh.withValues(alpha: .5),
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Text(_label,
-              style: AppText.onNight(AppText.caption, nightMode).copyWith(
-                  color: nightMode ? AppText.nightInk : AppColors.ink)),
+              style: AppText.caption.copyWith(color: theme.foreground)),
           const SizedBox(width: AppSpacing.xs),
-          Icon(Icons.expand_more_rounded,
-              size: 16, color: nightMode ? AppText.nightInk : AppColors.ink),
+          Icon(Icons.expand_more_rounded, size: 16, color: theme.foreground),
         ]),
       ),
     );
@@ -657,47 +621,24 @@ class _SubmitButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
+    return XiguangButton(
+      label: '织好这条线',
+      leading: const Icon(Icons.auto_awesome_rounded, size: 19),
       onPressed: enabled ? onPressed : null,
-      style: FilledButton.styleFrom(
-        backgroundColor: AppColors.ink,
-        disabledBackgroundColor: AppColors.inkMuted.withValues(alpha: .34),
-        foregroundColor: AppColors.white,
-        elevation: 0,
-      ),
-      child: isSubmitting
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.white,
-              ),
-            )
-          : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Icon(Icons.auto_awesome_rounded, size: 19),
-              const SizedBox(width: AppSpacing.sm),
-              Text('织好这条线', style: AppText.inverseTitle),
-            ]),
+      loading: isSubmitting,
     );
   }
 }
 
-class _CompleteToast extends ConsumerWidget {
+class _CompleteToast extends StatelessWidget {
   const _CompleteToast();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
-    return Container(
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return XiguangCard(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.s18, vertical: AppSpacing.s13),
-      decoration: nightMode
-          ? nightDecoration(radius: AppRadius.md)
-          : softDecoration(AppColors.white, radius: AppRadius.md).copyWith(
-              color: AppColors.white.withValues(alpha: .9),
-              border: Border.all(color: AppColors.white.withValues(alpha: .8)),
-            ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Container(
           width: 24,
@@ -714,7 +655,7 @@ class _CompleteToast extends ConsumerWidget {
         Flexible(
           child: Text(
             '这两束光之间，有了一条细细的线。',
-            style: AppText.onNight(AppText.body, nightMode),
+            style: AppText.body.copyWith(color: theme.foreground),
             textAlign: TextAlign.center,
           ),
         ),
@@ -759,41 +700,32 @@ class _SubmitNotice extends StatelessWidget {
   }
 }
 
-class _EmptyCandidatesCard extends ConsumerWidget {
+class _EmptyCandidatesCard extends StatelessWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.s18),
-      decoration: _glassDecoration(nightMode: nightMode),
-      child: Text('还没有另一束旧光可以连接。先去捕下一束光，线会在这里等你。',
-          style: AppText.onNight(AppText.body, nightMode)),
+  Widget build(BuildContext context) {
+    return const XiguangEmptyState(
+      icon: Icons.blur_circular_rounded,
+      title: '还没有另一束旧光',
+      description: '先去捕下一束光，线会在这里等你。',
     );
   }
 }
 
-class _NotFoundState extends ConsumerWidget {
+class _NotFoundState extends StatelessWidget {
   const _NotFoundState({required this.onBack});
 
   final VoidCallback onBack;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('没有找到这束光。',
-              style: AppText.onNight(AppText.titleMedium, nightMode)),
-          const SizedBox(height: AppSpacing.s14),
-          OutlinedButton.icon(
-            onPressed: onBack,
-            icon: const Icon(Icons.chevron_left_rounded),
-            label: const Text('返回'),
-          ),
-        ]),
+  Widget build(BuildContext context) {
+    return XiguangEmptyState(
+      icon: Icons.blur_off_rounded,
+      title: '没有找到这束光',
+      description: '这束光可能已经被轻轻收起。',
+      action: XiguangButton(
+        label: '返回',
+        onPressed: onBack,
+        leading: const Icon(Icons.chevron_left_rounded),
       ),
     );
   }
@@ -921,12 +853,4 @@ class _LightSketchPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _LightSketchPainter oldDelegate) =>
       oldDelegate.color != color;
-}
-
-BoxDecoration _glassDecoration({bool nightMode = false}) {
-  if (nightMode) return nightDecoration(radius: AppRadius.md);
-  return softDecoration(AppColors.white, radius: AppRadius.md).copyWith(
-    color: AppColors.white.withValues(alpha: .68),
-    border: Border.all(color: AppColors.white.withValues(alpha: .72)),
-  );
 }

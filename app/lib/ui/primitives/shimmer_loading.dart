@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design/tokens/colors.dart';
+import '../../design/themes/extensions/night_theme.dart';
 import '../../design/tokens/motion.dart';
 import '../../design/tokens/radius.dart';
 import '../../design/tokens/spacing.dart';
@@ -77,21 +78,19 @@ class ShimmerCard extends StatelessWidget {
     super.key,
     this.height = 80,
     this.borderRadius = 8,
-    this.nightMode = false,
   });
 
   final double height;
   final double borderRadius;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Container(
       height: height,
       margin: const EdgeInsets.only(bottom: AppSpacing.s9),
       decoration: BoxDecoration(
-        color:
-            nightMode ? AppColors.white.withValues(alpha: .08) : Colors.white,
+        color: theme.surface.withValues(alpha: .72),
         borderRadius: BorderRadius.circular(borderRadius),
       ),
     );
@@ -100,19 +99,18 @@ class ShimmerCard extends StatelessWidget {
 
 /// 骨架屏圆形头像
 class ShimmerCircle extends StatelessWidget {
-  const ShimmerCircle({super.key, this.size = 42, this.nightMode = false});
+  const ShimmerCircle({super.key, this.size = 42});
 
   final double size;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color:
-            nightMode ? AppColors.white.withValues(alpha: .08) : Colors.white,
+        color: theme.surface.withValues(alpha: .72),
         shape: BoxShape.circle,
       ),
     );
@@ -125,23 +123,21 @@ class ShimmerTextLine extends StatelessWidget {
     super.key,
     this.widthFactor = 0.7,
     this.height = 10,
-    this.nightMode = false,
   });
 
   final double widthFactor;
   final double height;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return FractionallySizedBox(
       widthFactor: widthFactor,
       alignment: Alignment.centerLeft,
       child: Container(
         height: height,
         decoration: BoxDecoration(
-          color:
-              nightMode ? AppColors.white.withValues(alpha: .08) : Colors.white,
+          color: theme.surface.withValues(alpha: .72),
           borderRadius: BorderRadius.circular(AppRadius.pill),
         ),
       ),

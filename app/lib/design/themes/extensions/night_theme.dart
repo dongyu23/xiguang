@@ -13,6 +13,7 @@ class NightTheme extends ThemeExtension<NightTheme> {
     required this.accent,
     required this.border,
     required this.navBackground,
+    required this.danger,
   });
 
   final bool isNight;
@@ -24,29 +25,32 @@ class NightTheme extends ThemeExtension<NightTheme> {
   final Color accent;
   final Color border;
   final Color navBackground;
+  final Color danger;
 
   factory NightTheme.day() => const NightTheme(
         isNight: false,
         background: AppColors.paper,
-        surface: Color(0xFFFFFCF6),
-        surfaceHigh: Color(0xFFFFFCF6),
+        surface: AppColors.white,
+        surfaceHigh: AppColors.white,
         foreground: AppColors.ink,
         foregroundMuted: AppColors.inkMuted,
         accent: AppColors.teaGreen,
         border: AppColors.line,
-        navBackground: Color(0xFFFFFCF6),
+        navBackground: AppColors.white,
+        danger: AppColors.sunsetCoral,
       );
 
   factory NightTheme.night() => const NightTheme(
         isNight: true,
-        background: Color(0xFF142322),
-        surface: Color(0xFF213433),
-        surfaceHigh: Color(0xFF172625),
-        foreground: Color(0xFFF4EFE4),
-        foregroundMuted: Color(0xFFC9D0C8),
-        accent: Color(0xFFA6CDBB),
-        border: Color(0xFF2A3E3C),
-        navBackground: Color(0xFF172625),
+        background: AppColors.nightBackground,
+        surface: AppColors.nightSurface,
+        surfaceHigh: AppColors.nightSurfaceHigh,
+        foreground: AppColors.nightInk,
+        foregroundMuted: AppColors.nightInkMuted,
+        accent: AppColors.nightAccent,
+        border: AppColors.nightBorder,
+        navBackground: AppColors.nightNav,
+        danger: AppColors.sunsetCoral,
       );
 
   static NightTheme of(BuildContext context) {
@@ -64,6 +68,7 @@ class NightTheme extends ThemeExtension<NightTheme> {
     Color? accent,
     Color? border,
     Color? navBackground,
+    Color? danger,
   }) {
     return NightTheme(
       isNight: isNight ?? this.isNight,
@@ -75,6 +80,7 @@ class NightTheme extends ThemeExtension<NightTheme> {
       accent: accent ?? this.accent,
       border: border ?? this.border,
       navBackground: navBackground ?? this.navBackground,
+      danger: danger ?? this.danger,
     );
   }
 
@@ -91,6 +97,7 @@ class NightTheme extends ThemeExtension<NightTheme> {
       accent: Color.lerp(accent, other.accent, t)!,
       border: Color.lerp(border, other.border, t)!,
       navBackground: Color.lerp(navBackground, other.navBackground, t)!,
+      danger: Color.lerp(danger, other.danger, t)!,
     );
   }
 }

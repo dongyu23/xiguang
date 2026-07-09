@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../design/themes/extensions/night_theme.dart';
 import '../../design/tokens/colors.dart';
 import '../../design/tokens/radius.dart';
 import '../../design/tokens/spacing.dart';
@@ -78,15 +79,16 @@ class _AudioPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: AppColors.teaGreen.withValues(alpha: .14),
+        color: theme.accent.withValues(alpha: .14),
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.teaGreen.withValues(alpha: .24)),
+        border: Border.all(color: theme.accent.withValues(alpha: .24)),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.graphic_eq_rounded, color: AppColors.teaGreen),
+        Icon(Icons.graphic_eq_rounded, color: theme.accent),
         const SizedBox(height: AppSpacing.s6),
         Text(_label, style: AppText.caption),
       ]),

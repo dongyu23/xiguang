@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:xiguang/features/fragment/data/fragment_repository.dart';
+import 'package:xiguang/features/fragment/data/mappers/fragment_mapper.dart';
 import 'package:xiguang/features/fragment/domain/fragment.dart';
 
 void main() {
-  group('LightFragmentModel', () {
+  group('Fragment display data', () {
     test('title truncates long text to 16 chars', () {
-      final model = LightFragmentModel(
+      final model = Fragment(
         id: 1,
         contentText: '这是一段超过十六个字的光片内容，需要被截断显示',
         emotion: '平静',
@@ -18,7 +18,7 @@ void main() {
     });
 
     test('title keeps short text as-is', () {
-      final model = LightFragmentModel(
+      final model = Fragment(
         id: 1,
         contentText: '短短的光',
         emotion: '平静',
@@ -30,7 +30,7 @@ void main() {
     });
 
     test('title uses first line only', () {
-      final model = LightFragmentModel(
+      final model = Fragment(
         id: 1,
         contentText: '第一行\n第二行\n第三行',
         emotion: '平静',
@@ -42,7 +42,7 @@ void main() {
     });
 
     test('time formats correctly', () {
-      final model = LightFragmentModel(
+      final model = Fragment(
         id: 1,
         contentText: 'test',
         emotion: '平静',
@@ -54,7 +54,7 @@ void main() {
     });
 
     test('dateLabel formats correctly', () {
-      final model = LightFragmentModel(
+      final model = Fragment(
         id: 1,
         contentText: 'test',
         emotion: '平静',
@@ -66,7 +66,7 @@ void main() {
     });
 
     test('fromJson handles missing fields gracefully', () {
-      final model = LightFragmentModel.fromJson({});
+      final model = FragmentMapper.fromApi({});
       expect(model.id, 0);
       expect(model.contentText, '');
       expect(model.emotion, '说不清');
@@ -75,7 +75,7 @@ void main() {
     });
 
     test('fromJson parses complete data', () {
-      final model = LightFragmentModel.fromJson({
+      final model = FragmentMapper.fromApi({
         'id': 42,
         'content_text': '今天天气很好',
         'emotion': '开心',
@@ -103,8 +103,8 @@ void main() {
       );
       expect(fragment.id, 1);
       expect(fragment.contentText, '');
-      expect(fragment.emotion, isNull);
-      expect(fragment.status, FragmentStatus.twilight);
+      expect(fragment.emotion, '说不清');
+      expect(fragment.status, 'twilight');
       expect(fragment.tags, isEmpty);
       expect(fragment.mediaUrls, isEmpty);
     });
@@ -124,8 +124,10 @@ void main() {
 
     test('equality works', () {
       final now = DateTime.now();
-      final a = Fragment(id: 1, contentText: 'test', createdAt: now, updatedAt: now);
-      final b = Fragment(id: 1, contentText: 'test', createdAt: now, updatedAt: now);
+      final a =
+          Fragment(id: 1, contentText: 'test', createdAt: now, updatedAt: now);
+      final b =
+          Fragment(id: 1, contentText: 'test', createdAt: now, updatedAt: now);
       expect(a, equals(b));
     });
 
@@ -136,7 +138,7 @@ void main() {
         publicId: 'abc-123',
         contentText: 'test content',
         emotion: '平静',
-        status: FragmentStatus.twilight,
+        status: 'twilight',
         tags: const ['tag1'],
         mediaUrls: const [],
         createdAt: now,
@@ -145,12 +147,6 @@ void main() {
       final json = fragment.toJson();
       final restored = Fragment.fromJson(json);
       expect(restored, equals(fragment));
-    });
-
-    test('FragmentStatus enum values', () {
-      expect(FragmentStatus.values.length, 6);
-      expect(FragmentStatus.twilight.name, 'twilight');
-      expect(FragmentStatus.islandCore.name, 'islandCore');
     });
   });
 }

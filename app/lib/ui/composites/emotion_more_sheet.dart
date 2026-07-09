@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../features/emotion/data/emotion_repository.dart';
+import '../../../features/emotion/application/emotions_controller.dart';
 import '../../../features/emotion/domain/user_emotion.dart';
-import '../../design/tokens/colors.dart';
+import '../../design/themes/extensions/night_theme.dart';
 import '../../design/tokens/motion.dart';
 import '../../design/tokens/radius.dart';
-import '../../design/tokens/shadows.dart';
 import '../../design/tokens/typography.dart';
 import '../../design/tokens/spacing.dart';
 import '../primitives/overlay_snackbar.dart';
+import 'xiguang_bottom_sheet.dart';
 
 /// "更多"情绪选择 sheet — 可滚动的全部情绪列表 + 底部"新增自定义"。
 ///
@@ -19,12 +19,10 @@ class EmotionMoreSheet extends ConsumerStatefulWidget {
     super.key,
     required this.emotions,
     required this.selected,
-    required this.nightMode,
   });
 
   final List<UserEmotion> emotions;
   final String selected;
-  final bool nightMode;
 
   @override
   ConsumerState<EmotionMoreSheet> createState() => _EmotionMoreSheetState();
@@ -33,7 +31,6 @@ class EmotionMoreSheet extends ConsumerStatefulWidget {
 class _EmotionMoreSheetState extends ConsumerState<EmotionMoreSheet> {
   late List<UserEmotion> _emotions;
   final _newCtrl = TextEditingController();
-  bool _adding = false;
 
   @override
   void initState() {
@@ -49,76 +46,106 @@ class _EmotionMoreSheetState extends ConsumerState<EmotionMoreSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    final adding = ref.watch(emotionsProvider).isLoading;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    return SafeArea(
-      top: false,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(
-            AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
-        padding: EdgeInsets.fromLTRB(
-            AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.lg + bottomInset),
-        decoration: widget.nightMode
-            ? nightDecoration()
-            : softDecoration(AppColors.white),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Expanded(
-                child: Text('更多心绪',
-                    style:
-                        AppText.onNight(AppText.titleLarge, widget.nightMode)),
-              ),
-              IconButton(
-                icon: Icon(Icons.close_rounded,
-                    color: widget.nightMode
-                        ? AppText.nightInkMuted
-                        : AppColors.inkMuted),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ]),
-            const SizedBox(height: AppSpacing.sm),
-            // 用明确高度避免 Flexible 在 min Column 里塌缩到 0
-            SizedBox(
-              height: 240,
-              child: SingleChildScrollView(
-                child: Wrap(
-                  spacing: AppSpacing.s6,
-                  runSpacing: AppSpacing.s6,
-                  children: _emotions
-                      .map((e) => _MoreChip(
-                            emotion: e,
-                            isSelected: widget.selected == e.name,
-                            nightMode: widget.nightMode,
-                            onTap: () => Navigator.of(context).pop(e.name),
-                          ))
-                      .toList(),
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            // 新增自定义 — 只新增，不编辑/删除
-            Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _newCtrl,
-                  maxLength: 8,
-                  decoration: const InputDecoration(
-                    counterText: '',
-                    hintText: '写一个自己的感觉',
-                    prefixIcon: Icon(Icons.add_rounded, size: 18),
+    return AnimatedPadding(
+      duration: AppMotion.fast,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: FractionallySizedBox(
+        heightFactor: .68,
+        child: XiguangBottomSheet(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.border,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
-                  onSubmitted: (_) => _addCustom(),
                 ),
               ),
-              const SizedBox(width: AppSpacing.s10),
-              FilledButton(
-                onPressed: _adding ? null : _addCustom,
-                child: const Text('新增'),
+              const SizedBox(height: AppSpacing.s14),
+              Row(children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('更多心绪',
+                          style: AppText.titleLarge
+                              .copyWith(color: theme.foreground)),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        '不用选得准确，靠近此刻就好。',
+                        style: AppText.bodyMuted
+                            .copyWith(color: theme.foregroundMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: '关闭',
+                  icon: Icon(Icons.close_rounded, color: theme.foregroundMuted),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ]),
+              const SizedBox(height: AppSpacing.md),
+              Expanded(
+                child: GridView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: _emotions.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisExtent: 44,
+                    mainAxisSpacing: AppSpacing.sm,
+                    crossAxisSpacing: AppSpacing.sm,
+                  ),
+                  itemBuilder: (context, index) {
+                    final emotion = _emotions[index];
+                    return _MoreChip(
+                      emotion: emotion,
+                      isSelected: widget.selected == emotion.name,
+                      onTap: () => Navigator.of(context).pop(emotion.name),
+                    );
+                  },
+                ),
               ),
-            ]),
-          ],
+              const SizedBox(height: AppSpacing.s14),
+              Divider(height: 1, color: theme.border.withValues(alpha: .72)),
+              const SizedBox(height: AppSpacing.s14),
+              Text('给此刻一个自己的名字',
+                  style:
+                      AppText.captionStrong.copyWith(color: theme.foreground)),
+              const SizedBox(height: AppSpacing.sm),
+              TextField(
+                controller: _newCtrl,
+                maxLength: 8,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => adding ? null : _addCustom(),
+                style: AppText.body.copyWith(color: theme.foreground),
+                decoration: InputDecoration(
+                  counterText: '',
+                  hintText: '例如：松了一口气',
+                  suffixIcon: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.xs),
+                    child: IconButton.filled(
+                      tooltip: '新增心绪',
+                      onPressed: adding ? null : _addCustom,
+                      icon: adding
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.arrow_upward_rounded, size: 18),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -127,43 +154,39 @@ class _EmotionMoreSheetState extends ConsumerState<EmotionMoreSheet> {
   Future<void> _addCustom() async {
     final name = _newCtrl.text.trim();
     if (name.isEmpty) {
-      showOverlaySnackBar(context,
-          SnackBar(content: const Text('先写一个感觉的名字。'),
-              duration: AppMotion.snackbar, behavior: SnackBarBehavior.floating));
+      showOverlaySnackBar(
+          context,
+          SnackBar(
+              content: const Text('先写一个感觉的名字。'),
+              duration: AppMotion.snackbar,
+              behavior: SnackBarBehavior.floating));
       return;
     }
     if (_emotions.any((e) => e.name == name)) {
-      showOverlaySnackBar(context,
-          SnackBar(content: const Text('这个感觉已经在啦。'),
-              duration: AppMotion.snackbar, behavior: SnackBarBehavior.floating));
+      showOverlaySnackBar(
+          context,
+          SnackBar(
+              content: const Text('这个感觉已经在啦。'),
+              duration: AppMotion.snackbar,
+              behavior: SnackBarBehavior.floating));
       return;
     }
-    setState(() => _adding = true);
     try {
-      final repo = ref.read(emotionRepositoryProvider);
-      final id = await repo.addCustom(name);
-      final newEmotion = UserEmotion(
-        id: id,
-        name: name,
-        color: autoColorForName(name),
-        description: '',
-        isDefault: false,
-        sortOrder: _emotions.length,
-      );
+      final newEmotion =
+          await ref.read(emotionsProvider.notifier).addCustom(name);
       setState(() {
         _emotions.add(newEmotion);
         _newCtrl.clear();
       });
-      // 刷新全局 provider，主选择器下次打开会带上新情绪
-      ref.invalidate(emotionsProvider);
     } catch (_) {
       if (mounted) {
-        showOverlaySnackBar(context,
-            SnackBar(content: const Text('新增失败，请稍后再试。'),
-                duration: AppMotion.snackbar, behavior: SnackBarBehavior.floating));
+        showOverlaySnackBar(
+            context,
+            SnackBar(
+                content: const Text('新增失败，请稍后再试。'),
+                duration: AppMotion.snackbar,
+                behavior: SnackBarBehavior.floating));
       }
-    } finally {
-      if (mounted) setState(() => _adding = false);
     }
   }
 }
@@ -172,39 +195,29 @@ class _MoreChip extends StatelessWidget {
   const _MoreChip({
     required this.emotion,
     required this.isSelected,
-    required this.nightMode,
     required this.onTap,
   });
 
   final UserEmotion emotion;
   final bool isSelected;
-  final bool nightMode;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final bgColor = isSelected
-        ? emotion.color.withValues(alpha: .88)
-        : nightMode
-            ? AppColors.white.withValues(alpha: .07)
-            : AppColors.white.withValues(alpha: .72);
+        ? emotion.color.withValues(alpha: theme.isNight ? .2 : .14)
+        : theme.surface.withValues(alpha: .48);
     final borderColor = isSelected
-        ? emotion.color
-        : nightMode
-            ? AppColors.white.withValues(alpha: .12)
-            : AppColors.line;
-    final textColor = isSelected
-        ? Colors.white
-        : nightMode
-            ? AppText.nightInk
-            : AppColors.ink;
+        ? emotion.color.withValues(alpha: .72)
+        : theme.border.withValues(alpha: .8);
+    final textColor = isSelected ? theme.foreground : theme.foregroundMuted;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: AnimatedContainer(
         duration: AppMotion.fast,
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s7, vertical: AppSpacing.s5),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s10),
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -215,11 +228,19 @@ class _MoreChip extends StatelessWidget {
             width: 8,
             height: 8,
             decoration:
-                BoxDecoration(color: isSelected ? Colors.white : emotion.color, shape: BoxShape.circle),
+                BoxDecoration(color: emotion.color, shape: BoxShape.circle),
           ),
           const SizedBox(width: AppSpacing.s5),
-          Text(emotion.name,
-              style: AppText.chip.copyWith(color: textColor, height: 1.08)),
+          Expanded(
+            child: Text(
+              emotion.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.chip.copyWith(color: textColor, height: 1.08),
+            ),
+          ),
+          if (isSelected)
+            Icon(Icons.check_rounded, size: 15, color: emotion.color),
         ]),
       ),
     );

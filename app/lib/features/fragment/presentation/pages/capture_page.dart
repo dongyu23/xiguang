@@ -1,3 +1,4 @@
+// PAGE_SIZE_EXEMPT: migration in progress; media capture platform code will be separated from the composer view.
 import 'dart:io' show File, Platform;
 import 'dart:ui' as ui;
 
@@ -14,14 +15,22 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
-import '../../../../app/providers.dart';
+import 'package:xiguang/app/app_state.dart';
+import '../../../emotion/application/audio_library_controller.dart';
+import '../../../emotion/application/emotions_controller.dart';
+import '../../../emotion/domain/audio_track.dart';
+import '../../../emotion/domain/user_emotion.dart';
+import '../../application/capture_controller.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../ui/composites/emotion_picker.dart';
+import '../../../../ui/composites/xiguang_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../widgets/vinyl_widgets.dart';
 import 'audio_capture_file_stub.dart'
     if (dart.library.io) 'audio_capture_file_io.dart';
@@ -51,17 +60,42 @@ class _CapturePageBody extends ConsumerStatefulWidget {
 
 class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
   String _emotion = '说不清';
+  bool _userDefaultApplied = false;
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).width < 430;
-    final nightMode = ref.watch(nightModeProvider);
+    // 首次拿到数据时，若用户设了默认心情，用它替换初始值
+    final emotions = ref.watch(emotionsProvider).valueOrNull;
+    if (!_userDefaultApplied && emotions != null && emotions.isNotEmpty) {
+      _userDefaultApplied = true;
+      for (final e in emotions) {
+        if (e.isUserDefault) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _emotion = e.name);
+          });
+          break;
+        }
+      }
+    }
+    final viewport = MediaQuery.sizeOf(context);
+    final compact = viewport.width < 430;
     final moodColor = AppColors.emotionColor(_effectiveEmotion);
-    final vinylAudioAsset = _vinylAudioForEmotion(_effectiveEmotion);
+    final vinylAudioTrack = _vinylAudioForEmotion(
+      _effectiveEmotion,
+      ref.watch(emotionsProvider).valueOrNull ?? const [],
+      ref.watch(audioTracksProvider).valueOrNull ?? const [],
+    );
     final isActive = ref.watch(activeTabIndexProvider) == 0;
-    return _XiguangPage(
-      moodColor: moodColor,
-      nightMode: nightMode,
+    final horizontalPadding =
+        MediaQuery.sizeOf(context).width > 520 ? AppSpacing.lg : AppSpacing.md;
+    return XiguangPage(
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        AppSpacing.md,
+        horizontalPadding,
+        AppSpacing.captureComposerClearance,
+      ),
+      backgroundLayer: _MoodBackground(moodColor: moodColor),
       child: TickerMode(
         enabled: isActive,
         child: Column(
@@ -71,19 +105,17 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
               label: 'GAP OF LIGHT',
               title: '隙',
               subtitle: '不用解释，也不用整理。先把这一束光轻轻放下。',
-              nightMode: nightMode,
+              compact: compact,
             ),
             SizedBox(height: compact ? AppSpacing.sm : AppSpacing.s10),
             _BreathingLightBanner(
               moodColor: moodColor,
-              nightMode: nightMode,
-              audioAsset: vinylAudioAsset,
+              audioTrack: vinylAudioTrack,
             ),
             SizedBox(height: compact ? AppSpacing.s9 : AppSpacing.s12),
             _QuickRecordComposer(
               selectedEmotion: _emotion,
               onEmotionChanged: (emotion) => setState(() => _emotion = emotion),
-              nightMode: nightMode,
             ),
           ],
         ),
@@ -94,80 +126,71 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
   String get _effectiveEmotion => _emotion;
 }
 
-String _vinylAudioForEmotion(String emotion) {
-  return switch (emotion) {
-    '开心' || '被击中' || '混乱' => 'assets/audio/Light music 律动欢快.m4a',
-    '失落' => 'assets/audio/haoyvnlai(1).m4a',
-    _ => 'assets/audio/Light music 舒缓.m4a',
-  };
-}
-
-// --- Shared widgets (moved from original main.dart) ---
-
-class _XiguangPage extends StatelessWidget {
-  const _XiguangPage({
-    required this.child,
-    required this.moodColor,
-    required this.nightMode,
-  });
-
-  final Widget child;
-  final Color moodColor;
-  final bool nightMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final hp = constraints.maxWidth > 520 ? 24.0 : 16.0;
-      return Stack(children: [
-        // C2: Background now provided by _AppShell in router.dart
-        Positioned.fill(
-          child: _MoodBackground(moodColor: moodColor, nightMode: nightMode),
-        ),
-        SafeArea(
-          child: AnimatedSwitcher(
-            duration: AppMotion.normal,
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(hp, AppSpacing.md, hp, 126),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: child,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ]);
-    });
+/// 根据心情名查找绑定的音频；未绑定或未找到时回退到内置"舒缓"。
+AudioTrack? _vinylAudioForEmotion(
+  String emotion,
+  List<UserEmotion> emotions,
+  List<AudioTrack> tracks,
+) {
+  AudioTrack? fallback;
+  for (final t in tracks) {
+    if (t.key == 'soothing') {
+      fallback = t;
+      break;
+    }
   }
+  for (final e in emotions) {
+    if (e.name == emotion && e.soundKey != null) {
+      for (final t in tracks) {
+        if (t.key == e.soundKey) return t;
+      }
+    }
+  }
+  return fallback;
 }
 
 class _MoodBackground extends StatelessWidget {
-  const _MoodBackground({
-    required this.moodColor,
-    required this.nightMode,
-  });
+  const _MoodBackground({required this.moodColor});
 
   final Color moodColor;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return IgnorePointer(
       child: CustomPaint(
-        painter: _MoodBackgroundPainter(moodColor, nightMode),
+        painter: _MoodBackgroundPainter(
+          moodColor: moodColor,
+          topColor: theme.isNight
+              ? theme.surfaceHigh.withValues(alpha: .34)
+              : moodColor.withValues(alpha: .14),
+          middleColor: theme.isNight
+              ? moodColor.withValues(alpha: .13)
+              : AppColors.white.withValues(alpha: .10),
+          bottomColor: theme.isNight
+              ? Colors.transparent
+              : AppColors.emotionHappy.withValues(alpha: .07),
+          lineOpacity: theme.isNight ? .17 : .11,
+        ),
       ),
     );
   }
 }
 
 class _MoodBackgroundPainter extends CustomPainter {
-  const _MoodBackgroundPainter(this.moodColor, this.nightMode);
+  const _MoodBackgroundPainter({
+    required this.moodColor,
+    required this.topColor,
+    required this.middleColor,
+    required this.bottomColor,
+    required this.lineOpacity,
+  });
 
   final Color moodColor;
-  final bool nightMode;
+  final Color topColor;
+  final Color middleColor;
+  final Color bottomColor;
+  final double lineOpacity;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -175,22 +198,12 @@ class _MoodBackgroundPainter extends CustomPainter {
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: nightMode
-            ? [
-                AppColors.nightSurfaceHigh.withValues(alpha: .34),
-                moodColor.withValues(alpha: .13),
-                Colors.transparent,
-              ]
-            : [
-                moodColor.withValues(alpha: .14),
-                AppColors.white.withValues(alpha: .10),
-                AppColors.emotionHappy.withValues(alpha: .07),
-              ],
+        colors: [topColor, middleColor, bottomColor],
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, wash);
 
     final linePaint = Paint()
-      ..color = moodColor.withValues(alpha: nightMode ? .17 : .11)
+      ..color = moodColor.withValues(alpha: lineOpacity)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
     for (var i = 0; i < 7; i++) {
@@ -211,7 +224,10 @@ class _MoodBackgroundPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MoodBackgroundPainter oldDelegate) {
     return oldDelegate.moodColor != moodColor ||
-        oldDelegate.nightMode != nightMode;
+        oldDelegate.topColor != topColor ||
+        oldDelegate.middleColor != middleColor ||
+        oldDelegate.bottomColor != bottomColor ||
+        oldDelegate.lineOpacity != lineOpacity;
   }
 }
 
@@ -220,22 +236,51 @@ class _PageHeader extends StatelessWidget {
     required this.label,
     required this.title,
     required this.subtitle,
-    required this.nightMode,
+    required this.compact,
   });
 
   final String label;
   final String title;
   final String subtitle;
-  final bool nightMode;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    if (compact) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: AppText.eyebrow.copyWith(color: theme.accent)),
+              const SizedBox(height: AppSpacing.xs),
+              Text(title,
+                  style: AppText.hero.copyWith(color: theme.foreground)),
+            ],
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.s3),
+              child: Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: AppText.onNight(AppText.eyebrow, nightMode)),
+      Text(label, style: AppText.eyebrow.copyWith(color: theme.accent)),
       const SizedBox(height: AppSpacing.xs),
-      Text(title, style: AppText.onNight(AppText.hero, nightMode)),
+      Text(title, style: AppText.hero.copyWith(color: theme.foreground)),
       const SizedBox(height: AppSpacing.xs),
-      Text(subtitle, style: AppText.onNight(AppText.body, nightMode)),
+      Text(subtitle, style: AppText.body.copyWith(color: theme.foreground)),
     ]);
   }
 }
@@ -243,26 +288,26 @@ class _PageHeader extends StatelessWidget {
 class _BreathingLightBanner extends StatelessWidget {
   const _BreathingLightBanner({
     required this.moodColor,
-    required this.nightMode,
-    required this.audioAsset,
+    required this.audioTrack,
   });
 
   final Color moodColor;
-  final bool nightMode;
-  final String audioAsset;
+  final AudioTrack? audioTrack;
 
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 430;
+    final theme = NightTheme.of(context);
     return Container(
-      height: compact ? 112 : 176,
-      decoration: softDecoration(AppColors.ink).copyWith(
+      height: compact ? 96 : 176,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.md),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: nightMode
+          colors: theme.isNight
               ? [
-                  AppColors.nightSurfaceHigh,
+                  theme.surfaceHigh,
                   AppColors.ink,
                   moodColor.withValues(alpha: .7),
                 ]
@@ -280,7 +325,7 @@ class _BreathingLightBanner extends StatelessWidget {
           Positioned(
               left: 18,
               right: compact ? 106 : 154,
-              top: compact ? 16 : 24,
+              top: compact ? 13 : 24,
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -290,7 +335,7 @@ class _BreathingLightBanner extends StatelessWidget {
                     ),
                     SizedBox(height: compact ? AppSpacing.xs : AppSpacing.s6),
                     Text(
-                      nightMode ? '夜间轻开：慢一点放下。' : '沿着今天的节律，轻轻落下。',
+                      theme.isNight ? '夜间轻开：慢一点放下。' : '沿着今天的节律，轻轻落下。',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: AppText.inverseBody,
@@ -298,12 +343,11 @@ class _BreathingLightBanner extends StatelessWidget {
                   ])),
           Positioned(
             right: compact ? 14 : 26,
-            top: compact ? 14 : 24,
+            top: compact ? 8 : 24,
             child: VinylLightSource(
-              size: compact ? 82 : 112,
+              size: compact ? 78 : 112,
               moodColor: moodColor,
-              nightMode: nightMode,
-              audioAsset: audioAsset,
+              audioTrack: audioTrack,
             ),
           ),
           Positioned.fill(
@@ -322,12 +366,10 @@ class _QuickRecordComposer extends ConsumerStatefulWidget {
   const _QuickRecordComposer({
     required this.selectedEmotion,
     required this.onEmotionChanged,
-    required this.nightMode,
   });
 
   final String selectedEmotion;
   final ValueChanged<String> onEmotionChanged;
-  final bool nightMode;
 
   @override
   ConsumerState<_QuickRecordComposer> createState() =>
@@ -337,19 +379,20 @@ class _QuickRecordComposer extends ConsumerStatefulWidget {
 class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   final _controller = TextEditingController();
   final _picker = ImagePicker();
-  final _attachmentRecorder = AudioRecorder();
+  AudioRecorder? _attachmentRecorder;
   final List<XFile> _images = [];
   Timer? _audioTimer;
   bool _recordingAudio = false;
   final ValueNotifier<int> _audioSeconds = ValueNotifier(0);
   String? _audioPath;
-  bool _saving = false;
+  bool _preparingMedia = false;
 
   @override
   void dispose() {
     _audioTimer?.cancel();
     _audioSeconds.dispose();
-    unawaited(_attachmentRecorder.dispose());
+    final recorder = _attachmentRecorder;
+    if (recorder != null) unawaited(recorder.dispose());
     _controller.dispose();
     super.dispose();
   }
@@ -357,141 +400,133 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 430;
-    final nw = widget.nightMode;
-    return Container(
+    final theme = NightTheme.of(context);
+    final captureState = ref.watch(captureControllerProvider);
+    final busy = _preparingMedia || captureState.isSaving;
+    return XiguangCard(
       padding: EdgeInsets.fromLTRB(
         compact ? AppSpacing.s14 : AppSpacing.s18,
         compact ? AppSpacing.s14 : AppSpacing.s18,
         compact ? AppSpacing.s14 : AppSpacing.s18,
         compact ? AppSpacing.s14 : AppSpacing.s18,
       ),
-      decoration: softDecoration(AppColors.white, nightMode: nw),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('把这一瞬间放在这里', style: AppText.onNight(AppText.titleMedium, nw)),
+        Text(
+          '把这一瞬间放在这里',
+          style: AppText.titleSmall.copyWith(color: theme.foreground),
+        ),
         SizedBox(height: compact ? AppSpacing.s9 : AppSpacing.s12),
-        // 输入框 + 附件行（同一 Container 内，视觉上附件紧贴输入框底部）
+        // 文字输入单独成区；媒体操作不再与输入框共用边框，避免录音状态撑高输入框。
         Container(
           decoration: BoxDecoration(
-              color: nw
-                  ? AppColors.white.withValues(alpha: .10)
-                  : AppColors.paper.withValues(alpha: .72),
+              color: theme.surfaceHigh.withValues(
+                alpha: theme.isNight ? .72 : .78,
+              ),
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(
-                color: nw
-                    ? AppColors.white.withValues(alpha: .16)
-                    : AppColors.line.withValues(alpha: .86),
+                color: theme.border.withValues(alpha: .86),
               )),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                key: const ValueKey('capture-content'),
-                controller: _controller,
-                minLines: compact ? 3 : 5,
-                maxLines: 8,
-                style: AppText.onNight(AppText.body, nw).copyWith(
-                  color: nw ? AppColors.white : null,
-                ),
-                decoration: InputDecoration(
-                  hintText: '可以只留一句，也可以慢慢写完。',
-                  hintStyle: AppText.onNight(AppText.placeholder, nw),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.fromLTRB(
-                      AppSpacing.s14, AppSpacing.s13, AppSpacing.s14, AppSpacing.s13),
-                ),
+          child: TextField(
+            key: const ValueKey('capture-content'),
+            controller: _controller,
+            minLines: compact ? 2 : 5,
+            maxLines: compact ? 5 : 8,
+            style: AppText.body.copyWith(color: theme.foreground),
+            decoration: InputDecoration(
+              hintText: '可以只留一句，也可以慢慢写完。',
+              hintStyle:
+                  AppText.placeholder.copyWith(color: theme.foregroundMuted),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.fromLTRB(
+                AppSpacing.s14,
+                compact ? AppSpacing.s10 : AppSpacing.s13,
+                AppSpacing.s14,
+                compact ? AppSpacing.s10 : AppSpacing.s13,
               ),
-              // 附件行：左缩略图 + 右添加按钮
-              if (_images.isNotEmpty || _hasAudioCue)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.s10, 0, AppSpacing.s6, AppSpacing.s6),
-                  child: SizedBox(
-                    height: 36,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _images.length + (_hasAudioCue ? 1 : 0),
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(width: AppSpacing.s6),
-                      itemBuilder: (context, index) {
-                        if (index < _images.length) {
-                          final image = _images[index];
-                          return _InlineImageThumb(
-                            image: image,
-                            nightMode: nw,
-                            onRemove: () =>
-                                setState(() => _images.removeAt(index)),
-                          );
-                        }
-                        return _InlineAudioChip(
-                          seconds: _audioSeconds.value,
-                          recording: _recordingAudio,
-                          nightMode: nw,
-                          onTap: _recordingAudio
-                              ? () => unawaited(_stopAudio())
-                              : () => unawaited(_clearAudio()),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.s10, 0, AppSpacing.s10, AppSpacing.sm),
-                child: Row(children: [
-                  _MiniAttachButton(
-                    icon: Icons.add_photo_alternate_outlined,
-                    active: _images.isNotEmpty,
-                    nightMode: nw,
-                    onTap: _saving ? null : _pickImages,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  _MiniAttachButton(
-                    icon: _recordingAudio
-                        ? Icons.stop_rounded
-                        : Icons.mic_none_rounded,
-                    active: _hasAudioCue || _recordingAudio,
-                    nightMode: nw,
-                    onTap: _saving ? null : _toggleAudio,
-                  ),
-                ]),
-              ),
-            ],
+            ),
           ),
         ),
+        if (_images.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.s6),
+          SizedBox(
+            height: 36,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _images.length,
+              separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.s6),
+              itemBuilder: (context, index) => _InlineImageThumb(
+                image: _images[index],
+                onRemove: () => setState(() => _images.removeAt(index)),
+              ),
+            ),
+          ),
+        ],
         SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-        _ComposerMetaRow(
-          writtenCount: _writtenCount,
+        Row(
+          children: [
+            _AttachmentAction(
+              icon: Icons.image_outlined,
+              label: _images.isEmpty ? '图片' : '图片 ${_images.length}',
+              active: _images.isNotEmpty,
+              onTap: busy ? null : _pickImages,
+            ),
+            const SizedBox(width: AppSpacing.s6),
+            _AttachmentAction(
+              icon: _recordingAudio
+                  ? Icons.stop_rounded
+                  : _hasAudioCue
+                      ? Icons.graphic_eq_rounded
+                      : Icons.mic_none_rounded,
+              label: _audioActionLabel,
+              active: _hasAudioCue || _recordingAudio,
+              recording: _recordingAudio,
+              showRemove: _hasAudioCue && !_recordingAudio,
+              onTap: busy ? null : _handleAudioAction,
+            ),
+            const Spacer(),
+            _ComposerMetaRow(writtenCount: _writtenCount),
+          ],
         ),
         SizedBox(height: compact ? AppSpacing.sm : AppSpacing.s12),
         EmotionPicker(
             selected: widget.selectedEmotion,
             onSelected: (e) => widget.onEmotionChanged(e),
-            dense: compact,
-            nightMode: widget.nightMode),
+            dense: compact),
         SizedBox(height: compact ? AppSpacing.s10 : AppSpacing.s14),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(
-                backgroundColor: nw
-                    ? AppColors.teaGreen.withValues(alpha: .72)
-                    : AppColors.ink,
-                foregroundColor: AppColors.white,
-                minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md))),
-            onPressed: _saving ? null : _save,
-            icon: const Icon(Icons.wb_sunny_outlined, size: 18),
-            label: Text(_saving ? '落下中' : '捕光'),
-          ),
+        XiguangButton(
+          label: busy ? '落下中' : '捕光',
+          onPressed: busy ? null : _save,
+          leading: const Icon(Icons.wb_sunny_outlined, size: 18),
+          loading: busy,
+          height: compact ? 44 : 48,
         ),
-        const SizedBox(height: AppSpacing.s12),
       ]),
     );
   }
 
   bool get _hasAudioCue => _audioSeconds.value > 0 || _audioPath != null;
+
+  String get _audioActionLabel {
+    if (_recordingAudio) return '录音 ${_formatAudioTime(_audioSeconds.value)}';
+    if (_hasAudioCue) return '声音 ${_formatAudioTime(_audioSeconds.value)}';
+    return '声音';
+  }
+
+  String _formatAudioTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainder = seconds % 60;
+    return '$minutes:${remainder.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _handleAudioAction() async {
+    if (_recordingAudio) {
+      await _stopAudio();
+    } else if (_hasAudioCue) {
+      await _clearAudio();
+    } else {
+      await _toggleAudio();
+    }
+  }
 
   Future<void> _pickImages() async {
     try {
@@ -519,6 +554,9 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   }
 
   Future<void> _save() async {
+    if (_preparingMedia || ref.read(captureControllerProvider).isSaving) {
+      return;
+    }
     final text = _controller.text.trim();
     if (text.isEmpty) {
       showOverlaySnackBar(
@@ -528,11 +566,11 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       );
       return;
     }
-    setState(() => _saving = true);
-    final mediaUrls = await _mediaUrlsForSave();
-    if (!mounted) return;
+    setState(() => _preparingMedia = true);
     try {
-      await ref.read(fragmentsProvider.notifier).captureWithResult(
+      final mediaUrls = await _mediaUrlsForSave();
+      if (!mounted) return;
+      await ref.read(captureControllerProvider.notifier).capture(
             text: text,
             emotion: _emotionForSave(),
             tags: const [],
@@ -540,7 +578,6 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
           );
     } catch (_) {
       if (!mounted) return;
-      setState(() => _saving = false);
       showOverlaySnackBar(
         context,
         const SnackBar(
@@ -548,11 +585,12 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
             behavior: SnackBarBehavior.floating),
       );
       return;
+    } finally {
+      if (mounted) setState(() => _preparingMedia = false);
     }
     if (!mounted) return;
     _audioTimer?.cancel();
     setState(() {
-      _saving = false;
       _recordingAudio = false;
       _audioPath = null;
       _controller.clear();
@@ -677,7 +715,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
         return;
       }
       final path = await nextAudioCapturePath();
-      await _attachmentRecorder.start(
+      await _recorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
           sampleRate: 44100,
@@ -694,7 +732,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
         _audioPath = path;
       });
       _audioSeconds.value = 0;
-      _audioTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _audioTimer = Timer.periodic(AppTiming.audioMeterTick, (_) {
         if (!mounted) return;
         setState(() {
           _audioSeconds.value += 1;
@@ -718,7 +756,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
 
     status = await Permission.microphone.request();
     if (status.isGranted) {
-      return await _attachmentRecorder.hasPermission(request: false);
+      return await _recorder.hasPermission(request: false);
     }
 
     if (!mounted) return false;
@@ -745,7 +783,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     _audioTimer?.cancel();
     String? path = _audioPath;
     try {
-      path = await _attachmentRecorder.stop() ?? path;
+      path = await _attachmentRecorder?.stop() ?? path;
     } catch (_) {
       // If the recorder was already stopped, keep the last known path.
     }
@@ -761,7 +799,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     _audioTimer?.cancel();
     if (_recordingAudio) {
       try {
-        await _attachmentRecorder.cancel();
+        await _attachmentRecorder?.cancel();
       } catch (_) {
         // Ignore recorder cleanup errors.
       }
@@ -785,6 +823,8 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   }
 
   String _emotionForSave() => widget.selectedEmotion;
+
+  AudioRecorder get _recorder => _attachmentRecorder ??= AudioRecorder();
 }
 
 class _ComposerMetaRow extends StatelessWidget {
@@ -796,15 +836,17 @@ class _ComposerMetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
+    final theme = NightTheme.of(context);
+    return Row(mainAxisSize: MainAxisSize.min, children: [
       Icon(
         writtenCount == 0 ? Icons.edit_note_rounded : Icons.auto_awesome,
         size: 15,
-        color: AppColors.teaGreen,
+        color: theme.accent,
       ),
       const SizedBox(width: AppSpacing.s5),
-      Expanded(
-        child: Text('已写 $writtenCount 字', style: AppText.caption),
+      Text(
+        '$writtenCount 字',
+        style: AppText.caption.copyWith(color: theme.foregroundMuted),
       ),
     ]);
   }
@@ -885,12 +927,10 @@ class _SelectedImagePreviewState extends State<_SelectedImagePreview> {
 class _InlineImageThumb extends StatelessWidget {
   const _InlineImageThumb({
     required this.image,
-    required this.nightMode,
     required this.onRemove,
   });
 
   final XFile image;
-  final bool nightMode;
   final VoidCallback onRemove;
 
   @override
@@ -913,7 +953,7 @@ class _InlineImageThumb extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: onRemove,
           child: Container(
-            padding: const EdgeInsets.all(2),
+            padding: const EdgeInsets.all(AppSpacing.s2),
             decoration: BoxDecoration(
               color: AppColors.ink.withValues(alpha: .72),
               shape: BoxShape.circle,
@@ -927,89 +967,64 @@ class _InlineImageThumb extends StatelessWidget {
   }
 }
 
-/// 输入框内左下角的内联音频指示 chip（图标 + 时长 + 停止/删除）
-class _InlineAudioChip extends StatelessWidget {
-  const _InlineAudioChip({
-    required this.seconds,
-    required this.recording,
-    required this.nightMode,
-    required this.onTap,
-  });
-
-  final int seconds;
-  final bool recording;
-  final bool nightMode;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = nightMode ? AppText.nightAccent : AppColors.teaGreen;
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s10),
-      decoration: BoxDecoration(
-        color: AppColors.teaGreen.withValues(alpha: .16),
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(
-            recording
-                ? Icons.fiber_manual_record_rounded
-                : Icons.graphic_eq_rounded,
-            size: 14,
-            color: accent),
-        const SizedBox(width: 4),
-        Text('${seconds}s', style: AppText.caption.copyWith(color: accent)),
-        const SizedBox(width: 4),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: Icon(
-              recording ? Icons.stop_rounded : Icons.close_rounded,
-              size: 14,
-              color: AppColors.inkMuted),
-        ),
-      ]),
-    );
-  }
-}
-
-/// 输入框内右下角的小添加按钮（图片 / 录音）
-class _MiniAttachButton extends StatelessWidget {
-  const _MiniAttachButton({
+/// 输入区下方的轻量媒体操作。录音计时在原位更新，不新增布局层级。
+class _AttachmentAction extends StatelessWidget {
+  const _AttachmentAction({
     required this.icon,
+    required this.label,
     required this.active,
-    required this.nightMode,
     required this.onTap,
+    this.recording = false,
+    this.showRemove = false,
   });
 
   final IconData icon;
+  final String label;
   final bool active;
-  final bool nightMode;
   final VoidCallback? onTap;
+  final bool recording;
+  final bool showRemove;
 
   @override
   Widget build(BuildContext context) {
-    final color = active
-        ? (nightMode ? AppText.nightAccent : AppColors.teaGreen)
-        : (nightMode ? AppText.nightInkMuted : AppColors.inkMuted);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: active
-              ? AppColors.teaGreen.withValues(alpha: .16)
-              : (nightMode
-                  ? AppColors.white.withValues(alpha: .06)
-                  : AppColors.white.withValues(alpha: .5)),
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+    final theme = NightTheme.of(context);
+    final color = recording
+        ? theme.danger
+        : active
+            ? theme.accent
+            : theme.foregroundMuted;
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s10),
+          decoration: BoxDecoration(
+            color: active ? color.withValues(alpha: .12) : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: active
+                  ? color.withValues(alpha: .42)
+                  : theme.border.withValues(alpha: .72),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: AppSpacing.s5),
+              Text(label, style: AppText.captionStrong.copyWith(color: color)),
+              if (showRemove) ...[
+                const SizedBox(width: AppSpacing.xs),
+                Icon(Icons.close_rounded, size: 13, color: color),
+              ],
+            ],
+          ),
         ),
-        child: Icon(icon, size: 18, color: color),
       ),
     );
   }
 }
-

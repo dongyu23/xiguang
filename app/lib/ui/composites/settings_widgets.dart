@@ -1,31 +1,27 @@
 import 'package:flutter/material.dart';
 
-import '../../design/tokens/colors.dart';
+import '../../design/themes/extensions/night_theme.dart';
 import '../../design/tokens/radius.dart';
-import '../../design/tokens/shadows.dart';
 import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
+import 'xiguang_card.dart';
 
 /// 设置页/我的页通用卡片 — 日间 softDecoration / 夜间 nightDecoration
 class SettingsCard extends StatelessWidget {
   const SettingsCard({
     super.key,
-    required this.nightMode,
     required this.children,
     this.compact = false,
   });
 
-  final bool nightMode;
   final List<Widget> children;
   final bool compact;
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
+  Widget build(BuildContext context) => XiguangCard(
         padding: EdgeInsets.all(
-            compact ? AppSpacing.widgetPadding : AppSpacing.lg - 6),
-        decoration:
-            nightMode ? nightDecoration() : softDecoration(AppColors.white),
+          compact ? AppSpacing.widgetPadding : AppSpacing.s18,
+        ),
         child: Column(
             crossAxisAlignment: CrossAxisAlignment.start, children: children),
       );
@@ -33,15 +29,20 @@ class SettingsCard extends StatelessWidget {
 
 /// 设置页分组标签 — eyebrow 风格
 class SettingsSectionLabel extends StatelessWidget {
-  const SettingsSectionLabel(this.label, {super.key, required this.nightMode});
+  const SettingsSectionLabel(this.label, {super.key});
   final String label;
-  final bool nightMode;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(left: AppSpacing.s2),
-        child: Text(label, style: AppText.onNight(AppText.eyebrow, nightMode)),
-      );
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: AppSpacing.s2),
+      child: Text(
+        label,
+        style: AppText.eyebrow.copyWith(color: theme.foregroundMuted),
+      ),
+    );
+  }
 }
 
 /// 设置页信息行 — label 固定宽 + value
@@ -50,35 +51,37 @@ class SettingsInfoRow extends StatelessWidget {
     super.key,
     required this.label,
     required this.value,
-    required this.nightMode,
     this.compact = false,
   });
 
   final String label, value;
-  final bool nightMode;
   final bool compact;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.only(top: compact ? AppSpacing.s7 : AppSpacing.s10),
-        child: Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              SizedBox(
-                  width: 56,
-                  child: Text(label,
-                      style: AppText.onNight(AppText.caption, nightMode))),
-              Expanded(
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppText.onNight(AppText.body, nightMode),
-                ),
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return Padding(
+      padding: EdgeInsets.only(top: compact ? AppSpacing.s7 : AppSpacing.s10),
+      child: Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            SizedBox(
+                width: 56,
+                child: Text(label,
+                    style: AppText.caption
+                        .copyWith(color: theme.foregroundMuted))),
+            Expanded(
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.body.copyWith(color: theme.foreground),
               ),
-            ]),
-      );
+            ),
+          ]),
+    );
+  }
 }
 
 /// 设置页开关行 — label + subtitle + Switch
@@ -88,7 +91,6 @@ class SettingsSwitchRow extends StatelessWidget {
     required this.label,
     required this.subtitle,
     required this.value,
-    required this.nightMode,
     required this.onChanged,
     this.prominent = true,
   });
@@ -96,12 +98,12 @@ class SettingsSwitchRow extends StatelessWidget {
   final String label;
   final String subtitle;
   final bool value;
-  final bool nightMode;
   final ValueChanged<bool>? onChanged;
   final bool prominent;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Semantics(
       button: true,
       enabled: onChanged != null,
@@ -121,12 +123,12 @@ class SettingsSwitchRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(label,
-                          style: AppText.onNight(
-                              prominent ? AppText.titleSmall : AppText.body,
-                              nightMode)),
+                          style: (prominent ? AppText.titleSmall : AppText.body)
+                              .copyWith(color: theme.foreground)),
                       const SizedBox(height: AppSpacing.xs),
                       Text(subtitle,
-                          style: AppText.onNight(AppText.caption, nightMode)),
+                          style: AppText.caption
+                              .copyWith(color: theme.foregroundMuted)),
                     ]),
               ),
               Switch.adaptive(value: value, onChanged: onChanged),
@@ -146,7 +148,6 @@ class SettingsNavRow extends StatelessWidget {
     required this.iconColor,
     required this.label,
     required this.subtitle,
-    required this.nightMode,
     required this.compact,
     required this.onTap,
   });
@@ -155,12 +156,12 @@ class SettingsNavRow extends StatelessWidget {
   final Color iconColor;
   final String label;
   final String subtitle;
-  final bool nightMode;
   final bool compact;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: onTap,
@@ -175,26 +176,23 @@ class SettingsNavRow extends StatelessWidget {
               color: iconColor.withValues(alpha: .20),
               borderRadius: BorderRadius.circular(AppRadius.md),
             ),
-            // icon 颜色跟随夜间：日间 ink，夜间 nightInk
-            child: Icon(icon,
-                size: 18,
-                color: nightMode ? AppColors.nightInk : AppColors.ink),
+            child: Icon(icon, size: 18, color: theme.foreground),
           ),
           SizedBox(width: compact ? AppSpacing.s10 : AppSpacing.s12),
           Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(label,
-                  style: AppText.onNight(AppText.titleSmall, nightMode)),
+                  style: AppText.titleSmall.copyWith(color: theme.foreground)),
               SizedBox(height: compact ? AppSpacing.s2 : AppSpacing.xs),
               Text(subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppText.onNight(AppText.caption, nightMode)),
+                  style:
+                      AppText.caption.copyWith(color: theme.foregroundMuted)),
             ]),
           ),
-          Icon(Icons.chevron_right_rounded,
-              color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
+          Icon(Icons.chevron_right_rounded, color: theme.foregroundMuted),
         ]),
       ),
     );

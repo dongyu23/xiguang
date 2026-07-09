@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../app/providers.dart';
+import '../providers/auth_providers.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../ui/composites/backend_url_tile.dart';
-import '../../../../ui/primitives/glow_button.dart';
-import '../../../../ui/primitives/night_background.dart';
+import '../../../../ui/composites/xiguang_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_input.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../widgets/auth_notice.dart';
 
@@ -24,7 +26,6 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _nickname = TextEditingController();
-  bool _loading = false;
   String? _message;
 
   @override
@@ -36,7 +37,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
   }
 
   Future<void> _register() async {
-    if (_loading) return;
+    if (ref.read(authActionsControllerProvider).isLoading) return;
     if (_username.text.trim().isEmpty ||
         _password.text.isEmpty ||
         _nickname.text.trim().isEmpty) {
@@ -44,17 +45,14 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       return;
     }
     setState(() {
-      _loading = true;
       _message = null;
     });
     try {
-      final session = await ref.read(authRepositoryProvider).register(
+      await ref.read(authActionsControllerProvider.notifier).register(
             username: _username.text.trim(),
             password: _password.text,
             nickname: _nickname.text.trim(),
           );
-      ref.read(authSessionProvider.notifier).state = session;
-      ref.invalidate(sessionProvider);
       if (!mounted) return;
       final returnTo =
           GoRouterState.of(context).uri.queryParameters['return_to'];
@@ -65,108 +63,95 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       }
     } catch (_) {
       setState(() => _message = '注册失败，请换一个用户名或检查后端连接。');
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final nightMode = ref.watch(nightModeProvider);
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(children: [
-        const Positioned.fill(child: NightBackgroundPlaceholder()),
-        const Positioned.fill(child: AtmosphereBackground(animated: false)),
-        const Positioned.fill(child: _RegisterLightField()),
-        SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.s22, AppSpacing.s28,
-                  AppSpacing.s22, AppSpacing.xl),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 460),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.s22,
-                      AppSpacing.lg, AppSpacing.s22, AppSpacing.s22),
-                  decoration: nightMode
-                      ? nightDecoration()
-                      : softDecoration(AppColors.white).copyWith(
-                          color: AppColors.white.withValues(alpha: .86),
-                          border: Border.all(
-                            color: AppColors.white.withValues(alpha: .78),
-                          ),
-                        ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const _RegisterMark(),
-                      const SizedBox(height: AppSpacing.s14),
-                      Text('创建账号',
-                          style: AppText.onNight(AppText.hero, nightMode)),
-                      const SizedBox(height: AppSpacing.s10),
-                      Text('给这一束光一个安静入口，之后慢慢写。',
-                          style: AppText.onNight(AppText.body, nightMode)),
-                      const SizedBox(height: AppSpacing.lg),
-                      TextField(
-                        key: const ValueKey('register-username'),
-                        controller: _username,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(labelText: '用户名'),
-                      ),
-                      const SizedBox(height: AppSpacing.s12),
-                      TextField(
-                        key: const ValueKey('register-nickname'),
-                        controller: _nickname,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(labelText: '昵称'),
-                      ),
-                      const SizedBox(height: AppSpacing.s12),
-                      TextField(
-                        key: const ValueKey('register-password'),
-                        controller: _password,
-                        obscureText: true,
-                        onSubmitted: (_) => _register(),
-                        decoration: const InputDecoration(labelText: '密码'),
-                      ),
-                      if (_message != null) ...[
-                        const SizedBox(height: AppSpacing.s12),
-                        AuthNotice(message: _message!, nightMode: nightMode),
-                      ],
-                      const SizedBox(height: AppSpacing.s20),
-                      GlowButton(
-                        label: _loading ? '创建中...' : '创建并进入',
-                        icon: Icons.auto_awesome_rounded,
-                        onPressed: _loading ? null : _register,
-                      ),
-                      const SizedBox(height: AppSpacing.s10),
-                      TextButton.icon(
-                        onPressed:
-                            _loading ? null : () => context.go('/login'),
-                        icon: const Icon(Icons.login_rounded, size: 20),
-                        label: const Text('已有账号，去登录'),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      BackendUrlTile(loading: _loading, nightMode: nightMode),
-                    ],
-                  ),
-                ),
+    final loading = ref.watch(authActionsControllerProvider).isLoading;
+    final theme = NightTheme.of(context);
+    return XiguangPage(
+      backgroundLayer: const Stack(children: [
+        Positioned.fill(child: AtmosphereBackground(animated: false)),
+        Positioned.fill(child: _RegisterLightField()),
+      ]),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s22,
+        AppSpacing.s28,
+        AppSpacing.s22,
+        AppSpacing.xl,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: XiguangCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const _RegisterMark(),
+              const SizedBox(height: AppSpacing.s14),
+              Text('创建账号',
+                  style: AppText.hero.copyWith(color: theme.foreground)),
+              const SizedBox(height: AppSpacing.s10),
+              Text(
+                '给这一束光一个安静入口，之后慢慢写。',
+                style: AppText.body.copyWith(color: theme.foregroundMuted),
               ),
-            ),
+              const SizedBox(height: AppSpacing.lg),
+              XiguangInput(
+                key: const ValueKey('register-username'),
+                controller: _username,
+                textInputAction: TextInputAction.next,
+                label: '用户名',
+              ),
+              const SizedBox(height: AppSpacing.s12),
+              XiguangInput(
+                key: const ValueKey('register-nickname'),
+                controller: _nickname,
+                textInputAction: TextInputAction.next,
+                label: '昵称',
+              ),
+              const SizedBox(height: AppSpacing.s12),
+              XiguangInput(
+                key: const ValueKey('register-password'),
+                controller: _password,
+                obscureText: true,
+                onSubmitted: (_) => _register(),
+                label: '密码',
+              ),
+              if (_message != null) ...[
+                const SizedBox(height: AppSpacing.s12),
+                AuthNotice(message: _message!),
+              ],
+              const SizedBox(height: AppSpacing.s20),
+              XiguangButton(
+                label: loading ? '创建中...' : '创建并进入',
+                leading: const Icon(Icons.auto_awesome_rounded),
+                loading: loading,
+                onPressed: loading ? null : _register,
+              ),
+              const SizedBox(height: AppSpacing.s10),
+              TextButton.icon(
+                onPressed: loading ? null : () => context.go('/login'),
+                icon: const Icon(Icons.login_rounded, size: 20),
+                label: const Text('已有账号，去登录'),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              BackendUrlTile(loading: loading),
+            ],
           ),
         ),
-      ]),
+      ),
     );
   }
 }
 
-class _RegisterMark extends ConsumerWidget {
+class _RegisterMark extends StatelessWidget {
   const _RegisterMark();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(children: [
       Container(
         width: 34,
@@ -174,9 +159,7 @@ class _RegisterMark extends ConsumerWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: nightMode
-              ? AppColors.white.withValues(alpha: .12)
-              : AppColors.white.withValues(alpha: .7),
+          color: theme.surface.withValues(alpha: .7),
           border: Border.all(color: AppColors.teaGreen.withValues(alpha: .36)),
         ),
         child: Icon(

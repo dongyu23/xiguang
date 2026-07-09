@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/providers.dart';
-import '../../../../design/tokens/colors.dart';
-import '../../../../design/tokens/shadows.dart';
+import '../providers/auth_providers.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
-import '../../../../ui/primitives/night_background.dart';
-import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../ui/composites/xiguang_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_input.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
 class ChangePasswordPage extends ConsumerStatefulWidget {
@@ -21,7 +22,6 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
   final _oldPassword = TextEditingController();
   final _newPassword = TextEditingController();
   final _confirmPassword = TextEditingController();
-  bool _loading = false;
   String? _error;
   bool _success = false;
 
@@ -55,12 +55,9 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
       return;
     }
 
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _error = null);
     try {
-      await ref.read(authRepositoryProvider).changePassword(
+      await ref.read(authActionsControllerProvider.notifier).changePassword(
             oldPassword: old,
             newPassword: newPw,
           );
@@ -69,129 +66,106 @@ class _ChangePasswordPageState extends ConsumerState<ChangePasswordPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = '修改失败，请检查当前密码是否正确。');
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final nightMode = ref.watch(nightModeProvider);
-    return Stack(children: [
-      const Positioned.fill(child: NightBackgroundPlaceholder()),
-      const Positioned.fill(child: AtmosphereBackground()),
-      Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(AppSpacing.s22,
-                    AppSpacing.s12, AppSpacing.s22, AppSpacing.pageBottomNav),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _Header(nightMode: nightMode),
-                    const SizedBox(height: AppSpacing.lg),
-                    if (_success) ...[
-                      _SuccessCard(nightMode: nightMode),
-                    ] else ...[
-                      _Card(nightMode: nightMode, children: [
-                        Text(
-                          '修改密码',
-                          style:
-                              AppText.onNight(AppText.titleMedium, nightMode),
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Text(
-                          '修改后需要重新登录。',
-                          style: AppText.onNight(AppText.bodyMuted, nightMode),
-                        ),
-                        const SizedBox(height: AppSpacing.s20),
-                        TextField(
-                          controller: _oldPassword,
-                          obscureText: true,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(labelText: '当前密码'),
-                        ),
-                        const SizedBox(height: AppSpacing.s14),
-                        TextField(
-                          controller: _newPassword,
-                          obscureText: true,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(labelText: '新密码'),
-                        ),
-                        const SizedBox(height: AppSpacing.s14),
-                        TextField(
-                          controller: _confirmPassword,
-                          obscureText: true,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _submit(),
-                          decoration: const InputDecoration(labelText: '确认新密码'),
-                        ),
-                        if (_error != null) ...[
-                          const SizedBox(height: AppSpacing.s14),
-                          Text(
-                            _error!,
-                            style: AppText.onNight(AppText.caption, nightMode)
-                                .copyWith(color: AppColors.sunsetCoral),
-                          ),
-                        ],
-                        const SizedBox(height: AppSpacing.lg),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _loading ? null : _submit,
-                            icon: _loading
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: AppColors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.lock_outline_rounded,
-                                    size: 18),
-                            label: Text(_loading ? '修改中...' : '确认修改'),
-                          ),
-                        ),
-                      ]),
-                    ],
+    final actionState = ref.watch(authActionsControllerProvider);
+    final theme = NightTheme.of(context);
+    return XiguangPage(
+      backgroundLayer: const AtmosphereBackground(),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s22,
+        AppSpacing.s12,
+        AppSpacing.s22,
+        AppSpacing.pageBottomNav,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _Header(),
+          const SizedBox(height: AppSpacing.lg),
+          if (_success)
+            const _SuccessCard()
+          else
+            XiguangCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '修改密码',
+                    style: AppText.titleSmall.copyWith(color: theme.foreground),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    '修改后需要重新登录。',
+                    style: AppText.bodyMuted
+                        .copyWith(color: theme.foregroundMuted),
+                  ),
+                  const SizedBox(height: AppSpacing.s20),
+                  XiguangInput(
+                    controller: _oldPassword,
+                    obscureText: true,
+                    textInputAction: TextInputAction.next,
+                    label: '当前密码',
+                  ),
+                  const SizedBox(height: AppSpacing.s14),
+                  XiguangInput(
+                    controller: _newPassword,
+                    obscureText: true,
+                    textInputAction: TextInputAction.next,
+                    label: '新密码',
+                  ),
+                  const SizedBox(height: AppSpacing.s14),
+                  XiguangInput(
+                    controller: _confirmPassword,
+                    obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _submit(),
+                    label: '确认新密码',
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: AppSpacing.s14),
+                    Text(
+                      _error!,
+                      style: AppText.caption.copyWith(color: theme.danger),
+                    ),
                   ],
-                ),
+                  const SizedBox(height: AppSpacing.lg),
+                  XiguangButton(
+                    label: actionState.isLoading ? '修改中...' : '确认修改',
+                    loading: actionState.isLoading,
+                    leading: const Icon(Icons.lock_outline_rounded, size: 18),
+                    onPressed: actionState.isLoading ? null : _submit,
+                  ),
+                ],
               ),
             ),
-          ),
-        ),
+        ],
       ),
-    ]);
+    );
   }
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.nightMode});
-  final bool nightMode;
+  const _Header();
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(
       children: [
-        PageBackButton(
-          onTap: () => Navigator.of(context).maybePop(),
-          nightMode: nightMode,
+        IconButton(
+          tooltip: '返回',
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: Icon(Icons.arrow_back_rounded, color: theme.foreground),
         ),
         const SizedBox(width: AppSpacing.s12),
         Expanded(
           child: Text(
             '修改密码',
-            style: AppText.onNight(
-              AppText.titleLarge,
-              nightMode,
-            ),
+            style: AppText.titleLarge.copyWith(color: theme.foreground),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -201,47 +175,28 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _Card extends StatelessWidget {
-  const _Card({required this.nightMode, required this.children});
-  final bool nightMode;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(AppSpacing.s18),
-        decoration:
-            nightMode ? nightDecoration() : softDecoration(AppColors.white),
-        child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start, children: children),
-      );
-}
-
 class _SuccessCard extends StatelessWidget {
-  const _SuccessCard({required this.nightMode});
-  final bool nightMode;
+  const _SuccessCard();
 
   @override
   Widget build(BuildContext context) {
-    return _Card(
-      nightMode: nightMode,
-      children: [
-        Icon(Icons.check_circle_outline_rounded,
-            size: 48,
-            color: nightMode ? AppText.nightAccent : AppColors.teaGreen),
+    final theme = NightTheme.of(context);
+    return XiguangCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(Icons.check_circle_outline_rounded, size: 48, color: theme.accent),
         const SizedBox(height: AppSpacing.md),
-        Text('密码已修改', style: AppText.onNight(AppText.titleMedium, nightMode)),
+        Text('密码已修改',
+            style: AppText.titleSmall.copyWith(color: theme.foreground)),
         const SizedBox(height: AppSpacing.sm),
-        Text('下次登录时请使用新密码。', style: AppText.onNight(AppText.body, nightMode)),
+        Text('下次登录时请使用新密码。',
+            style: AppText.body.copyWith(color: theme.foregroundMuted)),
         const SizedBox(height: AppSpacing.lg),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            child: const Text('返回'),
-          ),
+        XiguangButton(
+          label: '返回',
+          variant: XiguangButtonVariant.secondary,
+          onPressed: () => Navigator.of(context).maybePop(),
         ),
-      ],
+      ]),
     );
   }
 }

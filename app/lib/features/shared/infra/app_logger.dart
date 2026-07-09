@@ -13,7 +13,8 @@ class AppLogger {
   }
 
   static void warn(String message, {Object? error, StackTrace? stackTrace}) {
-    developer.log(message, name: 'xiguang', level: 500, error: error, stackTrace: stackTrace);
+    developer.log(message,
+        name: 'xiguang', level: 500, error: error, stackTrace: stackTrace);
     Sentry.addBreadcrumb(Breadcrumb(
       level: SentryLevel.warning,
       message: message,
@@ -22,7 +23,8 @@ class AppLogger {
   }
 
   static void error(String message, {Object? error, StackTrace? stackTrace}) {
-    developer.log(message, name: 'xiguang', level: 1000, error: error, stackTrace: stackTrace);
+    developer.log(message,
+        name: 'xiguang', level: 1000, error: error, stackTrace: stackTrace);
     Sentry.captureException(error ?? message, stackTrace: stackTrace);
   }
 }

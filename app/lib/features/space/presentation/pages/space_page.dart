@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../app/providers.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
-import '../../../../ui/primitives/night_background.dart';
-import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_empty_state.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../domain/space_theme.dart';
-import '../providers/space_provider.dart';
+import '../../application/space_providers.dart';
 
 class SpacePage extends ConsumerWidget {
   const SpacePage({super.key});
@@ -20,82 +20,73 @@ class SpacePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = ref.watch(spaceThemeProvider);
-    final nightMode = ref.watch(nightModeProvider);
-    return Stack(children: [
-      const Positioned.fill(child: NightBackgroundPlaceholder()),
-      const Positioned.fill(child: AtmosphereBackground()),
-      SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(AppSpacing.s22, AppSpacing.s18,
-              AppSpacing.s22, AppSpacing.pageBottomNav),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SpaceHeader(nightMode: nightMode),
-                  const SizedBox(height: AppSpacing.s20),
-                  theme.when(
-                    data: (space) => _SpaceThemeCard(
-                      space: space,
-                      nightMode: nightMode,
-                    ),
-                    loading: () => _SpaceLoadingCard(nightMode: nightMode),
-                    error: (_, __) => _SpaceErrorCard(nightMode: nightMode),
-                  ),
-                ],
-              ),
+    return XiguangPage(
+      backgroundLayer: const AtmosphereBackground(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SpaceHeader(),
+          const SizedBox(height: AppSpacing.s20),
+          theme.when(
+            data: (space) => _SpaceThemeCard(space: space),
+            loading: () => const _SpaceLoadingCard(),
+            error: (_, __) => const XiguangEmptyState(
+              title: '空间暂时沉入雾里',
+              description: '当前无法读取空间主题，稍后再回来看看。',
+              icon: Icons.cloud_outlined,
             ),
           ),
-        ),
+        ],
       ),
-    ]);
+    );
   }
 }
 
 class _SpaceHeader extends StatelessWidget {
-  const _SpaceHeader({required this.nightMode});
-
-  final bool nightMode;
+  const _SpaceHeader();
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Expanded(
-          child:
-              Text('SPACE', style: AppText.onNight(AppText.eyebrow, nightMode)),
+          child: Text(
+            'SPACE',
+            style: AppText.eyebrow.copyWith(color: theme.foregroundMuted),
+          ),
         ),
-        _BackButton(nightMode: nightMode),
+        IconButton(
+          tooltip: '返回',
+          onPressed: () => _goBack(context),
+          icon: Icon(Icons.arrow_back_rounded, color: theme.foreground),
+        ),
       ]),
       const SizedBox(height: AppSpacing.sm),
-      Text('空间', style: AppText.onNight(AppText.hero, nightMode)),
+      Text('空间', style: AppText.hero.copyWith(color: theme.foreground)),
       const SizedBox(height: AppSpacing.sm),
-      Text('当前空间的底色，只轻轻托住记录，不打断你。',
-          style: AppText.onNight(AppText.body, nightMode)),
+      Text(
+        '当前空间的底色，只轻轻托住记录，不打断你。',
+        style: AppText.body.copyWith(color: theme.foregroundMuted),
+      ),
     ]);
+  }
+
+  void _goBack(BuildContext context) {
+    context.canPop() ? context.pop() : context.go('/mine');
   }
 }
 
 class _SpaceThemeCard extends StatelessWidget {
-  const _SpaceThemeCard({
-    required this.space,
-    required this.nightMode,
-  });
+  const _SpaceThemeCard({required this.space});
 
   final SpaceTheme space;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final color = _parseHexColor(space.primaryColorHex);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.s18),
-      decoration:
-          nightMode ? nightDecoration() : softDecoration(AppColors.white),
+    return XiguangCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
           height: 132,
@@ -105,12 +96,12 @@ class _SpaceThemeCard extends StatelessWidget {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                color.withValues(alpha: nightMode ? .72 : .62),
-                AppColors.paper.withValues(alpha: nightMode ? .12 : .82),
+                color.withValues(alpha: theme.isNight ? .72 : .62),
+                theme.background.withValues(alpha: theme.isNight ? .12 : .82),
               ],
             ),
             border: Border.all(
-              color: color.withValues(alpha: nightMode ? .34 : .28),
+              color: color.withValues(alpha: theme.isNight ? .34 : .28),
             ),
           ),
           child: Stack(children: [
@@ -141,72 +132,31 @@ class _SpaceThemeCard extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.s18),
         Text(space.name,
-            style: AppText.onNight(AppText.titleMedium, nightMode)),
+            style: AppText.titleMedium.copyWith(color: theme.foreground)),
         const SizedBox(height: AppSpacing.sm),
         Text(space.description,
-            style: AppText.onNight(AppText.bodyMuted, nightMode)),
+            style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted)),
         const SizedBox(height: AppSpacing.md),
-        Text('来自当前后端空间主题。', style: AppText.onNight(AppText.caption, nightMode)),
+        Text(
+          '来自当前后端空间主题。',
+          style: AppText.caption.copyWith(color: theme.foregroundMuted),
+        ),
       ]),
     );
   }
 }
 
 class _SpaceLoadingCard extends StatelessWidget {
-  const _SpaceLoadingCard({required this.nightMode});
-
-  final bool nightMode;
+  const _SpaceLoadingCard();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 188,
-      alignment: Alignment.center,
-      decoration:
-          nightMode ? nightDecoration() : softDecoration(AppColors.white),
-      child: const CircularProgressIndicator(),
+    return const XiguangCard(
+      child: SizedBox(
+        height: 152,
+        child: Center(child: CircularProgressIndicator()),
+      ),
     );
-  }
-}
-
-class _SpaceErrorCard extends StatelessWidget {
-  const _SpaceErrorCard({required this.nightMode});
-
-  final bool nightMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.s18),
-      decoration:
-          nightMode ? nightDecoration() : softDecoration(AppColors.white),
-      child:
-          Text('空间主题暂时不可用。', style: AppText.onNight(AppText.body, nightMode)),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  const _BackButton({required this.nightMode});
-
-  final bool nightMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return PageBackButton(
-      onTap: () => _goBack(context),
-      nightMode: nightMode,
-    );
-  }
-
-  void _goBack(BuildContext context) {
-    if (context.canPop()) {
-      context.pop();
-      return;
-    }
-    context.go('/mine');
   }
 }
 

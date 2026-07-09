@@ -6,29 +6,9 @@ import 'colors.dart';
 class AppText {
   AppText._();
 
-  static const nightInk = Color(0xFFF4EFE4);
-  static const nightInkMuted = Color(0xFFC9D0C8);
-  static const nightAccent = Color(0xFFA6CDBB);
-
-  // C7: Cache night mode TextStyle copies to avoid per-call allocations
-  static final _nightCache = <TextStyle, TextStyle>{};
-
-  static TextStyle onNight(TextStyle style, bool nightMode) {
-    if (!nightMode) return style;
-    return _nightCache.putIfAbsent(style, () {
-      final color = style.color;
-      if (color == AppColors.ink) {
-        return style.copyWith(color: nightInk);
-      }
-      if (color == AppColors.inkMuted) {
-        return style.copyWith(color: nightInkMuted);
-      }
-      if (color == AppColors.teaGreen) {
-        return style.copyWith(color: nightAccent);
-      }
-      return style;
-    });
-  }
+  static const nightInk = AppColors.nightInk;
+  static const nightInkMuted = AppColors.nightInkMuted;
+  static const nightAccent = AppColors.nightAccent;
 
   // 标签行
   static const eyebrow = TextStyle(

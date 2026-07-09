@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'auth_repository.dart';
+import '../domain/auth_session.dart';
 
 class StoredAuthSession {
   const StoredAuthSession({

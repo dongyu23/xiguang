@@ -1,12 +1,14 @@
 import '../domain/ai_request.dart';
+import '../domain/ai_repository.dart';
 import '../domain/ai_response.dart';
 import 'ai_api.dart';
 
-class AIRepositoryImpl {
+class AIRepositoryImpl implements AIRepositoryPort {
   const AIRepositoryImpl(this._api);
 
   final AIApi _api;
 
+  @override
   Future<AIResponse> glowSummary(AIRequest request) async {
     final body = await _api.glowSummary({
       'mode': request.mode,
@@ -27,6 +29,16 @@ class AIRepositoryImpl {
           .toList(),
     );
   }
+
+  @override
+  Future<Map<String, dynamic>> buildIslands() => _api.buildIslands();
+
+  @override
+  Future<Map<String, dynamic>> polishFragment(
+    String contentText,
+    String emotion,
+  ) =>
+      _api.polishFragment(contentText, emotion);
 }
 
 String? _summaryForStatus(String? status) {

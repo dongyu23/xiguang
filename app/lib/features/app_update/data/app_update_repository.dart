@@ -8,6 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../../../design/tokens/motion.dart';
 import '../../shared/data/api_client.dart';
 import '../domain/app_version.dart';
 
@@ -72,8 +73,8 @@ class AppUpdateRepository {
       } catch (_) {}
     }
     _downloader ??= Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(minutes: 5),
+      connectTimeout: AppTiming.updateConnectTimeout,
+      receiveTimeout: AppTiming.updateReceiveTimeout,
     ));
     await _downloader!.download(
       version.downloadUrl,

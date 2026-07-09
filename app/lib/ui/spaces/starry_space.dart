@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../design/tokens/colors.dart';
+import '../../design/tokens/motion.dart';
 
 /// 星空沉浸式空间 — 粒子系统（随机位置 + 亮度 + 大小 + 正弦微动）
 ///
@@ -26,7 +27,7 @@ class StarrySpaceState extends State<StarrySpace>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 8),
+      duration: AppMotion.starryAmbient,
     )..repeat();
   }
 

@@ -1,18 +1,22 @@
+// PAGE_SIZE_EXEMPT: migration in progress; canvas painter and overview cards will be extracted.
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../app/providers.dart';
+import '../providers/island_providers.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
-import '../../data/island_repository.dart';
+import '../../domain/island_model.dart';
 import '../../../../ui/composites/settings_widgets.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_empty_state.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/primitives/scroll_to_top.dart';
 
 /// 小宇宙页 — 主题岛、星点、柔光整理入口
@@ -22,100 +26,67 @@ class UniversePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final islands = ref.watch(islandsProvider);
-    final nightMode = ref.watch(nightModeProvider);
-    return Stack(children: [
-      // C2: Background now provided by _AppShell in router.dart
-      SafeArea(
-        child: ScrollToTop(
-          builder: (context, controller) => SingleChildScrollView(
-            controller: controller,
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(22, 18, 22,
-                64 + 10 + MediaQuery.paddingOf(context).bottom + 30),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _Header(nightMode: nightMode),
-                      const SizedBox(height: AppSpacing.s20),
-                      islands.when(
-                        data: (items) => _UniverseOverview(
-                          islands: items,
-                          nightMode: nightMode,
-                        ),
-                        loading: () => _UniverseOverviewSkeleton(
-                          nightMode: nightMode,
-                        ),
-                        error: (_, __) => _UniverseOverviewSkeleton(
-                          nightMode: nightMode,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.s18),
-                      _SectionTitle(
-                        title: '我的小岛',
-                        nightMode: nightMode,
-                      ),
-                      const SizedBox(height: AppSpacing.s12),
-                      islands.when(
-                        data: (items) => _TopicIslandGrid(
-                          items: items,
-                          nightMode: nightMode,
-                        ),
-                        loading: () => _TopicIslandGridSkeleton(
-                          nightMode: nightMode,
-                        ),
-                        error: (_, __) => _TopicIslandGridSkeleton(
-                          nightMode: nightMode,
-                        ),
-                      ),
-                    ]),
-              ),
+    return ScrollToTop(
+      builder: (context, controller) => XiguangPage(
+        scrollController: controller,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _Header(),
+            const SizedBox(height: AppSpacing.s20),
+            islands.when(
+              data: (items) => _UniverseOverview(islands: items),
+              loading: () => const _UniverseOverviewSkeleton(),
+              error: (_, __) => const _UniverseOverviewSkeleton(),
             ),
-          ),
+            const SizedBox(height: AppSpacing.s18),
+            const _SectionTitle(title: '我的小岛'),
+            const SizedBox(height: AppSpacing.s12),
+            islands.when(
+              data: (items) => _TopicIslandGrid(items: items),
+              loading: () => const _TopicIslandGridSkeleton(),
+              error: (_, __) => const _TopicIslandGridSkeleton(),
+            ),
+          ],
         ),
       ),
-    ]);
+    );
   }
 }
 
 class _UniverseOverview extends StatelessWidget {
   const _UniverseOverview({
     required this.islands,
-    required this.nightMode,
   });
 
   final List<IslandModel> islands;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
     return Column(children: [
       _UniverseSkyBanner(islands: islands),
       const SizedBox(height: AppSpacing.s12),
-      _IslandSnapshotPanel(islands: islands, nightMode: nightMode),
+      _IslandSnapshotPanel(islands: islands),
       const SizedBox(height: AppSpacing.s12),
-      _IslandToolsRow(nightMode: nightMode),
+      const _IslandToolsRow(),
     ]);
   }
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.nightMode});
-
-  final bool nightMode;
+  const _Header();
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('PRIVATE SKY', style: AppText.onNight(AppText.eyebrow, nightMode)),
+      Text('PRIVATE SKY', style: AppText.eyebrow.copyWith(color: theme.accent)),
       const SizedBox(height: AppSpacing.sm),
-      Text('屿', style: AppText.onNight(AppText.hero, nightMode)),
+      Text('屿', style: AppText.hero.copyWith(color: theme.foreground)),
       const SizedBox(height: AppSpacing.sm),
       Text(
         '标签、情绪和旧光慢慢连成一张只属于你的星图。',
-        style: AppText.onNight(AppText.body, nightMode),
+        style: AppText.body.copyWith(color: theme.foreground),
       ),
     ]);
   }
@@ -159,8 +130,10 @@ class _UniverseSkyBannerState extends State<_UniverseSkyBanner>
 
     return Container(
       height: 218,
-      decoration: softDecoration(AppColors.ink)
-          .copyWith(gradient: AppColors.gradientNight),
+      decoration: BoxDecoration(
+        gradient: AppColors.gradientNight,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+      ),
       child: Stack(children: [
         // Data-driven star map
         Positioned.fill(
@@ -214,8 +187,7 @@ class _UniverseSkyBannerState extends State<_UniverseSkyBanner>
                       foregroundColor: AppColors.white,
                       side: BorderSide(
                           color: AppColors.white.withValues(alpha: .28)),
-                      backgroundColor:
-                          AppColors.white.withValues(alpha: .10),
+                      backgroundColor: AppColors.white.withValues(alpha: .10),
                       minimumSize: const Size(0, 36),
                       padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.s11),
@@ -232,18 +204,14 @@ class _UniverseSkyBannerState extends State<_UniverseSkyBanner>
 
 // _SkyActionButton 已弃用，调用方现已直接使用 OutlinedButton.icon。
 
-
 class _IslandSnapshotPanel extends StatelessWidget {
-  const _IslandSnapshotPanel({
-    required this.islands,
-    required this.nightMode,
-  });
+  const _IslandSnapshotPanel({required this.islands});
 
   final List<IslandModel> islands;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final totalFragments =
         islands.fold<int>(0, (sum, island) => sum + island.fragmentCount);
     final formedCount =
@@ -255,28 +223,22 @@ class _IslandSnapshotPanel extends StatelessWidget {
         : ([...islands]
               ..sort((a, b) => b.fragmentCount.compareTo(a.fragmentCount)))
             .first;
-    final foreground = nightMode ? AppText.nightInk : AppColors.ink;
-    final muted = nightMode ? AppText.nightInkMuted : AppColors.inkMuted;
-
-    return Container(
-      width: double.infinity,
+    return XiguangCard(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.s14, AppSpacing.s12, AppSpacing.s14, AppSpacing.s12),
-      decoration:
-          nightMode ? nightDecoration() : softDecoration(AppColors.white),
       child: Row(children: [
         Container(
           width: 38,
           height: 38,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: AppColors.teaGreen.withValues(alpha: nightMode ? .20 : .14),
+            color: theme.accent.withValues(alpha: theme.isNight ? .20 : .14),
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Icon(
             Icons.auto_stories_outlined,
             size: 19,
-            color: nightMode ? AppText.nightAccent : AppColors.teaGreen,
+            color: theme.accent,
           ),
         ),
         const SizedBox(width: AppSpacing.s12),
@@ -289,7 +251,7 @@ class _IslandSnapshotPanel extends StatelessWidget {
                   : '${islands.length} 座小岛 · $totalFragments 束光',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppText.titleSmall.copyWith(color: foreground),
+              style: AppText.titleSmall.copyWith(color: theme.foreground),
             ),
             const SizedBox(height: AppSpacing.s3),
             Text(
@@ -298,7 +260,7 @@ class _IslandSnapshotPanel extends StatelessWidget {
                   : '最亮：#${leadingIsland.name} · 已成岛 $formedCount · 生长中 $growingCount',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppText.caption.copyWith(color: muted),
+              style: AppText.caption.copyWith(color: theme.foregroundMuted),
             ),
           ]),
         ),
@@ -308,9 +270,7 @@ class _IslandSnapshotPanel extends StatelessWidget {
 }
 
 class _IslandToolsRow extends StatelessWidget {
-  const _IslandToolsRow({required this.nightMode});
-
-  final bool nightMode;
+  const _IslandToolsRow();
 
   @override
   Widget build(BuildContext context) {
@@ -324,38 +284,44 @@ class _IslandToolsRow extends StatelessWidget {
         children: [
           SizedBox(
             width: itemWidth,
-            child: SettingsNavRow(
-              icon: Icons.account_tree_outlined,
-              iconColor: AppColors.teaGreen,
-              label: '已织线',
-              subtitle: '关系账本',
-              nightMode: nightMode,
-              compact: true,
-              onTap: () => context.push('/relations/ledger'),
+            child: XiguangCard(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s12),
+              child: SettingsNavRow(
+                icon: Icons.account_tree_outlined,
+                iconColor: AppColors.teaGreen,
+                label: '已织线',
+                subtitle: '关系账本',
+                compact: true,
+                onTap: () => context.push('/relations/ledger'),
+              ),
             ),
           ),
           SizedBox(
             width: itemWidth,
-            child: SettingsNavRow(
-              icon: Icons.blur_circular_rounded,
-              iconColor: AppColors.mistBlue,
-              label: '星图',
-              subtitle: '关系可视化',
-              nightMode: nightMode,
-              compact: true,
-              onTap: () => context.push('/starmap'),
+            child: XiguangCard(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s12),
+              child: SettingsNavRow(
+                icon: Icons.blur_circular_rounded,
+                iconColor: AppColors.mistBlue,
+                label: '星图',
+                subtitle: '关系可视化',
+                compact: true,
+                onTap: () => context.push('/starmap'),
+              ),
             ),
           ),
           SizedBox(
             width: itemWidth,
-            child: SettingsNavRow(
-              icon: Icons.add_location_alt_outlined,
-              iconColor: AppColors.sunsetCoral,
-              label: '新小岛',
-              subtitle: '手动安放',
-              nightMode: nightMode,
-              compact: true,
-              onTap: () => context.push('/islands/create'),
+            child: XiguangCard(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s12),
+              child: SettingsNavRow(
+                icon: Icons.add_location_alt_outlined,
+                iconColor: AppColors.sunsetCoral,
+                label: '新小岛',
+                subtitle: '手动安放',
+                compact: true,
+                onTap: () => context.push('/islands/create'),
+              ),
             ),
           ),
         ],
@@ -605,53 +571,46 @@ class _TopicIsland extends StatelessWidget {
   const _TopicIsland({
     required this.island,
     required this.width,
-    required this.nightMode,
     this.onTap,
   });
   final IslandModel island;
   final double width;
-  final bool nightMode;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final color = AppColors.emotionColor(island.name);
     final count = island.fragmentCount.clamp(1, 8);
     final statusLabel = _islandStatusLabel(island);
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      onTap: onTap,
-      child: Container(
-          width: width,
+    return SizedBox(
+      width: width,
+      child: XiguangCard(
+          onTap: onTap,
           padding: const EdgeInsets.all(AppSpacing.s14),
-          decoration:
-              nightMode ? nightDecoration() : softDecoration(AppColors.white),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _IslandGlyph(
                 color: color,
                 size: 34 + count * 4,
-                nightMode: nightMode,
               ),
               const Spacer(),
               Icon(Icons.chevron_right_rounded,
                   size: 18,
-                  color: nightMode
-                      ? AppText.nightInkMuted.withValues(alpha: .72)
-                      : AppColors.inkMuted.withValues(alpha: .72)),
+                  color: theme.foregroundMuted.withValues(alpha: .72)),
             ]),
             const SizedBox(height: AppSpacing.s12),
             Text('#${island.name}',
-                style: AppText.onNight(AppText.titleSmall, nightMode),
+                style: AppText.titleSmall.copyWith(color: theme.foreground),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
             const SizedBox(height: AppSpacing.s7),
-            _TopicStatusPill(status: island.status, nightMode: nightMode),
+            _TopicStatusPill(status: island.status),
             const SizedBox(height: AppSpacing.sm),
             Text(
               statusLabel,
-              style: AppText.onNight(AppText.caption, nightMode),
+              style: AppText.caption.copyWith(color: theme.foregroundMuted),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -673,22 +632,21 @@ class _IslandGlyph extends StatelessWidget {
   const _IslandGlyph({
     required this.color,
     required this.size,
-    required this.nightMode,
   });
 
   final Color color;
   final double size;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return SizedBox(
       width: size,
       height: size,
       child: CustomPaint(
         painter: _IslandGlyphPainter(
           color: color,
-          ink: nightMode ? AppText.nightInk : AppColors.ink,
+          ink: theme.foreground,
         ),
       ),
     );
@@ -790,23 +748,17 @@ class _IslandGlyphPainter extends CustomPainter {
 }
 
 class _TopicIslandGrid extends StatelessWidget {
-  const _TopicIslandGrid({required this.items, required this.nightMode});
+  const _TopicIslandGrid({required this.items});
 
   final List<IslandModel> items;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration:
-            nightMode ? nightDecoration() : softDecoration(AppColors.white),
-        child: Text(
-          '留下第一束光后，真实的小岛会在这里出现。',
-          style: AppText.onNight(AppText.bodyMuted, nightMode),
-        ),
+      return const XiguangEmptyState(
+        title: '小岛还在等待',
+        description: '留下第一束光后，真实的小岛会在这里出现。',
+        icon: Icons.terrain_outlined,
       );
     }
     return LayoutBuilder(
@@ -819,7 +771,6 @@ class _TopicIslandGrid extends StatelessWidget {
               .map((island) => _TopicIsland(
                     island: island,
                     width: width,
-                    nightMode: nightMode,
                     onTap: () => context.push(_islandDetailPath(island)),
                   ))
               .toList(),
@@ -835,16 +786,16 @@ String _islandDetailPath(IslandModel island) {
 }
 
 class _TopicStatusPill extends StatelessWidget {
-  const _TopicStatusPill({required this.status, required this.nightMode});
+  const _TopicStatusPill({required this.status});
 
   final String status;
-  final bool nightMode;
 
   bool get _isFormed => status == 'formed';
   bool get _isGrowing => status == 'growing';
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final bool active = _isFormed || _isGrowing;
     final String label;
     final IconData icon;
@@ -862,40 +813,28 @@ class _TopicStatusPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm, vertical: AppSpacing.s5),
       decoration: BoxDecoration(
-        color: nightMode
-            ? (active
-                ? AppColors.teaGreen.withValues(alpha: .18)
-                : AppColors.white.withValues(alpha: .08))
-            : (active
-                ? AppColors.teaGreen.withValues(alpha: .14)
-                : AppColors.paper.withValues(alpha: .88)),
+        color: active
+            ? theme.accent.withValues(alpha: theme.isNight ? .18 : .14)
+            : theme.surfaceHigh.withValues(alpha: theme.isNight ? .42 : .88),
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: nightMode
-              ? (active
-                  ? AppColors.teaGreen.withValues(alpha: .34)
-                  : AppColors.white.withValues(alpha: .12))
-              : (active
-                  ? AppColors.teaGreen.withValues(alpha: .32)
-                  : AppColors.line),
+          color: active
+              ? theme.accent.withValues(alpha: theme.isNight ? .34 : .32)
+              : theme.border,
         ),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(
           icon,
           size: 13,
-          color: active
-              ? (nightMode ? AppText.nightAccent : AppColors.teaGreen)
-              : (nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
+          color: active ? theme.accent : theme.foregroundMuted,
         ),
         const SizedBox(width: AppSpacing.s5),
         Text(
           label,
           style: AppText.captionStrong.copyWith(
             height: 1,
-            color: active
-                ? (nightMode ? AppText.nightAccent : AppColors.teaGreen)
-                : (nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
+            color: active ? theme.accent : theme.foregroundMuted,
           ),
         ),
       ]),
@@ -904,36 +843,39 @@ class _TopicStatusPill extends StatelessWidget {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, required this.nightMode});
+  const _SectionTitle({required this.title});
 
   final String title;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
-    return Text(title, style: AppText.onNight(AppText.titleMedium, nightMode));
+    return Text(
+      title,
+      style: AppText.titleMedium.copyWith(
+        color: NightTheme.of(context).foreground,
+      ),
+    );
   }
 }
 
 /// 中性占位 — 数据未到达时显示，避免直接渲染"空岛"文案造成首屏文本突变。
 class _UniverseOverviewSkeleton extends StatelessWidget {
-  const _UniverseOverviewSkeleton({required this.nightMode});
-
-  final bool nightMode;
+  const _UniverseOverviewSkeleton();
 
   @override
   Widget build(BuildContext context) {
     return Column(children: [
       Container(
         height: 218,
-        decoration: softDecoration(AppColors.ink)
-            .copyWith(gradient: AppColors.gradientNight),
+        decoration: BoxDecoration(
+          gradient: AppColors.gradientNight,
+          borderRadius: BorderRadius.circular(AppRadius.xl),
+        ),
       ),
       const SizedBox(height: AppSpacing.s12),
-      Container(
-        height: 62,
-        decoration:
-            nightMode ? nightDecoration() : softDecoration(AppColors.white),
+      const XiguangCard(
+        padding: EdgeInsets.zero,
+        child: SizedBox(height: 62),
       ),
       const SizedBox(height: AppSpacing.s12),
       LayoutBuilder(builder: (context, constraints) {
@@ -949,11 +891,7 @@ class _UniverseOverviewSkeleton extends StatelessWidget {
             (_) => SizedBox(
               width: itemWidth,
               height: 76,
-              child: DecoratedBox(
-                decoration: nightMode
-                    ? nightDecoration()
-                    : softDecoration(AppColors.white),
-              ),
+              child: const XiguangCard(child: SizedBox.shrink()),
             ),
           ),
         );
@@ -963,9 +901,7 @@ class _UniverseOverviewSkeleton extends StatelessWidget {
 }
 
 class _TopicIslandGridSkeleton extends StatelessWidget {
-  const _TopicIslandGridSkeleton({required this.nightMode});
-
-  final bool nightMode;
+  const _TopicIslandGridSkeleton();
 
   @override
   Widget build(BuildContext context) {
@@ -977,10 +913,7 @@ class _TopicIslandGridSkeleton extends StatelessWidget {
         (_) => SizedBox(
           width: (MediaQuery.sizeOf(context).width - 22 * 2 - 10) / 2,
           height: 118,
-          child: DecoratedBox(
-            decoration:
-                nightMode ? nightDecoration() : softDecoration(AppColors.white),
-          ),
+          child: const XiguangCard(child: SizedBox.shrink()),
         ),
       ),
     );

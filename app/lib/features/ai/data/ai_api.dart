@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../../../design/tokens/motion.dart';
 import '../../shared/data/api_client.dart';
 
 class AIApi {
@@ -7,8 +8,8 @@ class AIApi {
 
   final ApiClient _api;
   static final _aiOptions = Options(
-    receiveTimeout: const Duration(seconds: 70),
-    sendTimeout: const Duration(seconds: 70),
+    receiveTimeout: AppTiming.aiRequestTimeout,
+    sendTimeout: AppTiming.aiRequestTimeout,
   );
 
   Future<Map<String, dynamic>> glowSummary(Map<String, dynamic> body) {

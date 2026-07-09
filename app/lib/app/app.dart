@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'providers.dart';
+import 'app_state.dart';
+import '../features/auth/presentation/providers/auth_providers.dart';
+import '../features/sync/presentation/providers/sync_providers.dart';
 import '../design/tokens/colors.dart';
 import '../design/tokens/spacing.dart';
+import '../design/tokens/motion.dart';
 import '../design/tokens/typography.dart';
 import '../design/themes/theme.dart';
 import '../design/themes/extensions/blur_theme.dart';
@@ -12,8 +17,8 @@ import '../design/themes/extensions/glow_theme.dart';
 import '../design/themes/extensions/night_theme.dart';
 import '../design/themes/extensions/space_theme.dart';
 import '../ui/primitives/sentry_error_boundary.dart';
-import '../features/auth/data/auth_repository.dart';
-import '../features/app_update/presentation/providers/app_update_providers.dart';
+import '../features/auth/domain/auth_session.dart';
+import '../features/app_update/application/app_update_providers.dart';
 import '../features/sync/domain/sync_config.dart';
 import '../features/sync/presentation/providers/sync_provider.dart';
 import 'router.dart';
@@ -28,6 +33,7 @@ class XiguangApp extends ConsumerStatefulWidget {
 
 class _XiguangAppState extends ConsumerState<XiguangApp> {
   GoRouter? _router;
+  Timer? _appUpdateTimer;
   late final _AppLifecycleObserver _lifecycleObserver;
   late final ValueNotifier<int> _authNotifier;
 
@@ -47,7 +53,7 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
       return Material(
         child: Container(
           color: nightMode ? AppColors.nightBackground : AppColors.paper,
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -112,6 +118,15 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
       // 此时 apiClient 还没 token，永远拿到离线状态；登录后没有任何地方再次触发，
       // 导致用户进入应用后云同步一直显示离线，必须手动点测试连接才会更新。
       if (previous?.id != next?.id && next != null) {
+        // 会话变更（登录或恢复）-> 立即标记已连接。
+        // 登录：刚成功调用了 /auth/login，后端必然可达。
+        // 恢复：本地读取 session，后续 checkConnection() 会验证真实连通性，
+        //       不通时再纠正为 false。这样主 Shell 首帧不会闪现"未连接" banner。
+        final currentSync = ref.read(syncStatusProvider);
+        if (!currentSync.connected) {
+          ref.read(syncStatusProvider.notifier).state =
+              currentSync.copyWith(connected: true, error: null);
+        }
         final engine = ref.read(syncEngineProvider);
         engine.checkConnection().then((connected) {
           if (!ref.exists(syncStatusProvider)) return;
@@ -135,7 +150,7 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
       startAutoSync(ref);
     });
     // 启动后台静默检查更新 — 30 秒后访问 /app/version，将红点状态写入 provider。
-    Future.delayed(const Duration(seconds: 30), () {
+    _appUpdateTimer = Timer(AppTiming.updateCheckDelay, () {
       if (!mounted) return;
       try {
         ref.read(appUpdateStateProvider.notifier).checkForUpdate(silent: true);
@@ -148,6 +163,7 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(_lifecycleObserver);
+    _appUpdateTimer?.cancel();
     _authNotifier.dispose();
     _router?.dispose();
     super.dispose();

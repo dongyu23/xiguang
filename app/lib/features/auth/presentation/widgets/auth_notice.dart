@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 
 class AuthNotice extends StatelessWidget {
-  const AuthNotice({super.key, required this.message, this.nightMode = false});
+  const AuthNotice({super.key, required this.message});
 
   final String message;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
-    final textColor = nightMode ? AppText.nightInk : AppColors.ink;
+    final theme = NightTheme.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(
@@ -34,7 +34,7 @@ class AuthNotice extends StatelessWidget {
           child: Text(
             message,
             style: AppText.caption.copyWith(
-              color: textColor,
+              color: theme.foreground,
               height: 1.35,
             ),
           ),

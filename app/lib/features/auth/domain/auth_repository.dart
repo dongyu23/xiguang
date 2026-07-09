@@ -1,18 +1,29 @@
-import 'token.dart';
-import 'user.dart';
+import 'auth_session.dart';
 
 abstract interface class AuthRepositoryContract {
-  Future<(User, TokenPair)> login({
+  AuthSession? get currentSession;
+
+  Future<AuthSession> ensureSession();
+  Future<AuthSession?> restoreSession();
+  Future<AuthSession> login({
     required String username,
     required String password,
   });
-
-  Future<(User, TokenPair)> register({
+  Future<AuthSession> register({
     required String username,
     required String password,
     required String nickname,
   });
-
-  Future<TokenPair> refresh(String refreshToken);
   Future<void> logout();
+  Future<AuthSession> me();
+  Future<AuthSession> updateMe({
+    required String nickname,
+    required String avatarKey,
+    required bool aiEnabled,
+    required String privacyMode,
+  });
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  });
 }

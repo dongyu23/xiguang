@@ -9,4 +9,6 @@ abstract interface class RelationRepositoryContract {
   });
 
   Future<void> delete(int id);
+
+  Future<List<Relation>> list({int? fragmentId});
 }

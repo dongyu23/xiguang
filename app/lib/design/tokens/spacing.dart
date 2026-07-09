@@ -17,6 +17,7 @@ class AppSpacing {
   static const double xxl = 48;
 
   // ── 细粒度补充（项目实际在用的中间值） ──
+  static const double s1 = 1;
   static const double s2 = 2;
   static const double s3 = 3;
   static const double s5 = 5;
@@ -36,6 +37,15 @@ class AppSpacing {
 
   /// 页面底部留白，避开底部浮岛导航 + 系统手势条。
   static const double pageBottomNav = 104;
+
+  /// 捕光编辑器底部操作区和系统手势区的合计避让。
+  static const double captureComposerClearance = 126;
+
+  /// 路由级浮层避开底部导航所需的空间。
+  static const double routeOverlayClearance = 100;
+
+  /// 时间河流进入批量选择后，为底部操作栏保留的空间。
+  static const double selectionToolbarClearance = 156;
 
   /// 页面水平内边距
   static double pageHorizontal(double width) => width > 520 ? 34 : 22;

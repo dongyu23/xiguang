@@ -3,14 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
-import '../../../../app/providers.dart';
-import '../../../../design/tokens/colors.dart';
-import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
+import '../../application/island_create_controller.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
-import '../../../../ui/primitives/night_background.dart';
-import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../ui/composites/xiguang_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_input.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
 class IslandCreatePage extends ConsumerStatefulWidget {
@@ -23,7 +23,6 @@ class IslandCreatePage extends ConsumerStatefulWidget {
 class _IslandCreatePageState extends ConsumerState<IslandCreatePage> {
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
-  bool _creating = false;
   String? _notice;
 
   @override
@@ -56,15 +55,14 @@ class _IslandCreatePageState extends ConsumerState<IslandCreatePage> {
       return;
     }
     setState(() {
-      _creating = true;
       _notice = null;
     });
     try {
-      final island = await ref.read(islandRepositoryProvider).createIsland(
-            name,
-            _descController.text.trim(),
-          );
-      ref.invalidate(islandsProvider);
+      final island =
+          await ref.read(islandCreateControllerProvider.notifier).create(
+                name: name,
+                description: _descController.text.trim(),
+              );
       if (mounted) {
         final routeId =
             island.islandId > 0 ? '${island.islandId}' : island.name;
@@ -78,162 +76,95 @@ class _IslandCreatePageState extends ConsumerState<IslandCreatePage> {
           const SnackBar(content: Text('创建小岛失败，请稍后再试。')),
         );
       }
-    } finally {
-      if (mounted) setState(() => _creating = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final nightMode = ref.watch(nightModeProvider);
-    final canCreate = _nameController.text.trim().isNotEmpty && !_creating;
-    return Stack(children: [
-      const Positioned.fill(child: NightBackgroundPlaceholder()),
-      const Positioned.fill(child: AtmosphereBackground()),
-      Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: EdgeInsets.fromLTRB(22, 12, 22,
-                64 + 10 + MediaQuery.paddingOf(context).bottom + 30),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _IslandPageHeader(title: '新建小岛', nightMode: nightMode),
-                    const SizedBox(height: AppSpacing.s18),
-                    Container(
-                      padding: const EdgeInsets.all(AppSpacing.s18),
-                      decoration: nightMode
-                          ? nightDecoration()
-                          : softDecoration(AppColors.white),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('ISLAND',
-                              style:
-                                  AppText.onNight(AppText.eyebrow, nightMode)),
-                          const SizedBox(height: AppSpacing.sm),
-                          Text(
-                            '给这座岛取一个名字，它会慢慢长大。',
-                            style: AppText.onNight(AppText.body, nightMode),
-                          ),
-                          const SizedBox(height: AppSpacing.s20),
-                          TextField(
-                            controller: _nameController,
-                            autofocus: false,
-                            style: AppText.onNight(AppText.body, nightMode),
-                            decoration: _fieldDecoration(
-                              label: '岛名',
-                              hint: '比如：午夜咖啡馆',
-                              nightMode: nightMode,
-                            ),
-                            textInputAction: TextInputAction.next,
-                          ),
-                          const SizedBox(height: AppSpacing.s14),
-                          TextField(
-                            controller: _descController,
-                            maxLines: 4,
-                            style: AppText.onNight(AppText.body, nightMode),
-                            decoration: _fieldDecoration(
-                              label: '描述（可选）',
-                              hint: '这座岛是什么样的...',
-                              nightMode: nightMode,
-                            ),
-                          ),
-                          if (_notice != null) ...[
-                            const SizedBox(height: AppSpacing.s12),
-                            Text(
-                              _notice!,
-                              style: AppText.caption
-                                  .copyWith(color: AppColors.sunsetCoral),
-                            ),
-                          ],
-                          const SizedBox(height: AppSpacing.s22),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: canCreate ? _create : null,
-                              icon: _creating
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(Icons.add_rounded),
-                              label: Text(_creating ? '创建中...' : '创建小岛'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+    final createState = ref.watch(islandCreateControllerProvider);
+    final canCreate =
+        _nameController.text.trim().isNotEmpty && !createState.isCreating;
+    return XiguangPage(
+      backgroundLayer: const AtmosphereBackground(),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.s22,
+        AppSpacing.s12,
+        AppSpacing.s22,
+        AppSpacing.pageBottomNav + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _IslandPageHeader(title: '新建小岛'),
+          const SizedBox(height: AppSpacing.s18),
+          XiguangCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('ISLAND', style: AppText.eyebrow),
+                const SizedBox(height: AppSpacing.sm),
+                const Text('给这座岛取一个名字，它会慢慢长大。', style: AppText.body),
+                const SizedBox(height: AppSpacing.s20),
+                XiguangInput(
+                  controller: _nameController,
+                  label: '岛名',
+                  hint: '比如：午夜咖啡馆',
+                  textInputAction: TextInputAction.next,
                 ),
-              ),
+                const SizedBox(height: AppSpacing.s14),
+                XiguangInput(
+                  controller: _descController,
+                  label: '描述（可选）',
+                  hint: '这座岛是什么样的...',
+                  maxLines: 4,
+                ),
+                if (_notice != null) ...[
+                  const SizedBox(height: AppSpacing.s12),
+                  Builder(builder: (context) {
+                    return Text(
+                      _notice!,
+                      style: AppText.caption.copyWith(
+                        color: NightTheme.of(context).danger,
+                      ),
+                    );
+                  }),
+                ],
+                const SizedBox(height: AppSpacing.s22),
+                XiguangButton(
+                  label: createState.isCreating ? '创建中...' : '创建小岛',
+                  leading: const Icon(Icons.add_rounded),
+                  loading: createState.isCreating,
+                  onPressed: canCreate ? _create : null,
+                ),
+              ],
             ),
           ),
-        ),
-      ),
-    ]);
-  }
-
-  InputDecoration _fieldDecoration({
-    required String label,
-    required String hint,
-    required bool nightMode,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      labelStyle: AppText.onNight(AppText.caption, nightMode),
-      hintStyle: AppText.onNight(AppText.placeholder, nightMode),
-      filled: true,
-      fillColor: nightMode
-          ? AppColors.white.withValues(alpha: .08)
-          : AppColors.paper.withValues(alpha: .56),
-      contentPadding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s14, vertical: AppSpacing.s14),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: BorderSide(
-          color: nightMode
-              ? AppColors.white.withValues(alpha: .16)
-              : AppColors.line.withValues(alpha: .78),
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.teaGreen),
+        ],
       ),
     );
   }
 }
 
 class _IslandPageHeader extends StatelessWidget {
-  const _IslandPageHeader({required this.title, required this.nightMode});
+  const _IslandPageHeader({required this.title});
 
   final String title;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(
       children: [
-        PageBackButton(
-          onTap: () => context.pop(),
-          nightMode: nightMode,
+        IconButton(
+          tooltip: '返回',
+          onPressed: () => context.pop(),
+          icon: Icon(Icons.arrow_back_rounded, color: theme.foreground),
         ),
         const SizedBox(width: AppSpacing.s12),
         Expanded(
           child: Text(
             title,
-            style: AppText.onNight(AppText.titleLarge, nightMode),
+            style: AppText.titleLarge.copyWith(color: theme.foreground),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),

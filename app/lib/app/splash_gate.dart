@@ -35,9 +35,11 @@ class _SplashGateState extends State<SplashGate>
   }
 
   Future<void> _startSplash() async {
-    await precacheImage(SplashGate.openingImage, context);
-    if (!mounted) return;
-    await _controller.forward();
+    // 并行：图片预解码与 1.5s 入场动画同时进行，省掉串行 await precacheImage 的时间
+    await Future.wait([
+      precacheImage(SplashGate.openingImage, context),
+      _controller.forward(),
+    ]);
     if (!mounted) return;
     setState(() => _showSplash = false);
     await Future<void>.delayed(AppMotion.normal);

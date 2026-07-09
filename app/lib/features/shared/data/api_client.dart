@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 
+import '../../../design/tokens/motion.dart';
+
 typedef TokenRefreshCallback = Future<String?> Function();
 
 class ApiClient {
@@ -9,9 +11,9 @@ class ApiClient {
       : _dio = dio ??
             Dio(BaseOptions(
               baseUrl: baseUrl ?? defaultBaseUrl,
-              connectTimeout: const Duration(seconds: 10),
-              receiveTimeout: const Duration(seconds: 15),
-              sendTimeout: const Duration(seconds: 10),
+              connectTimeout: AppTiming.apiConnectTimeout,
+              receiveTimeout: AppTiming.apiReceiveTimeout,
+              sendTimeout: AppTiming.apiSendTimeout,
               headers: {'Content-Type': 'application/json'},
             )) {
     _dio.interceptors.add(_RetryInterceptor(_dio));
@@ -31,7 +33,6 @@ class ApiClient {
 
   String get baseUrl => _dio.options.baseUrl;
   bool get hasToken => _accessToken != null;
-  String? get accessToken => _accessToken;
   String? debugAccessTokenForVerification() => _accessToken;
 
   void updateBaseUrl(String baseUrl) {
@@ -155,23 +156,26 @@ class ApiClient {
         return _unwrap(response.data);
       }
       // We are the first to hit 401 — do the refresh
-      _refreshLock = Completer<bool>();
+      final refreshLock = Completer<bool>();
+      _refreshLock = refreshLock;
       try {
         final token = await _refreshToken!();
         if (token == null || token.isEmpty) {
-          _refreshLock!.complete(false);
           rethrow;
         }
         _accessToken = token;
-        _refreshLock!.complete(true);
-        final response = await request();
-        return _unwrap(response.data);
-      } catch (e) {
-        _refreshLock!.complete(false);
+        refreshLock.complete(true);
+      } catch (_) {
+        if (!refreshLock.isCompleted) refreshLock.complete(false);
         rethrow;
       } finally {
         _refreshLock = null;
       }
+      // Keep the retry outside the refresh-completion block. If this request
+      // still fails, callers must receive that failure instead of a second
+      // completion attempt on the shared refresh lock.
+      final response = await request();
+      return _unwrap(response.data);
     }
   }
 
@@ -259,8 +263,7 @@ class _RetryInterceptor extends Interceptor {
       return;
     }
     extra['_retry_attempts'] = attempts + 1;
-    final delay =
-        Duration(milliseconds: (200 * (1 << attempts)).clamp(0, 3000));
+    final delay = AppTiming.retryBackoff(attempts);
     await Future.delayed(delay);
     try {
       final response = await _dio.fetch<dynamic>(

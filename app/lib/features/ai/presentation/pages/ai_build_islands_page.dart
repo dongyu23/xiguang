@@ -1,21 +1,25 @@
 import 'dart:async';
 
+// PAGE_SIZE_EXEMPT: migration in progress; AI request flow and island preview cards will be extracted.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
-import '../../../../app/providers.dart';
+import '../../application/ai_build_islands_controller.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
-import '../../../../ui/primitives/night_background.dart';
 import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../ui/composites/xiguang_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_chip.dart';
+import '../../../../ui/composites/xiguang_empty_state.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
-import '../../data/ai_api.dart';
 
 class AiBuildIslandsPage extends ConsumerStatefulWidget {
   const AiBuildIslandsPage({super.key});
@@ -40,8 +44,6 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
   }
 
   Future<void> _startAnalysis() async {
-    final api = AIApi(ref.read(apiClientProvider));
-
     final phases = ['正在读你的光片…', '发现了一些隐秘的联系…', '正在给它们取名字…'];
     for (var i = 0; i < phases.length; i++) {
       if (!mounted) return;
@@ -52,7 +54,8 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
     }
 
     try {
-      final body = await api.buildIslands();
+      final body =
+          await ref.read(aiBuildIslandsControllerProvider.notifier).analyze();
       if (!mounted) return;
       if (body['status'] == 'rate_limited') {
         setState(() {
@@ -96,19 +99,10 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
 
   Future<bool> _createIsland(Map<String, dynamic> island) async {
     final name = island['name'] as String;
-    final repo = ref.read(islandRepositoryProvider);
-    final fragmentIds = (island['fragment_ids'] as List<dynamic>)
-        .map((e) => (e as num).toInt())
-        .toList();
-
     try {
-      final created = await repo.createIsland(
-        name,
-        island['description'] as String? ?? '',
-      );
-      if (created.islandId > 0 && fragmentIds.isNotEmpty) {
-        await repo.addFragments(created.islandId, fragmentIds);
-      }
+      await ref
+          .read(aiBuildIslandsControllerProvider.notifier)
+          .createIsland(island);
       return true;
     } catch (_) {
       if (mounted) {
@@ -143,7 +137,6 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
         setState(() => _createdIslandKeys.add(key));
       }
     }
-    ref.invalidate(islandsProvider);
     if (!mounted) return;
     setState(() => _confirming = false);
     if (createdCount > 0) {
@@ -156,46 +149,36 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final nightMode = ref.watch(nightModeProvider);
-    return Stack(children: [
-      const Positioned.fill(child: NightBackgroundPlaceholder()),
-      const Positioned.fill(child: AtmosphereBackground()),
-      Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.s22,
-                    AppSpacing.s12, AppSpacing.s22, AppSpacing.pageBottomNav),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _AiBuildHeader(
-                      nightMode: nightMode,
-                      onBack: () => Navigator.of(context).maybePop(),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Expanded(
-                      child: _result != null
-                          ? _buildResults(nightMode)
-                          : _error != null
-                              ? _buildError(nightMode)
-                              : _buildAnalyzing(nightMode),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
+    return XiguangPage(
+      scrollable: false,
+      backgroundLayer: const AtmosphereBackground(),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s22,
+        AppSpacing.s12,
+        AppSpacing.s22,
+        AppSpacing.pageBottomNav,
       ),
-    ]);
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _AiBuildHeader(
+            onBack: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Expanded(
+            child: _result != null
+                ? _buildResults()
+                : _error != null
+                    ? _buildError()
+                    : _buildAnalyzing(),
+          ),
+        ],
+      ),
+    );
   }
 
-  Widget _buildAnalyzing(bool nightMode) {
+  Widget _buildAnalyzing() {
+    final theme = NightTheme.of(context);
     final phases = ['正在读你的光片…', '发现了一些隐秘的联系…', '正在给它们取名字…'];
     return Center(
       child: ConstrainedBox(
@@ -214,19 +197,19 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
             child: Icon(
               Icons.auto_awesome_outlined,
               size: 44,
-              color: nightMode ? AppText.nightInk : AppColors.ink,
+              color: theme.foreground,
             ),
           ),
           const SizedBox(height: AppSpacing.xl),
           Text(
             phases[_phase.clamp(0, phases.length - 1)],
-            style: AppText.onNight(AppText.titleSmall, nightMode),
+            style: AppText.titleSmall.copyWith(color: theme.foreground),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: AppSpacing.md),
           LinearProgressIndicator(
             value: (_phase + 1) / phases.length,
-            color: nightMode ? AppText.nightAccent : AppColors.teaGreen,
+            color: theme.accent,
             backgroundColor: AppColors.teaGreen.withValues(alpha: .12),
           ),
         ]),
@@ -234,20 +217,16 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
     );
   }
 
-  Widget _buildError(bool nightMode) {
+  Widget _buildError() {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.auto_awesome_outlined,
-              size: 64,
-              color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
-          const SizedBox(height: AppSpacing.lg),
-          Text(_error!,
-              style: AppText.onNight(AppText.body, nightMode),
-              textAlign: TextAlign.center),
-          const SizedBox(height: AppSpacing.lg),
-          FilledButton.icon(
+      child: XiguangEmptyState(
+        title: '星图管理员暂时没有回应',
+        description: _error!,
+        icon: Icons.auto_awesome_outlined,
+        action: Column(mainAxisSize: MainAxisSize.min, children: [
+          XiguangButton(
+            label: _outcomeStatus == 'not_enough' ? '重新看看' : '再试一次',
+            expand: false,
             onPressed: () {
               setState(() {
                 _error = null;
@@ -259,8 +238,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
               });
               _startAnalysis();
             },
-            icon: const Icon(Icons.refresh_rounded),
-            label: Text(_outcomeStatus == 'not_enough' ? '重新看看' : '再试一次'),
+            leading: const Icon(Icons.refresh_rounded),
           ),
           if (_outcomeStatus == 'not_enough') ...[
             const SizedBox(height: AppSpacing.s10),
@@ -275,15 +253,16 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
     );
   }
 
-  Widget _buildResults(bool nightMode) {
+  Widget _buildResults() {
+    final theme = NightTheme.of(context);
     final islands = (_result!['islands'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
     if (islands.isEmpty) {
       return Center(
-        child: Text(
-          _result!['message'] as String? ?? '这些光各自散落着，暂时没有明显的星座。',
-          style: AppText.onNight(AppText.body, nightMode),
-          textAlign: TextAlign.center,
+        child: XiguangEmptyState(
+          title: '暂时没有明显的星座',
+          description:
+              _result!['message'] as String? ?? '这些光各自散落着，也可以先让它们安静待着。',
         ),
       );
     }
@@ -295,25 +274,25 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
         children: [
           Text(
             _result!['message'] as String? ?? '发现了一些联系。',
-            style: AppText.onNight(AppText.titleSmall, nightMode),
+            style: AppText.titleSmall.copyWith(color: theme.foreground),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
             '先挑一挑想留下的岛，最后再正式加入你的宇宙。',
-            style: AppText.onNight(AppText.body, nightMode),
+            style: AppText.body.copyWith(color: theme.foregroundMuted),
           ),
           const SizedBox(height: AppSpacing.s20),
           ...islands.asMap().entries.map(
-                (entry) => _buildIslandCard(entry.value, entry.key, nightMode),
+                (entry) => _buildIslandCard(entry.value, entry.key),
               ),
-          _buildConfirmPanel(islands, nightMode),
+          _buildConfirmPanel(islands),
         ],
       ),
     );
   }
 
-  Widget _buildIslandCard(
-      Map<String, dynamic> island, int index, bool nightMode) {
+  Widget _buildIslandCard(Map<String, dynamic> island, int index) {
+    final theme = NightTheme.of(context);
     final name = island['name'] as String;
     final key = _islandKey(index, island);
     final selected = _selectedIslandKeys.contains(key);
@@ -323,16 +302,9 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
         .toList();
     final confidence = island['confidence'] as String? ?? 'medium';
 
-    return Container(
+    return XiguangCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.s14),
-      padding: const EdgeInsets.all(AppSpacing.s18),
-      decoration: softDecoration(
-          created
-              ? AppColors.teaGreen.withValues(alpha: .08)
-              : selected
-                  ? AppColors.white
-                  : AppColors.paper,
-          nightMode: nightMode),
+      selected: selected || created,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -359,14 +331,15 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
                 children: [
                   Text(
                     name,
-                    style: AppText.onNight(AppText.titleSmall, nightMode),
+                    style: AppText.titleSmall.copyWith(color: theme.foreground),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
                     '${fragmentIds.length} 束光 · ${_confidenceLabel(confidence)}',
-                    style: AppText.onNight(AppText.caption, nightMode),
+                    style:
+                        AppText.caption.copyWith(color: theme.foregroundMuted),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -374,20 +347,19 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
               ),
             ),
             const SizedBox(width: AppSpacing.s12),
-            _IslandStatusPill(
+            XiguangChip(
               label: created
                   ? '已加入'
                   : selected
                       ? '待加入'
                       : '已跳过',
               selected: selected || created,
-              nightMode: nightMode,
             ),
           ]),
           const SizedBox(height: AppSpacing.s12),
           Text(
             island['description'] as String? ?? '',
-            style: AppText.onNight(AppText.body, nightMode),
+            style: AppText.body.copyWith(color: theme.foreground),
           ),
           if (!created) ...[
             const SizedBox(height: AppSpacing.sm),
@@ -417,8 +389,8 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
     );
   }
 
-  Widget _buildConfirmPanel(
-      List<Map<String, dynamic>> islands, bool nightMode) {
+  Widget _buildConfirmPanel(List<Map<String, dynamic>> islands) {
+    final theme = NightTheme.of(context);
     final pendingCount = islands.asMap().entries.where((entry) {
       final key = _islandKey(entry.key, entry.value);
       return _selectedIslandKeys.contains(key) &&
@@ -431,39 +403,26 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
             ? '已加入宇宙'
             : '选择岛屿后再确认';
 
-    return Container(
+    return XiguangCard(
       margin: const EdgeInsets.only(top: AppSpacing.s2),
-      padding: const EdgeInsets.all(AppSpacing.s18),
-      decoration: softDecoration(AppColors.white, nightMode: nightMode),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('最后确认', style: AppText.onNight(AppText.titleSmall, nightMode)),
+        Text('最后确认',
+            style: AppText.titleSmall.copyWith(color: theme.foreground)),
         const SizedBox(height: AppSpacing.s6),
         Text(
           pendingCount > 0
               ? '确认后，星图管理员才会把选中的岛屿和光片关系写入你的宇宙。'
               : '可以恢复上面的岛屿，再一起加入。',
-          style: AppText.onNight(AppText.bodyMuted, nightMode),
+          style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted),
         ),
         const SizedBox(height: AppSpacing.s14),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: pendingCount == 0 || _confirming
-                ? null
-                : () => _confirmSelectedIslands(islands),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.teaGreen),
-            icon: _confirming
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.check_rounded),
-            label: Text(_confirming ? '正在加入...' : label),
-          ),
+        XiguangButton(
+          label: _confirming ? '正在加入...' : label,
+          loading: _confirming,
+          leading: const Icon(Icons.check_rounded),
+          onPressed: pendingCount == 0 || _confirming
+              ? null
+              : () => _confirmSelectedIslands(islands),
         ),
       ]),
     );
@@ -482,64 +441,28 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
   }
 }
 
-class _IslandStatusPill extends StatelessWidget {
-  const _IslandStatusPill({
-    required this.label,
-    required this.selected,
-    required this.nightMode,
-  });
-
-  final String label;
-  final bool selected;
-  final bool nightMode;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected
-        ? (nightMode ? AppText.nightAccent : AppColors.teaGreen)
-        : (nightMode ? AppText.nightInkMuted : AppColors.inkMuted);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: selected ? .12 : .08),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: color.withValues(alpha: .26)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s10, vertical: AppSpacing.s6),
-        child: Text(
-          label,
-          style: AppText.chip.copyWith(color: color),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-    );
-  }
-}
-
 class _AiBuildHeader extends StatelessWidget {
-  const _AiBuildHeader({required this.onBack, required this.nightMode});
+  const _AiBuildHeader({required this.onBack});
 
   final VoidCallback onBack;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(
       children: [
-        PageBackButton(onTap: onBack, nightMode: nightMode),
+        PageBackButton(onTap: onBack),
         const SizedBox(width: AppSpacing.s12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('星图管理员',
-                  style: AppText.onNight(AppText.titleMedium, nightMode)),
+                  style: AppText.titleMedium.copyWith(color: theme.foreground)),
               const SizedBox(height: AppSpacing.xs),
               Text(
                 '读光片、找联系、给出候选小岛。',
-                style: AppText.onNight(AppText.caption, nightMode),
+                style: AppText.caption.copyWith(color: theme.foregroundMuted),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

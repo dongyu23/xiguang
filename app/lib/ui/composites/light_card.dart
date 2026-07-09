@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../../app/providers.dart';
+import '../../design/themes/extensions/night_theme.dart';
 import '../../design/tokens/colors.dart';
 import '../../design/tokens/motion.dart';
 import '../../design/tokens/radius.dart';
-import '../../design/tokens/shadows.dart';
 import '../../design/tokens/typography.dart';
 import '../../design/tokens/spacing.dart';
 import 'media_image.dart';
 import 'tag_chip.dart';
+import 'xiguang_card.dart';
 
 /// 光片数据模型（纯展示用，正式开发时用 freezed 的 Fragment）
 class LightFragment {
@@ -37,7 +35,7 @@ class LightFragment {
 }
 
 /// 光片卡片 — 时间河流中使用
-class LightFragmentCard extends ConsumerWidget {
+class LightFragmentCard extends StatelessWidget {
   const LightFragmentCard(
       {super.key,
       required this.fragment,
@@ -67,152 +65,146 @@ class LightFragmentCard extends ConsumerWidget {
   final Key? tapKey;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final hasImageAttachment = fragment.mediaUrls.any(_isImageMedia);
     return Semantics(
       key: tapKey,
       button: onTap != null,
       label: fragment.title,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: XiguangCard(
+        margin: EdgeInsets.only(
+          bottom: compact
+              ? AppSpacing.s9
+              : (dense ? AppSpacing.s9 : AppSpacing.s12),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          compact ? AppSpacing.s10 : (dense ? AppSpacing.s12 : AppSpacing.md),
+          compact ? AppSpacing.s10 : (dense ? AppSpacing.s12 : AppSpacing.md),
+          compact ? AppSpacing.s10 : (dense ? AppSpacing.s12 : AppSpacing.md),
+          compact ? AppSpacing.s10 : (dense ? AppSpacing.s11 : AppSpacing.md),
+        ),
+        selected: selected,
         onTap: onTap,
         onLongPress: onLongPress,
-        child: Container(
-          margin: EdgeInsets.only(bottom: compact ? 9 : (dense ? 9 : 12)),
-          padding: EdgeInsets.fromLTRB(
-            compact ? 10 : (dense ? 12 : 16),
-            compact ? 10 : (dense ? 12 : 16),
-            compact ? 10 : (dense ? 12 : 16),
-            compact ? 10 : (dense ? 11 : 16),
-          ),
-          decoration: _cardDecoration(
-            nightMode: nightMode,
-            selected: selected,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (selectionMode || showSelectionControl) ...[
-                _SelectionMark(
-                  selected: selected,
-                  nightMode: nightMode,
-                  onTap: onSelectionTap,
-                ),
-                SizedBox(width: compact ? AppSpacing.sm : AppSpacing.s10),
-              ],
-              // 左侧色块
-              _MediaThumb(
-                urls: fragment.mediaUrls,
-                color: fragment.color,
-                size: compact ? 42 : (dense ? 42 : 58),
-                circular: dense,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (selectionMode || showSelectionControl) ...[
+              _SelectionMark(
+                selected: selected,
+                onTap: onSelectionTap,
               ),
-              SizedBox(width: compact ? 10 : (dense ? 10 : 14)),
-              // 右侧内容
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (!showTitle)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              fragment.text,
-                              maxLines: dense ? 3 : 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.onNight(
-                                dense
-                                    ? AppText.bodyStrong.copyWith(
-                                        height: 1.42,
-                                      )
-                                    : AppText.body,
-                                nightMode,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.s10),
-                          if (showAttachmentBadge && hasImageAttachment) ...[
-                            _AttachmentBadge(nightMode: nightMode),
-                            const SizedBox(width: AppSpacing.s6),
-                          ],
-                          Text(
-                            fragment.time,
-                            maxLines: 1,
-                            style: AppText.onNight(AppText.caption, nightMode),
-                          ),
-                        ],
-                      )
-                    else ...[
-                      Row(
-                        children: [
-                          Expanded(
-                              child: Text(fragment.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppText.onNight(
-                                    AppText.titleSmall,
-                                    nightMode,
-                                  ))),
-                          const SizedBox(width: AppSpacing.s10),
-                          if (showAttachmentBadge && hasImageAttachment) ...[
-                            _AttachmentBadge(nightMode: nightMode),
-                            const SizedBox(width: AppSpacing.s6),
-                          ],
-                          Text(fragment.time,
-                              maxLines: 1,
-                              style:
-                                  AppText.onNight(AppText.caption, nightMode)),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(fragment.text,
-                          style: AppText.onNight(AppText.body, nightMode),
-                          maxLines: compact ? 1 : 3,
-                          overflow: TextOverflow.ellipsis),
-                    ],
-                    if (!compact) ...[
-                      SizedBox(height: dense ? AppSpacing.sm : AppSpacing.s10),
-                      Wrap(
-                        spacing: dense ? 5 : 6,
-                        runSpacing: dense ? 5 : 6,
-                        children: [
-                          MiniTag(
-                              label: fragment.emotion,
-                              filled: true,
-                              nightMode: nightMode,
-                              compact: dense),
-                          if (_relationLabel(fragment.relation) != null)
-                            _RelationBadge(
-                              label: _relationLabel(fragment.relation)!,
-                              nightMode: nightMode,
-                              compact: dense,
-                            ),
-                          ...fragment.tags.take(3).map((tag) => MiniTag(
-                                label: tag,
-                                nightMode: nightMode,
-                                compact: dense,
-                              )),
-                        ],
-                      ),
-                    ],
-                    if (compact) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(children: [
-                        const Icon(Icons.alt_route_rounded,
-                            size: 15, color: AppColors.teaGreen),
-                        const SizedBox(width: AppSpacing.s5),
-                        Text('点开织线',
-                            style: AppText.onNight(AppText.caption, nightMode)),
-                      ]),
-                    ],
-                  ],
-                ),
-              ),
+              SizedBox(width: compact ? AppSpacing.sm : AppSpacing.s10),
             ],
-          ),
+            // 左侧色块
+            _MediaThumb(
+              urls: fragment.mediaUrls,
+              color: fragment.color,
+              size: compact ? 42 : (dense ? 42 : 58),
+              circular: dense,
+            ),
+            SizedBox(
+              width: compact
+                  ? AppSpacing.s10
+                  : (dense ? AppSpacing.s10 : AppSpacing.s14),
+            ),
+            // 右侧内容
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!showTitle)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            fragment.text,
+                            maxLines: dense ? 3 : 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: (dense
+                                    ? AppText.bodyStrong.copyWith(height: 1.42)
+                                    : AppText.body)
+                                .copyWith(color: theme.foreground),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.s10),
+                        if (showAttachmentBadge && hasImageAttachment) ...[
+                          const _AttachmentBadge(),
+                          const SizedBox(width: AppSpacing.s6),
+                        ],
+                        Text(
+                          fragment.time,
+                          maxLines: 1,
+                          style: AppText.caption
+                              .copyWith(color: theme.foregroundMuted),
+                        ),
+                      ],
+                    )
+                  else ...[
+                    Row(
+                      children: [
+                        Expanded(
+                            child: Text(fragment.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.titleSmall
+                                    .copyWith(color: theme.foreground))),
+                        const SizedBox(width: AppSpacing.s10),
+                        if (showAttachmentBadge && hasImageAttachment) ...[
+                          const _AttachmentBadge(),
+                          const SizedBox(width: AppSpacing.s6),
+                        ],
+                        Text(fragment.time,
+                            maxLines: 1,
+                            style: AppText.caption
+                                .copyWith(color: theme.foregroundMuted)),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(fragment.text,
+                        style: AppText.body.copyWith(color: theme.foreground),
+                        maxLines: compact ? 1 : 3,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                  if (!compact) ...[
+                    SizedBox(height: dense ? AppSpacing.sm : AppSpacing.s10),
+                    Wrap(
+                      spacing: dense ? AppSpacing.s5 : AppSpacing.s6,
+                      runSpacing: dense ? AppSpacing.s5 : AppSpacing.s6,
+                      children: [
+                        MiniTag(
+                            label: fragment.emotion,
+                            filled: true,
+                            compact: dense),
+                        if (_relationLabel(fragment.relation) != null)
+                          _RelationBadge(
+                            label: _relationLabel(fragment.relation)!,
+                            compact: dense,
+                          ),
+                        ...fragment.tags.take(3).map((tag) => MiniTag(
+                              label: tag,
+                              compact: dense,
+                            )),
+                      ],
+                    ),
+                  ],
+                  if (compact) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Row(children: [
+                      Icon(Icons.alt_route_rounded,
+                          size: 15, color: theme.accent),
+                      const SizedBox(width: AppSpacing.s5),
+                      Text('点开织线',
+                          style: AppText.caption
+                              .copyWith(color: theme.foregroundMuted)),
+                    ]),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -240,17 +232,15 @@ String? _relationLabel(String? value) {
 class _RelationBadge extends StatelessWidget {
   const _RelationBadge({
     required this.label,
-    required this.nightMode,
     required this.compact,
   });
 
   final String label;
-  final bool nightMode;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final foreground = nightMode ? AppText.nightAccent : AppColors.teaGreen;
+    final foreground = NightTheme.of(context).accent;
     return Tooltip(
       message: '已织线：$label',
       child: Container(
@@ -259,7 +249,7 @@ class _RelationBadge extends StatelessWidget {
           vertical: compact ? AppSpacing.s3 : AppSpacing.s5,
         ),
         decoration: BoxDecoration(
-          color: foreground.withValues(alpha: nightMode ? .16 : .12),
+          color: foreground.withValues(alpha: .12),
           borderRadius: BorderRadius.circular(AppRadius.sm),
           border: Border.all(color: foreground.withValues(alpha: .28)),
         ),
@@ -304,13 +294,12 @@ bool _isAudioMedia(String value) {
 }
 
 class _AttachmentBadge extends StatelessWidget {
-  const _AttachmentBadge({required this.nightMode});
-
-  final bool nightMode;
+  const _AttachmentBadge();
 
   @override
   Widget build(BuildContext context) {
-    final color = nightMode ? AppText.nightInkMuted : AppColors.inkMuted;
+    final theme = NightTheme.of(context);
+    final color = theme.foregroundMuted;
     return Tooltip(
       message: '含图片附件',
       child: Container(
@@ -318,9 +307,7 @@ class _AttachmentBadge extends StatelessWidget {
         height: 19,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: nightMode
-              ? AppColors.white.withValues(alpha: .08)
-              : AppColors.ink.withValues(alpha: .06),
+          color: theme.surface.withValues(alpha: .72),
           borderRadius: BorderRadius.circular(AppRadius.sm - 1),
         ),
         child: Icon(Icons.attach_file_rounded, size: 12, color: color),
@@ -329,39 +316,18 @@ class _AttachmentBadge extends StatelessWidget {
   }
 }
 
-BoxDecoration _cardDecoration({
-  required bool nightMode,
-  required bool selected,
-}) {
-  final base = nightMode ? nightDecoration() : softDecoration(AppColors.white);
-  if (!selected) return base;
-  return base.copyWith(
-    border: Border.all(
-        color: AppColors.teaGreen.withValues(alpha: .72), width: 1.4),
-    boxShadow: [
-      ...?base.boxShadow,
-      BoxShadow(
-        color: AppColors.teaGreen.withValues(alpha: nightMode ? .18 : .14),
-        blurRadius: 24,
-        offset: const Offset(0, 10),
-      ),
-    ],
-  );
-}
-
 class _SelectionMark extends StatelessWidget {
   const _SelectionMark({
     required this.selected,
-    required this.nightMode,
     this.onTap,
   });
 
   final bool selected;
-  final bool nightMode;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Tooltip(
       message: selected ? '取消选择' : '选择',
       child: GestureDetector(
@@ -372,23 +338,15 @@ class _SelectionMark extends StatelessWidget {
           width: 24,
           height: 24,
           decoration: BoxDecoration(
-            color: selected
-                ? AppColors.teaGreen
-                : (nightMode
-                    ? AppColors.white.withValues(alpha: .08)
-                    : AppColors.paper.withValues(alpha: .88)),
+            color:
+                selected ? theme.accent : theme.surface.withValues(alpha: .88),
             borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-              color: selected
-                  ? AppColors.teaGreen
-                  : (nightMode
-                      ? AppColors.white.withValues(alpha: .16)
-                      : AppColors.line),
+              color: selected ? theme.accent : theme.border,
             ),
           ),
           child: selected
-              ? Icon(Icons.check_rounded,
-                  size: 16, color: nightMode ? AppColors.white : AppColors.ink)
+              ? Icon(Icons.check_rounded, size: 16, color: theme.background)
               : null,
         ),
       ),

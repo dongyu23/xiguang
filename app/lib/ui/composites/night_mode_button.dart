@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
-import '../../app/providers.dart';
-import '../../design/tokens/colors.dart';
+import 'package:xiguang/app/app_state.dart';
+import '../../design/themes/extensions/night_theme.dart';
 
 class NightModeButton extends ConsumerStatefulWidget {
   const NightModeButton({super.key});
@@ -34,17 +34,17 @@ class _NightModeButtonState extends ConsumerState<NightModeButton> {
 
   @override
   Widget build(BuildContext context) {
-    final nightMode = ref.watch(nightModeProvider);
+    final theme = NightTheme.of(context);
+    final isNight = theme.isNight;
     return Material(
-      color: (nightMode ? AppColors.ink : AppColors.white)
-          .withValues(alpha: nightMode ? .92 : .86),
+      color: theme.surface.withValues(alpha: isNight ? .92 : .86),
       shape: const CircleBorder(),
       clipBehavior: Clip.antiAlias,
       child: IconButton(
-        tooltip: nightMode ? '切回白天' : '夜间轻开',
+        tooltip: isNight ? '切回白天' : '夜间轻开',
         onPressed: () {
           final newOption =
-              nightMode ? NightModeOption.light : NightModeOption.dark;
+              isNight ? NightModeOption.light : NightModeOption.dark;
           updateNightModeOption(ref, newOption);
           _playSwitchSound();
         },
@@ -53,9 +53,9 @@ class _NightModeButtonState extends ConsumerState<NightModeButton> {
         iconSize: 19,
         visualDensity: VisualDensity.compact,
         icon: Icon(
-          nightMode ? Icons.wb_sunny_outlined : Icons.nights_stay_outlined,
+          isNight ? Icons.wb_sunny_outlined : Icons.nights_stay_outlined,
         ),
-        color: nightMode ? AppColors.emotionHappy : AppColors.ink,
+        color: isNight ? theme.accent : theme.foreground,
       ),
     );
   }

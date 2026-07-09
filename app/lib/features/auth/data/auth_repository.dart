@@ -1,47 +1,12 @@
+import '../../../design/tokens/motion.dart';
 import '../../shared/data/api_client.dart';
+import '../domain/auth_session.dart';
+import '../domain/auth_repository.dart';
 import 'session_storage.dart';
 
-class AuthSession {
-  const AuthSession({
-    required this.id,
-    required this.publicId,
-    required this.username,
-    required this.nickname,
-    this.avatarKey = '',
-    this.aiEnabled = false,
-    this.privacyMode = 'private',
-  });
+export '../domain/auth_session.dart';
 
-  final int id;
-  final String publicId;
-  final String username;
-  final String nickname;
-  final String avatarKey;
-  final bool aiEnabled;
-  final String privacyMode;
-
-  AuthSession copyWith({
-    int? id,
-    String? publicId,
-    String? username,
-    String? nickname,
-    String? avatarKey,
-    bool? aiEnabled,
-    String? privacyMode,
-  }) {
-    return AuthSession(
-      id: id ?? this.id,
-      publicId: publicId ?? this.publicId,
-      username: username ?? this.username,
-      nickname: nickname ?? this.nickname,
-      avatarKey: avatarKey ?? this.avatarKey,
-      aiEnabled: aiEnabled ?? this.aiEnabled,
-      privacyMode: privacyMode ?? this.privacyMode,
-    );
-  }
-}
-
-class AuthRepository {
+class AuthRepository implements AuthRepositoryContract {
   AuthRepository(this._api, {SessionStorage storage = const SessionStorage()})
       : _storage = storage {
     _api.tokenRefreshCallback = _refreshForApiClient;
@@ -53,8 +18,10 @@ class AuthRepository {
   String? _refreshToken;
   DateTime? _expiresAt;
 
+  @override
   AuthSession? get currentSession => _session;
 
+  @override
   Future<AuthSession> ensureSession() async {
     final existing = _session;
     if (existing != null) return existing;
@@ -63,6 +30,7 @@ class AuthRepository {
     return me();
   }
 
+  @override
   Future<AuthSession?> restoreSession() async {
     final stored = await _storage.read();
     if (stored == null) return null;
@@ -77,6 +45,7 @@ class AuthRepository {
     return _session!;
   }
 
+  @override
   Future<AuthSession> login({
     required String username,
     required String password,
@@ -88,6 +57,7 @@ class AuthRepository {
     return _saveSession(body);
   }
 
+  @override
   Future<AuthSession> register({
     required String username,
     required String password,
@@ -101,6 +71,7 @@ class AuthRepository {
     return _saveSession(body);
   }
 
+  @override
   Future<void> logout() async {
     _api.accessToken = null;
     _session = null;
@@ -109,6 +80,7 @@ class AuthRepository {
     await _storage.delete();
   }
 
+  @override
   Future<AuthSession> me() async {
     await _ensureFreshAccessToken();
     final body = await _api.get('/users/me');
@@ -116,6 +88,7 @@ class AuthRepository {
     return _session!;
   }
 
+  @override
   Future<AuthSession> updateMe({
     required String nickname,
     required String avatarKey,
@@ -134,6 +107,7 @@ class AuthRepository {
     return _session!;
   }
 
+  @override
   Future<void> changePassword({
     required String oldPassword,
     required String newPassword,
@@ -148,7 +122,7 @@ class AuthRepository {
   Future<void> _ensureFreshAccessToken() async {
     if (_api.hasToken &&
         _expiresAt != null &&
-        _expiresAt!.isBefore(DateTime.now().add(const Duration(minutes: 1)))) {
+        _expiresAt!.isBefore(DateTime.now().add(AppTiming.tokenRefreshSkew))) {
       await _refresh();
     }
     if (!_api.hasToken) {

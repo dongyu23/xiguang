@@ -10,7 +10,8 @@ void main() {
       returnsNormally,
     );
     expect(
-      () => AppLogger.error('err msg', error: StateError('x'), stackTrace: StackTrace.current),
+      () => AppLogger.error('err msg',
+          error: StateError('x'), stackTrace: StackTrace.current),
       returnsNormally,
     );
   });

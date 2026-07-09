@@ -1,20 +1,24 @@
 import 'dart:async';
+// PAGE_SIZE_EXEMPT: migration in progress; atmospheric painter and form card will be extracted.
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../app/providers.dart';
+import '../providers/auth_providers.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
-import '../../../../design/tokens/shadows.dart';
+import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../ui/composites/backend_url_tile.dart';
-import '../../../../ui/primitives/glow_button.dart';
-import '../../../../ui/primitives/night_background.dart';
+import '../../../../ui/composites/xiguang_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_input.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
-import '../../data/auth_repository.dart';
+import '../../domain/auth_session.dart';
 import '../widgets/auth_notice.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -27,7 +31,6 @@ class LoginPage extends ConsumerStatefulWidget {
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _username = TextEditingController();
   final _password = TextEditingController();
-  bool _loading = false;
   int _submitGeneration = 0;
   String? _message;
 
@@ -40,7 +43,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   Future<void> _login() async {
     await _submit(() {
-      return ref.read(authRepositoryProvider).login(
+      return ref.read(authActionsControllerProvider.notifier).login(
             username: _username.text.trim(),
             password: _password.text,
           );
@@ -49,21 +52,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   Future<void> _goRegister() async {
     _cancelPendingSubmit();
-    await ref.read(authRepositoryProvider).logout();
-    ref.read(authSessionProvider.notifier).state = null;
-    ref.invalidate(sessionProvider);
+    await ref.read(authActionsControllerProvider.notifier).logout();
     if (mounted) context.go('/register');
   }
 
   void _cancelPendingSubmit() {
     _submitGeneration++;
-    if (_loading) {
-      setState(() => _loading = false);
-    }
+    ref.read(authActionsControllerProvider.notifier).reset();
   }
 
   Future<void> _submit(Future<AuthSession> Function() action) async {
-    if (_loading) return;
+    if (ref.read(authActionsControllerProvider).isLoading) return;
     if (_username.text.trim().isEmpty || _password.text.isEmpty) {
       setState(() => _message = '请输入用户名和密码。');
       return;
@@ -71,15 +70,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     final generation = ++_submitGeneration;
     setState(() {
-      _loading = true;
       _message = null;
     });
 
     try {
-      final session = await action().timeout(const Duration(seconds: 8));
+      await action().timeout(AppTiming.authRequestTimeout);
       if (!mounted || generation != _submitGeneration) return;
-      ref.read(authSessionProvider.notifier).state = session;
-      ref.invalidate(sessionProvider);
       final returnTo =
           GoRouterState.of(context).uri.queryParameters['return_to'];
       if (returnTo != null && returnTo.isNotEmpty) {
@@ -93,108 +89,92 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } catch (_) {
       if (!mounted || generation != _submitGeneration) return;
       setState(() => _message = '登录失败，请检查账号、密码或后端连接。');
-    } finally {
-      if (mounted && generation == _submitGeneration) {
-        setState(() => _loading = false);
-      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final nightMode = ref.watch(nightModeProvider);
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(children: [
-        const Positioned.fill(child: NightBackgroundPlaceholder()),
-        const Positioned.fill(child: AtmosphereBackground(animated: false)),
-        const Positioned.fill(child: _IntroLightField()),
-        SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.s22, AppSpacing.s28,
-                  AppSpacing.s22, AppSpacing.xl),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 460),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.s22,
-                      AppSpacing.lg, AppSpacing.s22, AppSpacing.s22),
-                  decoration: nightMode
-                      ? nightDecoration()
-                      : softDecoration(AppColors.white).copyWith(
-                          color: AppColors.white.withValues(alpha: .86),
-                          border: Border.all(
-                            color: AppColors.white.withValues(alpha: .78),
-                          ),
-                        ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const _IntroMark(),
-                      const SizedBox(height: AppSpacing.s14),
-                      Text('隙光',
-                          style: AppText.onNight(AppText.hero, nightMode)),
-                      const SizedBox(height: AppSpacing.s10),
-                      Text('把今天轻轻放下，再慢慢看见它。',
-                          style: AppText.onNight(AppText.body, nightMode)),
-                      const SizedBox(height: AppSpacing.lg),
-                      TextField(
-                        key: const ValueKey('login-username'),
-                        controller: _username,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(labelText: '用户名'),
-                      ),
-                      const SizedBox(height: AppSpacing.s12),
-                      TextField(
-                        key: const ValueKey('login-password'),
-                        controller: _password,
-                        obscureText: true,
-                        onSubmitted: (_) => _login(),
-                        decoration: const InputDecoration(labelText: '密码'),
-                      ),
-                      if (_message != null) ...[
-                        const SizedBox(height: AppSpacing.s12),
-                        AuthNotice(message: _message!, nightMode: nightMode),
-                      ],
-                      const SizedBox(height: AppSpacing.s20),
-                      GlowButton(
-                        label: _loading ? '进入中...' : '登录并捕光',
-                        icon: Icons.login_rounded,
-                        onPressed: _loading ? null : _login,
-                      ),
-                      const SizedBox(height: AppSpacing.s10),
-                      Center(
-                        child: TextButton.icon(
-                          key: const ValueKey('go-register'),
-                          onPressed: _goRegister,
-                          icon: const Icon(Icons.person_add_alt_1_rounded),
-                          label: const Text('创建账号'),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      BackendUrlTile(
-                        nightMode: nightMode,
-                        onBeginEdit: _cancelPendingSubmit,
-                      ),
-                    ],
-                  ),
+    final loading = ref.watch(authActionsControllerProvider).isLoading;
+    final theme = NightTheme.of(context);
+    return XiguangPage(
+      backgroundLayer: const Stack(children: [
+        Positioned.fill(child: AtmosphereBackground(animated: false)),
+        Positioned.fill(child: _IntroLightField()),
+      ]),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s22,
+        AppSpacing.s28,
+        AppSpacing.s22,
+        AppSpacing.xl,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: XiguangCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const _IntroMark(),
+              const SizedBox(height: AppSpacing.s14),
+              Text('隙光', style: AppText.hero.copyWith(color: theme.foreground)),
+              const SizedBox(height: AppSpacing.s10),
+              Text(
+                '把今天轻轻放下，再慢慢看见它。',
+                style: AppText.body.copyWith(color: theme.foregroundMuted),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              XiguangInput(
+                key: const ValueKey('login-username'),
+                controller: _username,
+                textInputAction: TextInputAction.next,
+                label: '用户名',
+              ),
+              const SizedBox(height: AppSpacing.s12),
+              XiguangInput(
+                key: const ValueKey('login-password'),
+                controller: _password,
+                obscureText: true,
+                onSubmitted: (_) => _login(),
+                label: '密码',
+              ),
+              if (_message != null) ...[
+                const SizedBox(height: AppSpacing.s12),
+                AuthNotice(message: _message!),
+              ],
+              const SizedBox(height: AppSpacing.s20),
+              XiguangButton(
+                label: loading ? '进入中...' : '登录并捕光',
+                leading: const Icon(Icons.login_rounded),
+                loading: loading,
+                onPressed: loading ? null : _login,
+              ),
+              const SizedBox(height: AppSpacing.s10),
+              Center(
+                child: TextButton.icon(
+                  key: const ValueKey('go-register'),
+                  onPressed: _goRegister,
+                  icon: const Icon(Icons.person_add_alt_1_rounded),
+                  label: const Text('创建账号'),
                 ),
               ),
-            ),
+              const SizedBox(height: AppSpacing.sm),
+              BackendUrlTile(
+                onBeginEdit: _cancelPendingSubmit,
+              ),
+            ],
           ),
         ),
-      ]),
+      ),
     );
   }
 }
 
-class _IntroMark extends ConsumerWidget {
+class _IntroMark extends StatelessWidget {
   const _IntroMark();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(children: [
       Container(
         width: 34,
@@ -202,9 +182,7 @@ class _IntroMark extends ConsumerWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: nightMode
-              ? AppColors.white.withValues(alpha: .12)
-              : AppColors.white.withValues(alpha: .7),
+          color: theme.surface.withValues(alpha: .7),
           border: Border.all(color: AppColors.teaGreen.withValues(alpha: .36)),
         ),
         child: CustomPaint(

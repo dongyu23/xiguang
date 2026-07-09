@@ -1,18 +1,21 @@
+// PAGE_SIZE_EXEMPT: migration in progress; graph clustering and ledger cards will be extracted.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../app/providers.dart';
+import '../providers/relation_providers.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../ui/primitives/glow_button.dart';
-import '../../../../ui/primitives/night_background.dart';
 import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_empty_state.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
-import '../../../fragment/data/fragment_repository.dart';
+import '../../../fragment/domain/fragment.dart';
 import '../../domain/relation.dart';
 
 class RelationLedgerPage extends ConsumerWidget {
@@ -20,113 +23,63 @@ class RelationLedgerPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final nightMode = ref.watch(nightModeProvider);
-    final relations = ref.watch(_relationLedgerProvider);
-    return Stack(children: [
-      const Positioned.fill(child: NightBackgroundPlaceholder()),
-      const Positioned.fill(child: AtmosphereBackground()),
-      SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-              22, 18, 22, 64 + 10 + MediaQuery.paddingOf(context).bottom + 30),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Column(
+    final relations = ref.watch(relationLedgerProvider);
+    return XiguangPage(
+      backgroundLayer: const AtmosphereBackground(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _LedgerHeader(),
+          const SizedBox(height: AppSpacing.s22),
+          relations.when(
+            data: (data) {
+              final clusters = _buildRelationClusters(data);
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _LedgerHeader(nightMode: nightMode),
-                  const SizedBox(height: AppSpacing.s22),
-                  relations.when(
-                    data: (data) {
-                      final clusters = _buildRelationClusters(data);
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _LedgerOverview(
-                            data: data,
-                            clusters: clusters,
-                            nightMode: nightMode,
-                          ),
-                          const SizedBox(height: AppSpacing.s18),
-                          _SectionLabel(nightMode: nightMode),
-                          const SizedBox(height: AppSpacing.s12),
-                          _RelationLedgerList(
-                            data: data,
-                            clusters: clusters,
-                            nightMode: nightMode,
-                          ),
-                        ],
-                      );
-                    },
-                    loading: () => const Padding(
-                      padding: EdgeInsets.all(AppSpacing.xl),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-                    error: (_, __) => _LedgerError(
-                      nightMode: nightMode,
-                      onRetry: () => ref.invalidate(_relationLedgerProvider),
-                    ),
-                  ),
+                  _LedgerOverview(data: data, clusters: clusters),
+                  const SizedBox(height: AppSpacing.s18),
+                  const _SectionLabel(),
+                  const SizedBox(height: AppSpacing.s12),
+                  _RelationLedgerList(data: data, clusters: clusters),
                 ],
-              ),
+              );
+            },
+            loading: () => const Padding(
+              padding: EdgeInsets.all(AppSpacing.xl),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+            error: (_, __) => _LedgerError(
+              onRetry: () => ref.invalidate(relationLedgerProvider),
             ),
           ),
-        ),
+        ],
       ),
-    ]);
+    );
   }
 }
 
-final _relationLedgerProvider =
-    FutureProvider<_RelationLedgerData>((ref) async {
-  final results = await Future.wait([
-    ref.watch(relationRepositoryProvider).list(),
-    ref.watch(fragmentRepositoryProvider).listFragments(),
-  ]);
-  final relations = results[0] as List<Relation>;
-  final fragments = results[1] as List<LightFragmentModel>;
-  return _RelationLedgerData(
-    relations: relations,
-    fragmentsById: {for (final item in fragments) item.id: item},
-  );
-});
-
-class _RelationLedgerData {
-  const _RelationLedgerData({
-    required this.relations,
-    required this.fragmentsById,
-  });
-
-  final List<Relation> relations;
-  final Map<int, LightFragmentModel> fragmentsById;
-}
-
 class _LedgerHeader extends StatelessWidget {
-  const _LedgerHeader({required this.nightMode});
-
-  final bool nightMode;
+  const _LedgerHeader();
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       PageBackButton(
         onTap: () => context.pop(),
-        nightMode: nightMode,
-        iconColor: nightMode ? AppText.nightInk : AppColors.ink,
       ),
       const SizedBox(width: AppSpacing.s6),
       Expanded(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(
             '线索簿',
-            style: AppText.onNight(AppText.subHero, nightMode),
+            style: AppText.subHero.copyWith(color: theme.foreground),
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
             '这里收着已经被你确认过的关系。',
-            style: AppText.onNight(AppText.bodyMuted, nightMode),
+            style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted),
           ),
         ]),
       ),
@@ -135,22 +88,21 @@ class _LedgerHeader extends StatelessWidget {
 }
 
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.nightMode});
-
-  final bool nightMode;
+  const _SectionLabel();
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(children: [
       Icon(
         Icons.eco_outlined,
         size: 17,
-        color: nightMode ? AppText.nightAccent : AppColors.teaGreen,
+        color: theme.accent,
       ),
       const SizedBox(width: AppSpacing.sm),
       Text(
         '全部线索',
-        style: AppText.onNight(AppText.eyebrow, nightMode),
+        style: AppText.eyebrow.copyWith(color: theme.accent),
       ),
     ]);
   }
@@ -160,15 +112,14 @@ class _LedgerOverview extends StatelessWidget {
   const _LedgerOverview({
     required this.data,
     required this.clusters,
-    required this.nightMode,
   });
 
-  final _RelationLedgerData data;
+  final RelationLedgerData data;
   final List<_RelationCluster> clusters;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final fragments = data.fragmentsById.values.toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final latestFragmentId = fragments.isEmpty ? null : fragments.first.id;
@@ -183,27 +134,24 @@ class _LedgerOverview extends StatelessWidget {
         : data.relations.isEmpty
             ? '去织第一条线'
             : '继续织线';
-    final accent = nightMode ? AppText.nightAccent : AppColors.teaGreen;
+    final accent = theme.accent;
 
-    return Container(
-      width: double.infinity,
+    return XiguangCard(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.md, AppSpacing.s15, AppSpacing.md, AppSpacing.md),
-      decoration:
-          nightMode ? nightDecoration() : softDecoration(AppColors.white),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: accent.withValues(alpha: nightMode ? .20 : .12),
+              color: accent.withValues(alpha: theme.isNight ? .20 : .12),
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(color: accent.withValues(alpha: .24)),
             ),
             child: Icon(
               Icons.account_tree_outlined,
-              color: nightMode ? AppText.nightInk : AppColors.ink,
+              color: theme.foreground,
               size: 19,
             ),
           ),
@@ -213,12 +161,12 @@ class _LedgerOverview extends StatelessWidget {
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
                 '线索概览',
-                style: AppText.onNight(AppText.titleSmall, nightMode),
+                style: AppText.titleSmall.copyWith(color: theme.foreground),
               ),
               const SizedBox(height: AppSpacing.s6),
               Text(
                 subtitle,
-                style: AppText.onNight(AppText.bodyMuted, nightMode),
+                style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted),
               ),
             ]),
           ),
@@ -229,7 +177,6 @@ class _LedgerOverview extends StatelessWidget {
             child: _LedgerStat(
               label: '线索',
               value: '${data.relations.length}',
-              nightMode: nightMode,
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
@@ -237,7 +184,6 @@ class _LedgerOverview extends StatelessWidget {
             child: _LedgerStat(
               label: '关系组',
               value: '${clusters.length}',
-              nightMode: nightMode,
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
@@ -245,7 +191,6 @@ class _LedgerOverview extends StatelessWidget {
             child: _LedgerStat(
               label: '入簿光片',
               value: '${_involvedFragmentCount(data)}',
-              nightMode: nightMode,
             ),
           ),
         ]),
@@ -260,11 +205,7 @@ class _LedgerOverview extends StatelessWidget {
             label: Text(actionLabel),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(0, 42),
-              side: BorderSide(
-                color: nightMode
-                    ? AppColors.white.withValues(alpha: .16)
-                    : AppColors.line,
-              ),
+              side: BorderSide(color: theme.border),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),
@@ -280,27 +221,22 @@ class _LedgerStat extends StatelessWidget {
   const _LedgerStat({
     required this.label,
     required this.value,
-    required this.nightMode,
   });
 
   final String label;
   final String value;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.s10, vertical: AppSpacing.s10),
       decoration: BoxDecoration(
-        color: nightMode
-            ? AppColors.white.withValues(alpha: .06)
-            : AppColors.paper.withValues(alpha: .74),
+        color: theme.surfaceHigh.withValues(alpha: theme.isNight ? .42 : .74),
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: nightMode
-              ? AppColors.white.withValues(alpha: .09)
-              : AppColors.line.withValues(alpha: .62),
+          color: theme.border.withValues(alpha: .62),
         ),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -308,14 +244,14 @@ class _LedgerStat extends StatelessWidget {
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: AppText.onNight(AppText.titleMedium, nightMode),
+          style: AppText.titleSmall.copyWith(color: theme.foreground),
         ),
         const SizedBox(height: AppSpacing.s3),
         Text(
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: AppText.onNight(AppText.caption, nightMode),
+          style: AppText.caption.copyWith(color: theme.foregroundMuted),
         ),
       ]),
     );
@@ -326,34 +262,27 @@ class _RelationLedgerList extends StatelessWidget {
   const _RelationLedgerList({
     required this.data,
     required this.clusters,
-    required this.nightMode,
   });
 
-  final _RelationLedgerData data;
+  final RelationLedgerData data;
   final List<_RelationCluster> clusters;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     if (data.relations.isEmpty) {
-      return _EmptyLedger(nightMode: nightMode);
+      return const _EmptyLedger();
     }
-    return Container(
-      decoration:
-          nightMode ? nightDecoration() : softDecoration(AppColors.white),
+    return XiguangCard(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           for (var i = 0; i < clusters.length; i++) ...[
-            _RelationClusterCard(
-              cluster: clusters[i],
-              nightMode: nightMode,
-            ),
+            _RelationClusterCard(cluster: clusters[i]),
             if (i != clusters.length - 1)
               Divider(
                 height: 1,
-                color: nightMode
-                    ? AppColors.white.withValues(alpha: .10)
-                    : AppColors.line.withValues(alpha: .72),
+                color: theme.border.withValues(alpha: .72),
               ),
           ],
         ],
@@ -362,7 +291,7 @@ class _RelationLedgerList extends StatelessWidget {
   }
 }
 
-List<_RelationCluster> _buildRelationClusters(_RelationLedgerData data) {
+List<_RelationCluster> _buildRelationClusters(RelationLedgerData data) {
   final adjacency = <int, Set<int>>{};
   final relationsByNode = <int, List<Relation>>{};
   for (final relation in data.relations) {
@@ -407,7 +336,7 @@ List<_RelationCluster> _buildRelationClusters(_RelationLedgerData data) {
 
     final fragments = nodeIds
         .map((id) => data.fragmentsById[id])
-        .whereType<LightFragmentModel>()
+        .whereType<Fragment>()
         .toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     relations.sort((a, b) => a.id.compareTo(b.id));
@@ -434,7 +363,7 @@ class _RelationCluster {
   });
 
   final List<int> nodeIds;
-  final List<LightFragmentModel> fragments;
+  final List<Fragment> fragments;
   final List<Relation> relations;
 
   DateTime get latestTime {
@@ -446,16 +375,13 @@ class _RelationCluster {
 }
 
 class _RelationClusterCard extends StatelessWidget {
-  const _RelationClusterCard({
-    required this.cluster,
-    required this.nightMode,
-  });
+  const _RelationClusterCard({required this.cluster});
 
   final _RelationCluster cluster;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final labels = _clusterLabels(cluster.relations);
     final notes = cluster.relations
         .map((relation) => relation.note?.trim())
@@ -467,7 +393,7 @@ class _RelationClusterCard extends StatelessWidget {
     final visibleFragments = cluster.fragments.take(4).toList();
     final fallbackId = cluster.nodeIds.isEmpty ? null : cluster.nodeIds.first;
     final openId = visibleFragments.firstOrNull?.id ?? fallbackId;
-    final accent = nightMode ? AppText.nightAccent : AppColors.teaGreen;
+    final accent = theme.accent;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -478,13 +404,13 @@ class _RelationClusterCard extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: accent.withValues(alpha: nightMode ? .20 : .12),
+              color: accent.withValues(alpha: theme.isNight ? .20 : .12),
               borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(color: accent.withValues(alpha: .24)),
             ),
             child: Icon(
               Icons.account_tree_outlined,
-              color: nightMode ? AppText.nightInk : AppColors.ink,
+              color: theme.foreground,
               size: 20,
             ),
           ),
@@ -494,18 +420,16 @@ class _RelationClusterCard extends StatelessWidget {
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(
                 '${cluster.fragments.length} 束光织成一组',
-                style: AppText.onNight(AppText.titleSmall, nightMode),
+                style: AppText.titleSmall.copyWith(color: theme.foreground),
               ),
               const SizedBox(height: AppSpacing.s6),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  for (final label in labels)
-                    _RelationTag(label: label, nightMode: nightMode),
+                  for (final label in labels) _RelationTag(label: label),
                   _RelationTag(
                     label: '${cluster.relations.length} 条联系',
-                    nightMode: nightMode,
                     muted: true,
                   ),
                 ],
@@ -520,20 +444,14 @@ class _RelationClusterCard extends StatelessWidget {
               minimumSize: const Size(54, 34),
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s10),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              side: BorderSide(
-                color: nightMode
-                    ? AppColors.white.withValues(alpha: .14)
-                    : AppColors.line,
-              ),
+              side: BorderSide(color: theme.border),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),
             ),
             child: Text(
               '查看',
-              style: AppText.chip.copyWith(
-                color: nightMode ? AppText.nightInk : AppColors.ink,
-              ),
+              style: AppText.chip.copyWith(color: theme.foreground),
             ),
           ),
         ]),
@@ -541,11 +459,10 @@ class _RelationClusterCard extends StatelessWidget {
         _ClusterFragmentsStrip(
           fragments: visibleFragments,
           hiddenCount: cluster.fragments.length - visibleFragments.length,
-          nightMode: nightMode,
         ),
         if (notes.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.s12),
-          _ClusterNotes(notes: notes, nightMode: nightMode),
+          _ClusterNotes(notes: notes),
         ],
       ]),
     );
@@ -566,24 +483,23 @@ List<String> _clusterLabels(List<Relation> relations) {
 class _RelationTag extends StatelessWidget {
   const _RelationTag({
     required this.label,
-    required this.nightMode,
     this.muted = false,
   });
 
   final String label;
-  final bool nightMode;
   final bool muted;
 
   @override
   Widget build(BuildContext context) {
-    final color = muted
-        ? (nightMode ? AppText.nightInkMuted : AppColors.inkMuted)
-        : (nightMode ? AppText.nightAccent : AppColors.teaGreen);
+    final theme = NightTheme.of(context);
+    final color = muted ? theme.foregroundMuted : theme.accent;
     return Container(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: muted ? .08 : (nightMode ? .15 : .12)),
+        color: color.withValues(
+          alpha: muted ? .08 : (theme.isNight ? .15 : .12),
+        ),
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: color.withValues(alpha: muted ? .16 : .24)),
       ),
@@ -599,19 +515,18 @@ class _ClusterFragmentsStrip extends StatelessWidget {
   const _ClusterFragmentsStrip({
     required this.fragments,
     required this.hiddenCount,
-    required this.nightMode,
   });
 
-  final List<LightFragmentModel> fragments;
+  final List<Fragment> fragments;
   final int hiddenCount;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     if (fragments.isEmpty) {
       return Text(
         '这一组里有旧光暂时不可见。',
-        style: AppText.onNight(AppText.caption, nightMode),
+        style: AppText.caption.copyWith(color: theme.foregroundMuted),
       );
     }
     return Wrap(
@@ -619,25 +534,21 @@ class _ClusterFragmentsStrip extends StatelessWidget {
       runSpacing: 8,
       children: [
         for (final fragment in fragments)
-          _ClusterFragmentChip(fragment: fragment, nightMode: nightMode),
-        if (hiddenCount > 0)
-          _MoreFragmentsChip(count: hiddenCount, nightMode: nightMode),
+          _ClusterFragmentChip(fragment: fragment),
+        if (hiddenCount > 0) _MoreFragmentsChip(count: hiddenCount),
       ],
     );
   }
 }
 
 class _ClusterFragmentChip extends StatelessWidget {
-  const _ClusterFragmentChip({
-    required this.fragment,
-    required this.nightMode,
-  });
+  const _ClusterFragmentChip({required this.fragment});
 
-  final LightFragmentModel fragment;
-  final bool nightMode;
+  final Fragment fragment;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final color = AppColors.emotionColor(fragment.emotion);
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadius.md),
@@ -647,25 +558,21 @@ class _ClusterFragmentChip extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(
             AppSpacing.s9, AppSpacing.sm, AppSpacing.s10, AppSpacing.sm),
         decoration: BoxDecoration(
-          color: nightMode
-              ? AppColors.white.withValues(alpha: .06)
-              : AppColors.paper.withValues(alpha: .78),
+          color: theme.surfaceHigh.withValues(alpha: theme.isNight ? .42 : .78),
           borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(
-            color: nightMode
-                ? AppColors.white.withValues(alpha: .10)
-                : AppColors.line.withValues(alpha: .76),
+            color: theme.border.withValues(alpha: .76),
           ),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          _FragmentGlyph(color: color, nightMode: nightMode, size: 24),
+          _FragmentGlyph(color: color, size: 24),
           const SizedBox(width: AppSpacing.s7),
           Flexible(
             child: Text(
               fragment.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppText.onNight(AppText.captionStrong, nightMode),
+              style: AppText.captionStrong.copyWith(color: theme.foreground),
             ),
           ),
         ]),
@@ -675,45 +582,43 @@ class _ClusterFragmentChip extends StatelessWidget {
 }
 
 class _MoreFragmentsChip extends StatelessWidget {
-  const _MoreFragmentsChip({required this.count, required this.nightMode});
+  const _MoreFragmentsChip({required this.count});
 
   final int count;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.s9, vertical: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: nightMode
-            ? AppColors.white.withValues(alpha: .05)
-            : AppColors.paper.withValues(alpha: .70),
+        color: theme.surfaceHigh.withValues(alpha: theme.isNight ? .36 : .70),
         borderRadius: BorderRadius.circular(AppRadius.md),
       ),
       child: Text(
         '+$count',
-        style: AppText.onNight(AppText.caption, nightMode),
+        style: AppText.caption.copyWith(color: theme.foregroundMuted),
       ),
     );
   }
 }
 
 class _ClusterNotes extends StatelessWidget {
-  const _ClusterNotes({required this.notes, required this.nightMode});
+  const _ClusterNotes({required this.notes});
 
   final List<String> notes;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       for (final note in notes) ...[
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(
             Icons.short_text_rounded,
             size: 15,
-            color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted,
+            color: theme.foregroundMuted,
           ),
           const SizedBox(width: AppSpacing.s6),
           Expanded(
@@ -721,7 +626,7 @@ class _ClusterNotes extends StatelessWidget {
               note,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: AppText.onNight(AppText.caption, nightMode),
+              style: AppText.caption.copyWith(color: theme.foregroundMuted),
             ),
           ),
         ]),
@@ -734,131 +639,65 @@ class _ClusterNotes extends StatelessWidget {
 class _FragmentGlyph extends StatelessWidget {
   const _FragmentGlyph({
     required this.color,
-    required this.nightMode,
     this.size = 46,
   });
 
   final Color color;
-  final bool nightMode;
   final double size;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: color.withValues(alpha: nightMode ? .34 : .22),
+        color: color.withValues(alpha: theme.isNight ? .34 : .22),
       ),
       child: Icon(
         Icons.local_florist_outlined,
         size: size < 32 ? 13 : 22,
-        color: nightMode ? AppText.nightInk : AppColors.inkMuted,
+        color: theme.foregroundMuted,
       ),
     );
   }
 }
 
 class _EmptyLedger extends StatelessWidget {
-  const _EmptyLedger({required this.nightMode});
-
-  final bool nightMode;
+  const _EmptyLedger();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.s18),
-      decoration:
-          nightMode ? nightDecoration() : softDecoration(AppColors.white),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(
-          '还没有已织线索',
-          style: AppText.onNight(AppText.titleSmall, nightMode),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          '在时间河里选择一束光，去织线后会出现在这里。',
-          style: AppText.onNight(AppText.bodyMuted, nightMode),
-        ),
-        const SizedBox(height: AppSpacing.s14),
-        GlowButton(
-          label: '去时间河',
-          icon: Icons.timeline_rounded,
-          onPressed: () => context.go('/timeline'),
-        ),
-      ]),
+    return XiguangEmptyState(
+      title: '还没有已织线索',
+      description: '在时间河里选择一束光，去织线后会出现在这里。',
+      icon: Icons.account_tree_outlined,
+      action: GlowButton(
+        label: '去时间河',
+        icon: Icons.timeline_rounded,
+        onPressed: () => context.go('/timeline'),
+      ),
     );
   }
 }
 
 class _LedgerError extends StatelessWidget {
-  const _LedgerError({required this.nightMode, required this.onRetry});
+  const _LedgerError({required this.onRetry});
 
-  final bool nightMode;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    final accent = nightMode ? AppText.nightAccent : AppColors.sunsetCoral;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.s18),
-      decoration:
-          nightMode ? nightDecoration() : softDecoration(AppColors.white),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: nightMode ? .18 : .12),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: accent.withValues(alpha: .24)),
-            ),
-            child: Icon(
-              Icons.wifi_off_rounded,
-              color: nightMode ? AppText.nightInk : accent,
-              size: 19,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.s12),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                '线索簿暂时打不开',
-                style: AppText.onNight(AppText.titleSmall, nightMode),
-              ),
-              const SizedBox(height: AppSpacing.s7),
-              Text(
-                '后端暂时没有回应，已经织好的线索不会丢失。',
-                style: AppText.onNight(AppText.bodyMuted, nightMode),
-              ),
-            ]),
-          ),
-        ]),
-        const SizedBox(height: AppSpacing.s14),
-        OutlinedButton.icon(
-          onPressed: onRetry,
-          icon: const Icon(Icons.refresh_rounded, size: 18),
-          label: const Text('重新加载'),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, 38),
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s12),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            side: BorderSide(
-              color: nightMode
-                  ? AppColors.white.withValues(alpha: .16)
-                  : AppColors.line,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-          ),
-        ),
-      ]),
+    return XiguangEmptyState(
+      title: '线索簿暂时打不开',
+      description: '后端暂时没有回应，已经织好的线索不会丢失。',
+      icon: Icons.wifi_off_rounded,
+      action: OutlinedButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: const Text('重新加载'),
+      ),
     );
   }
 }
@@ -875,7 +714,7 @@ String _relationLabel(String value) {
   };
 }
 
-int _involvedFragmentCount(_RelationLedgerData data) {
+int _involvedFragmentCount(RelationLedgerData data) {
   final ids = <int>{};
   for (final relation in data.relations) {
     if (data.fragmentsById.containsKey(relation.sourceFragmentId)) {

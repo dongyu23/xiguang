@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../data/island_repository.dart';
+import '../../domain/island_model.dart';
 
 final selectedIslandProvider = StateProvider<IslandModel?>((ref) => null);

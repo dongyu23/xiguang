@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../design/tokens/colors.dart';
+import '../../design/themes/extensions/night_theme.dart';
 
 /// 统一返回按钮 — 全 App 子页面共用。
 ///
@@ -14,34 +14,31 @@ class PageBackButton extends StatelessWidget {
   const PageBackButton({
     super.key,
     required this.onTap,
-    this.nightMode = false,
     this.iconColor,
     this.size = 42,
   });
 
   final VoidCallback onTap;
-  final bool nightMode;
   final Color? iconColor;
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    final fg = iconColor ?? (nightMode ? AppColors.white : AppColors.inkMuted);
+    final theme = NightTheme.of(context);
+    final foreground = iconColor ?? theme.foregroundMuted;
     return SizedBox(
       width: size,
       height: size,
       child: Material(
-        color: nightMode
-            ? AppColors.white.withValues(alpha: .10)
-            : AppColors.white.withValues(alpha: .74),
-        shape: const CircleBorder(
-          side: BorderSide(color: AppColors.line),
+        color: theme.surface.withValues(alpha: .74),
+        shape: CircleBorder(
+          side: BorderSide(color: theme.border),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           child: Center(
-            child: Icon(Icons.arrow_back_rounded, size: 20, color: fg),
+            child: Icon(Icons.arrow_back_rounded, size: 20, color: foreground),
           ),
         ),
       ),

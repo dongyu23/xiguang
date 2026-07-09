@@ -1,54 +1,33 @@
 import 'dart:developer' as developer;
 
-import '../../auth/data/auth_repository.dart';
-import '../../fragment/data/fragment_repository.dart';
+import 'package:dio/dio.dart';
+
+import '../../auth/domain/auth_repository.dart';
+import '../../fragment/data/mappers/fragment_mapper.dart';
+import '../../fragment/domain/fragment.dart';
+import '../../fragment/domain/fragment_repository.dart';
 import '../../shared/data/api_client.dart';
+import '../domain/island_model.dart';
+import '../domain/island_repository.dart';
+import 'mappers/island_mapper.dart';
 
-class IslandModel {
-  const IslandModel({
-    required this.name,
-    this.islandId = 0,
-    required this.status,
-    required this.fragmentCount,
-    required this.description,
-    this.manual = false,
-  });
-
-  final String name;
-  final int islandId;
-  final String status;
-  final int fragmentCount;
-  final String description;
-  final bool manual;
-
-  static IslandModel fromJson(Map<String, dynamic> json) {
-    return IslandModel(
-      name: json['name'] as String? ?? '未命名小岛',
-      islandId: (json['island_id'] as num?)?.toInt() ?? 0,
-      status: json['status'] as String? ?? 'star_point',
-      fragmentCount: json['fragment_count'] as int? ?? 0,
-      description: json['description'] as String? ?? '',
-      manual: json['manual'] as bool? ?? false,
-    );
-  }
-}
-
-class IslandRepository {
+class IslandRepository implements IslandRepositoryPort {
   IslandRepository(this._api, this._auth, this._fragments);
 
   final ApiClient _api;
-  final AuthRepository _auth;
-  final FragmentRepository _fragments;
+  final AuthRepositoryContract _auth;
+  final FragmentRepositoryContract _fragments;
 
+  @override
   Future<List<IslandModel>> listIslands(
-      {List<LightFragmentModel>? cachedFragments}) async {
+      {List<Fragment>? cachedFragments}) async {
     await _auth.ensureSession();
     if (_api.hasToken) {
       try {
         final body = await _api.get('/islands');
         final items = body['islands'] as List<dynamic>? ?? const [];
         final remote = items
-            .map((item) => IslandModel.fromJson(item as Map<String, dynamic>))
+            .map((item) => IslandMapper.fromApi(item as Map<String, dynamic>))
             .toList();
         if (remote.isNotEmpty) return remote;
       } catch (e) {
@@ -60,6 +39,7 @@ class IslandRepository {
   }
 
   /// 仅尝试远端 /islands，失败/无 token 返回 null。供本地优先 provider 后台刷新。
+  @override
   Future<List<IslandModel>?> tryListRemoteIslands() async {
     if (_auth.currentSession == null) {
       await _auth.restoreSession();
@@ -69,7 +49,7 @@ class IslandRepository {
       final body = await _api.get('/islands');
       final items = body['islands'] as List<dynamic>? ?? const [];
       return items
-          .map((item) => IslandModel.fromJson(item as Map<String, dynamic>))
+          .map((item) => IslandMapper.fromApi(item as Map<String, dynamic>))
           .toList();
     } catch (e) {
       developer.log('tryListRemoteIslands failed', error: e);
@@ -78,8 +58,9 @@ class IslandRepository {
   }
 
   /// 从本地光片按标签出现次数推导主题岛。无网或新装时首屏就有内容可显示。
+  @override
   List<IslandModel> computeIslandsFromFragments(
-    List<LightFragmentModel> fragments,
+    List<Fragment> fragments,
   ) {
     final counts = <String, int>{};
     for (final fragment in fragments) {
@@ -109,12 +90,13 @@ class IslandRepository {
     return islands.take(6).toList();
   }
 
+  @override
   Future<IslandModel?> getIsland(String name) async {
     await _auth.ensureSession();
     if (_api.hasToken) {
       try {
         final body = await _api.get('/islands/${Uri.encodeComponent(name)}');
-        return IslandModel.fromJson(body);
+        return IslandMapper.fromApi(body);
       } catch (e) {
         developer.log('getIsland remote failed, using local', error: e);
       }
@@ -123,32 +105,43 @@ class IslandRepository {
     return items.where((item) => item.name == name).firstOrNull;
   }
 
+  @override
   Future<IslandModel> createIsland(String name, String description) async {
     await _auth.ensureSession();
     final body = await _api.post('/islands', {
       'name': name,
       'description': description,
     });
-    return IslandModel.fromJson(body);
+    return IslandMapper.fromApi(body);
   }
 
+  @override
   Future<IslandModel> addFragments(int islandId, List<int> fragmentIds) async {
     await _auth.ensureSession();
-    final body = await _api.post('/islands/$islandId/fragments', {
-      'fragment_ids': fragmentIds,
-    });
-    return IslandModel.fromJson(body);
+    try {
+      final body = await _api.post('/islands/$islandId/fragments', {
+        'fragment_ids': fragmentIds,
+      });
+      return IslandMapper.fromApi(body);
+    } on DioException catch (error) {
+      if (_apiErrorCode(error) == 'island_not_manual') {
+        throw const IslandNotManualException();
+      }
+      rethrow;
+    }
   }
 
+  @override
   Future<IslandModel> removeFragments(
       int islandId, List<int> fragmentIds) async {
     await _auth.ensureSession();
     final body = await _api.delete('/islands/$islandId/fragments',
         body: {'fragment_ids': fragmentIds});
-    return IslandModel.fromJson(body);
+    return IslandMapper.fromApi(body);
   }
 
-  Future<List<LightFragmentModel>> listIslandFragments(
+  @override
+  Future<List<Fragment>> listIslandFragments(
     String name, {
     int? islandId,
   }) async {
@@ -161,8 +154,7 @@ class IslandRepository {
         final body = await _api.get('/islands/$idOrName/fragments');
         final items = body['fragments'] as List<dynamic>? ?? const [];
         return items
-            .map((item) =>
-                LightFragmentModel.fromJson(item as Map<String, dynamic>))
+            .map((item) => FragmentMapper.fromApi(item as Map<String, dynamic>))
             .toList();
       } catch (e) {
         developer.log('listIslandFragments remote failed, using local tags',
@@ -172,4 +164,19 @@ class IslandRepository {
     final fragments = await _fragments.listFragments();
     return fragments.where((fragment) => fragment.tags.contains(name)).toList();
   }
+}
+
+String? _apiErrorCode(DioException error) {
+  final apiError = error.error;
+  if (apiError is Map && apiError['code'] is String) {
+    return apiError['code'] as String;
+  }
+  final responseData = error.response?.data;
+  if (responseData is Map) {
+    final nested = responseData['error'];
+    if (nested is Map && nested['code'] is String) {
+      return nested['code'] as String;
+    }
+  }
+  return null;
 }

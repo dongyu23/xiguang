@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../../../design/tokens/colors.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
+import '../../../../ui/composites/xiguang_bottom_sheet.dart';
+import '../../../../ui/composites/xiguang_button.dart';
 
 /// 月份选择结果
 class MonthPickerResult {
@@ -18,12 +20,10 @@ class MonthPickerSheet extends StatefulWidget {
     super.key,
     required this.months,
     required this.selectedMonth,
-    required this.nightMode,
   });
 
   final List<DateTime> months;
   final DateTime? selectedMonth;
-  final bool nightMode;
 
   @override
   State<MonthPickerSheet> createState() => _MonthPickerSheetState();
@@ -57,12 +57,10 @@ class _MonthPickerSheetState extends State<MonthPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = widget.nightMode ? AppText.nightInk : AppColors.ink;
-    final muted = widget.nightMode ? AppText.nightInkMuted : AppColors.inkMuted;
-    final sheetColor = widget.nightMode ? AppColors.nightWave : AppColors.white;
-    final lineColor = widget.nightMode
-        ? AppColors.white.withValues(alpha: 0.12)
-        : AppColors.line;
+    final theme = NightTheme.of(context);
+    final foreground = theme.foreground;
+    final muted = theme.foregroundMuted;
+    final lineColor = theme.border;
     final selected = DateTime(_year, _month);
 
     final maxHeight = MediaQuery.sizeOf(context).height * .72;
@@ -75,14 +73,7 @@ class _MonthPickerSheetState extends State<MonthPickerSheet> {
           builder: (context, constraints) {
             final pickerHeight =
                 (constraints.maxHeight - 154).clamp(76.0, 128.0);
-            return Container(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.s22, AppSpacing.sm,
-                  AppSpacing.s22, AppSpacing.s10),
-              decoration: BoxDecoration(
-                color: sheetColor,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
+            return XiguangBottomSheet(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -99,8 +90,8 @@ class _MonthPickerSheetState extends State<MonthPickerSheet> {
                     Expanded(
                       child: Text(
                         '按日期筛选',
-                        style: AppText.onNight(
-                            AppText.titleMedium, widget.nightMode),
+                        style: AppText.titleMedium
+                            .copyWith(color: theme.foreground),
                       ),
                     ),
                     TextButton(
@@ -114,7 +105,7 @@ class _MonthPickerSheetState extends State<MonthPickerSheet> {
                           .pop(const MonthPickerResult(null)),
                       child: Text(
                         '全部日期',
-                        style: AppText.chip.copyWith(color: AppColors.teaGreen),
+                        style: AppText.chip.copyWith(color: theme.accent),
                       ),
                     ),
                   ]),
@@ -130,7 +121,6 @@ class _MonthPickerSheetState extends State<MonthPickerSheet> {
                           suffix: '年',
                           foreground: foreground,
                           muted: muted,
-                          nightMode: widget.nightMode,
                           onSelected: (value) => setState(() => _year = value),
                         ),
                       ),
@@ -145,7 +135,6 @@ class _MonthPickerSheetState extends State<MonthPickerSheet> {
                           suffix: '月',
                           foreground: foreground,
                           muted: muted,
-                          nightMode: widget.nightMode,
                           onSelected: (value) => setState(() => _month = value),
                         ),
                       ),
@@ -155,36 +144,18 @@ class _MonthPickerSheetState extends State<MonthPickerSheet> {
                   const SizedBox(height: AppSpacing.sm),
                   Row(children: [
                     Expanded(
-                      child: OutlinedButton(
+                      child: XiguangButton(
+                        label: '取消',
+                        variant: XiguangButtonVariant.secondary,
                         onPressed: () => Navigator.of(context).pop(),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(36),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          side: BorderSide(color: lineColor),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                          ),
-                        ),
-                        child: Text(
-                          '取消',
-                          style: AppText.chip.copyWith(color: muted),
-                        ),
                       ),
                     ),
                     const SizedBox(width: AppSpacing.s12),
                     Expanded(
-                      child: FilledButton(
+                      child: XiguangButton(
+                        label: '确定',
                         onPressed: () => Navigator.of(context)
                             .pop(MonthPickerResult(selected)),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(36),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          backgroundColor: AppColors.teaGreen,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                          ),
-                        ),
-                        child: const Text('确定'),
                       ),
                     ),
                   ]),
@@ -205,7 +176,6 @@ class _PickerColumn extends StatelessWidget {
     required this.suffix,
     required this.foreground,
     required this.muted,
-    required this.nightMode,
     required this.onSelected,
   });
 
@@ -214,11 +184,11 @@ class _PickerColumn extends StatelessWidget {
   final String suffix;
   final Color foreground;
   final Color muted;
-  final bool nightMode;
   final ValueChanged<int> onSelected;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return ListView.separated(
       padding: const EdgeInsets.symmetric(
           vertical: AppSpacing.s6, horizontal: AppSpacing.s10),
@@ -237,8 +207,7 @@ class _PickerColumn extends StatelessWidget {
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: selected
-                    ? AppColors.teaGreen
-                        .withValues(alpha: nightMode ? 0.18 : 0.14)
+                    ? theme.accent.withValues(alpha: .14)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),

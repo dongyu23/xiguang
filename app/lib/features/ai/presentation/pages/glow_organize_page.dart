@@ -1,17 +1,20 @@
+// PAGE_SIZE_EXEMPT: migration in progress; prompt state and result sections will be extracted.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/providers.dart';
-import '../../../../design/tokens/colors.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../ui/primitives/night_background.dart';
 import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_chip.dart';
+import '../../../../ui/composites/xiguang_input.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../domain/ai_request.dart';
+import '../../application/glow_organize_controller.dart';
 
 class GlowOrganizePage extends ConsumerStatefulWidget {
   const GlowOrganizePage({super.key});
@@ -24,7 +27,6 @@ class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
   final _inputController = TextEditingController();
   final _messageController = ScrollController();
   String _mode = 'weave';
-  bool _loading = false;
   static const _quickPrompts = [
     _QuickPrompt(
       icon: Icons.account_tree_outlined,
@@ -73,7 +75,8 @@ class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
 
   @override
   Widget build(BuildContext context) {
-    final nightMode = ref.watch(nightModeProvider);
+    final loading = ref.watch(glowOrganizeControllerProvider).isLoading;
+    final theme = NightTheme.of(context);
     return Stack(children: [
       const Positioned.fill(child: NightBackgroundPlaceholder()),
       const Positioned.fill(child: AtmosphereBackground()),
@@ -90,9 +93,9 @@ class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _GlowHeader(nightMode: nightMode),
+                    const _GlowHeader(),
                     const SizedBox(height: AppSpacing.md),
-                    _GlowBriefing(nightMode: nightMode),
+                    const _GlowBriefing(),
                     const SizedBox(height: AppSpacing.s14),
                     _ModeSelector(
                       mode: _mode,
@@ -101,36 +104,27 @@ class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
                     const SizedBox(height: AppSpacing.s12),
                     _QuickPromptRail(
                       prompts: _quickPrompts,
-                      nightMode: nightMode,
-                      enabled: !_loading,
+                      enabled: !loading,
                       onSelected: _requestGlowWithPrompt,
                     ),
                     const SizedBox(height: AppSpacing.s14),
                     Expanded(
-                      child: Container(
-                        width: double.infinity,
+                      child: XiguangCard(
                         padding: const EdgeInsets.all(AppSpacing.s14),
-                        decoration: softDecoration(
-                          nightMode
-                              ? AppColors.ink.withValues(alpha: .72)
-                              : AppColors.white,
-                          nightMode: nightMode,
-                        ),
                         child: Column(children: [
                           Expanded(
                             child: ListView.separated(
                               controller: _messageController,
                               physics: const BouncingScrollPhysics(),
-                              itemCount: _messages.length + (_loading ? 1 : 0),
+                              itemCount: _messages.length + (loading ? 1 : 0),
                               separatorBuilder: (_, __) =>
                                   const SizedBox(height: AppSpacing.s10),
                               itemBuilder: (context, index) {
-                                if (_loading && index == _messages.length) {
-                                  return _TypingBubble(nightMode: nightMode);
+                                if (loading && index == _messages.length) {
+                                  return const _TypingBubble();
                                 }
                                 return _MessageBubble(
                                   message: _messages[index],
-                                  nightMode: nightMode,
                                 );
                               },
                             ),
@@ -138,51 +132,12 @@ class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
                           const SizedBox(height: AppSpacing.s12),
                           Row(children: [
                             Expanded(
-                              child: TextField(
+                              child: XiguangInput(
                                 controller: _inputController,
-                                minLines: 1,
                                 maxLines: 3,
                                 textInputAction: TextInputAction.send,
                                 onSubmitted: (_) => _requestGlow(),
-                                style: AppText.onNight(AppText.body, nightMode),
-                                decoration: InputDecoration(
-                                  hintText: '比如：哪些线已经织好了？',
-                                  hintStyle: AppText.onNight(
-                                      AppText.placeholder, nightMode),
-                                  filled: true,
-                                  fillColor: nightMode
-                                      ? AppColors.white.withValues(alpha: .08)
-                                      : AppColors.paper,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: AppSpacing.s12,
-                                      vertical: AppSpacing.s12),
-                                  border: OutlineInputBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(AppRadius.md),
-                                    borderSide: BorderSide(
-                                      color: nightMode
-                                          ? AppColors.white
-                                              .withValues(alpha: .12)
-                                          : AppColors.line,
-                                    ),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(AppRadius.md),
-                                    borderSide: BorderSide(
-                                      color: nightMode
-                                          ? AppColors.white
-                                              .withValues(alpha: .12)
-                                          : AppColors.line,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(AppRadius.md),
-                                    borderSide: const BorderSide(
-                                        color: AppColors.teaGreen),
-                                  ),
-                                ),
+                                hint: '比如：哪些线已经织好了？',
                               ),
                             ),
                             const SizedBox(width: AppSpacing.s10),
@@ -192,14 +147,14 @@ class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
                               child: IconButton.filled(
                                 tooltip: '发送',
                                 style: IconButton.styleFrom(
-                                  backgroundColor: AppColors.ink,
-                                  foregroundColor: AppColors.white,
+                                  backgroundColor: theme.foreground,
+                                  foregroundColor: theme.surface,
                                   shape: RoundedRectangleBorder(
                                     borderRadius:
                                         BorderRadius.circular(AppRadius.md),
                                   ),
                                 ),
-                                onPressed: _loading ? null : _requestGlow,
+                                onPressed: loading ? null : _requestGlow,
                                 icon: const Icon(
                                   Icons.arrow_upward_rounded,
                                   semanticLabel: '发送',
@@ -225,11 +180,10 @@ class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
   }
 
   Future<void> _requestGlowWithPrompt(String prompt) async {
-    if (_loading) return;
+    if (ref.read(glowOrganizeControllerProvider).isLoading) return;
     final contextText =
         prompt.isEmpty ? 'manual chat request from starmap' : prompt;
     setState(() {
-      _loading = true;
       if (prompt.isNotEmpty) {
         _messages.add(_GlowMessage(fromUser: true, text: prompt));
         _inputController.clear();
@@ -237,9 +191,9 @@ class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
     });
     _scrollMessagesToEnd();
     try {
-      final response = await ref.read(aiRepositoryProvider).glowSummary(
-            AIRequest(mode: _mode, context: contextText),
-          );
+      final response = await ref
+          .read(glowOrganizeControllerProvider.notifier)
+          .request(AIRequest(mode: _mode, context: contextText));
       setState(() => _messages.add(
           _GlowMessage(fromUser: false, text: response.summary ?? '请求已送达。')));
       _scrollMessagesToEnd();
@@ -248,7 +202,6 @@ class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
           fromUser: false, text: '柔光整理暂时不可用，但不会影响捕光、织线和回看。')));
       _scrollMessagesToEnd();
     } finally {
-      if (mounted) setState(() => _loading = false);
       _scrollMessagesToEnd();
     }
   }
@@ -267,40 +220,27 @@ class _QuickPrompt {
 }
 
 class _GlowBriefing extends StatelessWidget {
-  const _GlowBriefing({required this.nightMode});
-
-  final bool nightMode;
+  const _GlowBriefing();
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        nightMode ? AppColors.white.withValues(alpha: .08) : AppColors.white;
-    return Container(
-      width: double.infinity,
+    final theme = NightTheme.of(context);
+    return XiguangCard(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.s14, AppSpacing.s12, AppSpacing.s14, AppSpacing.s12),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
-          color: nightMode
-              ? AppColors.white.withValues(alpha: .12)
-              : AppColors.line.withValues(alpha: .72),
-        ),
-      ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
           width: 30,
           height: 30,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: AppColors.teaGreen.withValues(alpha: nightMode ? .22 : .14),
+            color: theme.accent.withValues(alpha: .14),
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Icon(
             Icons.auto_awesome_outlined,
             size: 17,
-            color: nightMode ? AppColors.emotionHappy : AppColors.teaGreen,
+            color: theme.accent,
           ),
         ),
         const SizedBox(width: AppSpacing.s10),
@@ -310,12 +250,12 @@ class _GlowBriefing extends StatelessWidget {
             children: [
               Text(
                 'STAR KEEPER',
-                style: AppText.onNight(AppText.eyebrow, nightMode),
+                style: AppText.eyebrow.copyWith(color: theme.foregroundMuted),
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
                 '只在你主动发问时整理线索，不在后台解释你。',
-                style: AppText.onNight(AppText.body, nightMode),
+                style: AppText.body.copyWith(color: theme.foreground),
               ),
             ],
           ),
@@ -328,26 +268,23 @@ class _GlowBriefing extends StatelessWidget {
 class _QuickPromptRail extends StatelessWidget {
   const _QuickPromptRail({
     required this.prompts,
-    required this.nightMode,
     required this.enabled,
     required this.onSelected,
   });
 
   final List<_QuickPrompt> prompts;
-  final bool nightMode;
   final bool enabled;
   final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
       children: [
         for (final prompt in prompts)
           _QuickPromptChip(
             prompt: prompt,
-            nightMode: nightMode,
             enabled: enabled,
             onTap: () => onSelected(prompt.prompt),
           ),
@@ -359,61 +296,41 @@ class _QuickPromptRail extends StatelessWidget {
 class _QuickPromptChip extends StatelessWidget {
   const _QuickPromptChip({
     required this.prompt,
-    required this.nightMode,
     required this.enabled,
     required this.onTap,
   });
 
   final _QuickPrompt prompt;
-  final bool nightMode;
   final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    // 统一为 Material ActionChip — §10 钦定的标准 chip 组件。
-    final fg = nightMode ? AppText.nightInk : AppColors.ink;
-    return ActionChip(
-      onPressed: enabled ? onTap : null,
-      avatar: Icon(prompt.icon, size: 15, color: fg),
-      label: Text(prompt.label),
-      labelStyle: AppText.onNight(AppText.captionStrong, nightMode),
-      backgroundColor: nightMode
-          ? AppColors.white.withValues(alpha: enabled ? .08 : .04)
-          : AppColors.paper.withValues(alpha: enabled ? 1 : .56),
-      side: BorderSide(
-        color: nightMode
-            ? AppColors.white.withValues(alpha: .10)
-            : AppColors.line.withValues(alpha: .82),
-      ),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-      ),
+    return XiguangChip(
+      label: prompt.label,
+      selected: false,
+      leading: Icon(prompt.icon, size: 15),
+      onSelected: enabled ? (_) => onTap() : null,
     );
   }
 }
 
 class _GlowHeader extends StatelessWidget {
-  const _GlowHeader({required this.nightMode});
-
-  final bool nightMode;
+  const _GlowHeader();
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(
       children: [
         PageBackButton(
           onTap: () => Navigator.of(context).maybePop(),
-          nightMode: nightMode,
         ),
         const SizedBox(width: AppSpacing.s12),
         Expanded(
           child: Text(
             '柔光整理',
-            style: AppText.onNight(
-              AppText.titleLarge,
-              nightMode,
-            ),
+            style: AppText.titleLarge.copyWith(color: theme.foreground),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -464,16 +381,13 @@ class _GlowMessage {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message, required this.nightMode});
+  const _MessageBubble({required this.message});
 
   final _GlowMessage message;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
-    final assistantBackground =
-        nightMode ? AppColors.white.withValues(alpha: .08) : AppColors.paper;
-    final assistantText = nightMode ? AppText.nightInk : AppColors.ink;
+    final theme = NightTheme.of(context);
     return Align(
       alignment:
           message.fromUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -482,23 +396,14 @@ class _MessageBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.s13, vertical: AppSpacing.s11),
         decoration: BoxDecoration(
-          color: message.fromUser
-              ? (nightMode ? AppColors.nightButton : AppColors.ink)
-              : assistantBackground,
+          color: message.fromUser ? theme.foreground : theme.surface,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: message.fromUser
-              ? null
-              : Border.all(
-                  color: nightMode
-                      ? AppColors.white.withValues(alpha: .12)
-                      : AppColors.line.withValues(alpha: .86)),
+          border: message.fromUser ? null : Border.all(color: theme.border),
         ),
         child: Text(
           message.text,
-          style: AppText.onNight(AppText.body, nightMode).copyWith(
-            color: message.fromUser
-                ? (nightMode ? AppColors.emotionHappy : AppColors.white)
-                : assistantText,
+          style: AppText.body.copyWith(
+            color: message.fromUser ? theme.surface : theme.foreground,
           ),
         ),
       ),
@@ -507,27 +412,20 @@ class _MessageBubble extends StatelessWidget {
 }
 
 class _TypingBubble extends StatelessWidget {
-  const _TypingBubble({required this.nightMode});
-
-  final bool nightMode;
+  const _TypingBubble();
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.s13, vertical: AppSpacing.s11),
         decoration: BoxDecoration(
-          color: nightMode
-              ? AppColors.white.withValues(alpha: .08)
-              : AppColors.paper,
+          color: theme.surface,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(
-            color: nightMode
-                ? AppColors.white.withValues(alpha: .12)
-                : AppColors.line.withValues(alpha: .86),
-          ),
+          border: Border.all(color: theme.border),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           const SizedBox(
@@ -538,7 +436,7 @@ class _TypingBubble extends StatelessWidget {
           const SizedBox(width: AppSpacing.sm),
           Text(
             '正在看这条线...',
-            style: AppText.onNight(AppText.caption, nightMode),
+            style: AppText.caption.copyWith(color: theme.foregroundMuted),
           ),
         ]),
       ),

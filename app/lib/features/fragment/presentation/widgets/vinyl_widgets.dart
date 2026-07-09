@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/motion.dart';
+import '../../../emotion/domain/audio_track.dart';
 
 // MOTION_EXEMPT: self-painted
 // 此文件包含自绘动画——黑胶旋转(4200ms)、声波(5600ms)、音乐轨迹(4800ms)、唱针(360ms)。
@@ -44,7 +46,7 @@ class _CalmWavePainterWidgetState extends State<CalmWavePainterWidget>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 5600),
+      duration: AppMotion.vinylSlowOrbit,
     );
     if (!isRunningWidgetTest) {
       _controller.repeat();
@@ -123,14 +125,12 @@ class VinylLightSource extends StatefulWidget {
     super.key,
     required this.size,
     required this.moodColor,
-    required this.nightMode,
-    required this.audioAsset,
+    required this.audioTrack,
   });
 
   final double size;
   final Color moodColor;
-  final bool nightMode;
-  final String audioAsset;
+  final AudioTrack? audioTrack;
 
   @override
   State<VinylLightSource> createState() => _VinylLightSourceState();
@@ -141,7 +141,7 @@ class _VinylLightSourceState extends State<VinylLightSource>
   late final AnimationController _rotationController;
   late final AnimationController _needleController;
   AudioPlayer? _player;
-  String? _loadedAsset;
+  String? _loadedKey;
   bool _playing = false;
   bool _playerInitialized = false;
 
@@ -150,11 +150,11 @@ class _VinylLightSourceState extends State<VinylLightSource>
     super.initState();
     _rotationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 4200),
+      duration: AppMotion.vinylOrbit,
     );
     _needleController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 360),
+      duration: AppMotion.vinylSettle,
     );
     _needleController.value = 1;
   }
@@ -164,14 +164,13 @@ class _VinylLightSourceState extends State<VinylLightSource>
     _playerInitialized = true;
     _player = AudioPlayer();
     await _player!.setLoopMode(LoopMode.one);
-    await _player!.setAsset(widget.audioAsset);
-    _loadedAsset = widget.audioAsset;
+    await _loadAudio(widget.audioTrack);
   }
 
   @override
   void didUpdateWidget(covariant VinylLightSource oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.audioAsset != widget.audioAsset) {
+    if (oldWidget.audioTrack?.key != widget.audioTrack?.key) {
       unawaited(_switchAudioAsset(resume: _playing));
     }
   }
@@ -184,16 +183,20 @@ class _VinylLightSourceState extends State<VinylLightSource>
     super.dispose();
   }
 
-  Future<void> _ensureAudioAsset(String asset) async {
+  Future<void> _loadAudio(AudioTrack? track) async {
     final player = _player;
-    if (player == null || _loadedAsset == asset) return;
-    await player.setAsset(asset);
-    _loadedAsset = asset;
+    if (player == null || track == null || _loadedKey == track.key) return;
+    if (track.isBuiltin) {
+      await player.setAsset(track.assetPath!);
+    } else {
+      await player.setFilePath(track.filePath!);
+    }
+    _loadedKey = track.key;
   }
 
   Future<void> _switchAudioAsset({required bool resume}) async {
     try {
-      await _ensureAudioAsset(widget.audioAsset);
+      await _loadAudio(widget.audioTrack);
       if (!mounted || !_playing || !resume) return;
       await _player?.play();
     } catch (_) {
@@ -254,7 +257,6 @@ class _VinylLightSourceState extends State<VinylLightSource>
                   phase: _rotationController.value * pi * 2,
                   needleLift: _needleController.value,
                   moodColor: widget.moodColor,
-                  nightMode: widget.nightMode,
                 ),
               ),
             ),
@@ -270,13 +272,11 @@ class VinylLightPainter extends CustomPainter {
     required this.phase,
     required this.needleLift,
     required this.moodColor,
-    required this.nightMode,
   });
 
   final double phase;
   final double needleLift;
   final Color moodColor;
-  final bool nightMode;
 
   // H1: Cache Paint objects that don't change per frame
   static final _outerStrokePaint = Paint()
@@ -305,7 +305,7 @@ class VinylLightPainter extends CustomPainter {
     ..strokeWidth = 4.4
     ..strokeCap = StrokeCap.round;
 
-  // H1: Cache shader paints keyed by (moodColor, nightMode, canvasSize)
+  // H1: Cache shader paints keyed by (moodColor, canvasSize)
   static Color? _lastOuterColor1;
   static Paint? _cachedOuterPaint;
   static Rect? _lastOuterRect;
@@ -406,8 +406,7 @@ class VinylLightPainter extends CustomPainter {
   bool shouldRepaint(covariant VinylLightPainter oldDelegate) {
     return oldDelegate.phase != phase ||
         oldDelegate.needleLift != needleLift ||
-        oldDelegate.moodColor != moodColor ||
-        oldDelegate.nightMode != nightMode;
+        oldDelegate.moodColor != moodColor;
   }
 }
 
@@ -435,7 +434,7 @@ class _AnimatedMusicTrailState extends State<AnimatedMusicTrail>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 4800),
+      duration: AppMotion.vinylAmbient,
     );
     if (!isRunningWidgetTest) {
       _controller.repeat();

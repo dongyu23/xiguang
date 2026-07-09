@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/providers.dart';
+import 'package:xiguang/app/app_state.dart';
 import '../../design/tokens/motion.dart';
 
 /// 监听 [scrollToTopSignalProvider]，信号变化时滚到顶部。

@@ -25,10 +25,8 @@ class TimelineRepositoryImpl implements TimelineRepositoryContract {
     return DateGroup(
       dateLabel: json['label'] as String? ?? '',
       fragments: fragments,
-      emotionDots: fragments
-          .map((fragment) => fragment.emotion ?? '说不清')
-          .toSet()
-          .toList(),
+      emotionDots:
+          fragments.map((fragment) => fragment.emotion).toSet().toList(),
     );
   }
 
@@ -53,14 +51,5 @@ class TimelineRepositoryImpl implements TimelineRepositoryContract {
     );
   }
 
-  FragmentStatus _statusFromJson(String? value) {
-    return switch (value) {
-      'stardust' => FragmentStatus.stardust,
-      'echo' => FragmentStatus.echo,
-      'seed' => FragmentStatus.seed,
-      'tide' => FragmentStatus.tide,
-      'island_core' => FragmentStatus.islandCore,
-      _ => FragmentStatus.twilight,
-    };
-  }
+  String _statusFromJson(String? value) => value ?? 'twilight';
 }

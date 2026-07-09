@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../tokens/colors.dart';
 import '../tokens/motion.dart';
 import '../tokens/radius.dart';
+import '../tokens/spacing.dart';
 import 'extensions/night_theme.dart';
 
 /// 隙光页面切换：纯 Fade（不带 Material 3 默认的 zoom），与产品"不打扰"气质一致。
@@ -75,7 +76,7 @@ ThemeData xiguangTheme({bool nightMode = false}) {
         borderRadius: BorderRadius.circular(AppRadius.md),
         borderSide: BorderSide(color: night.accent),
       ),
-      contentPadding: const EdgeInsets.all(14),
+      contentPadding: const EdgeInsets.all(AppSpacing.s14),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(

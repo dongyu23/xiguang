@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/providers.dart';
+import '../../../../design/tokens/motion.dart';
+
+import 'sync_providers.dart';
 import '../../domain/oplog.dart';
 import '../../domain/sync_config.dart';
 
@@ -42,11 +44,11 @@ void startAutoSync(WidgetRef ref) {
     case SyncFrequency.onCapture:
       break;
     case SyncFrequency.every5Minutes:
-      _autoSyncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _autoSyncTimer = Timer.periodic(AppTiming.syncEveryFiveMinutes, (_) {
         _doAutoSync(ref);
       });
     case SyncFrequency.hourly:
-      _autoSyncTimer = Timer.periodic(const Duration(hours: 1), (_) {
+      _autoSyncTimer = Timer.periodic(AppTiming.syncHourly, (_) {
         _doAutoSync(ref);
       });
     case SyncFrequency.onAppOpen:

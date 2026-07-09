@@ -1,0 +1,46 @@
+name: Flutter Quality
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/flutter-quality.yml"
+      - "app/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/flutter-quality.yml"
+      - "app/**"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  quality:
+    name: Analyze and test Flutter
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze with fatal diagnostics
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+      - name: Run architecture and widget tests
+        run: flutter test

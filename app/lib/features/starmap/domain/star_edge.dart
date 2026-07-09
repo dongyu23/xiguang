@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 class StarEdge {
   const StarEdge({
     required this.sourceId,

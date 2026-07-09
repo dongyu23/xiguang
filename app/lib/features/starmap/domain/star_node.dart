@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 class StarNode {
   const StarNode({
     required this.fragmentId,

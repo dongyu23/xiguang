@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import 'providers.dart';
+import 'app_state.dart';
+import '../features/auth/presentation/providers/auth_providers.dart';
+import '../features/sync/presentation/providers/sync_providers.dart';
 import '../design/tokens/colors.dart';
 import '../design/tokens/motion.dart';
 import '../design/tokens/radius.dart';
@@ -178,7 +180,7 @@ class _AuthRestoringPage extends StatelessWidget {
     return const Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(children: [
-        Positioned.fill(child: AtmosphereBackground()),
+        Positioned.fill(child: RepaintBoundary(child: AtmosphereBackground())),
         Center(child: CircularProgressIndicator()),
       ]),
     );
@@ -220,7 +222,12 @@ class _AppShellState extends ConsumerState<_AppShell> {
             content: const Text('再按一次退出隙光'),
             duration: AppMotion.snackbar,
             behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.fromLTRB(24, 0, 24, 100),
+            margin: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              0,
+              AppSpacing.lg,
+              AppSpacing.routeOverlayClearance,
+            ),
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadius.lg)),
           ),
@@ -232,7 +239,9 @@ class _AppShellState extends ConsumerState<_AppShell> {
           children: [
             // C2: Single AtmosphereBackground for all tabs (prevents 4x simultaneous animations)
             const Positioned.fill(child: NightBackgroundPlaceholder()),
-            const Positioned.fill(child: AtmosphereBackground()),
+            // RepaintBoundary: 隔离 ambient 动画的每帧重绘，避免波及内容层
+            const Positioned.fill(
+                child: RepaintBoundary(child: AtmosphereBackground())),
             widget.navigationShell,
             const Positioned(
               left: 16,
@@ -286,7 +295,10 @@ class _BackendDisconnectedBanner extends ConsumerWidget {
       child: Align(
         alignment: Alignment.topCenter,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s12,
+            vertical: AppSpacing.sm,
+          ),
           decoration: BoxDecoration(
             color: nightMode
                 ? AppColors.nightSurfaceHigh.withValues(alpha: .92)
@@ -350,7 +362,10 @@ class _XiguangNavBar extends ConsumerWidget {
     final nightMode = ref.watch(nightModeProvider);
     return Container(
       height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s6,
+        vertical: AppSpacing.s6,
+      ),
       decoration: BoxDecoration(
         color: nightMode ? AppColors.nightSurfaceHigh : AppColors.white,
         borderRadius: BorderRadius.circular(AppRadius.xxl),
@@ -461,7 +476,11 @@ class _NavIcon extends StatelessWidget {
       width: width,
       height: height,
       fit: BoxFit.contain,
-      filterQuality: FilterQuality.high,
+      // 小图标用 medium 足够；high 对 34x28 图标过度采样，浪费 GPU
+      filterQuality: FilterQuality.medium,
+      // 按显示尺寸 3x 解码，避免按原始分辨率解码后再缩放（省内存 + 省 GPU）
+      cacheWidth: (width * 3).round(),
+      cacheHeight: (height * 3).round(),
       opacity: selected
           ? const AlwaysStoppedAnimation(1)
           : AlwaysStoppedAnimation(nightMode ? .55 : .50),

@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../design/tokens/colors.dart';
+import '../../design/tokens/motion.dart';
 
 /// 海洋沉浸式空间 — 多层叠加正弦波
 ///
@@ -24,7 +25,7 @@ class _OceanSpaceState extends State<OceanSpace>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 6),
+      duration: AppMotion.oceanAmbient,
     )..repeat();
   }
 

@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/providers.dart';
-import '../../../../design/tokens/colors.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../ui/primitives/overlay_snackbar.dart';
+import '../../../../ui/composites/xiguang_bottom_sheet.dart';
+import '../../../../ui/composites/xiguang_button.dart';
 import '../../domain/update_state.dart';
-import '../providers/app_update_providers.dart';
+import '../../application/app_update_providers.dart';
 
 /// 在「我的」页或主动检查时弹出的更新对话。
 ///
@@ -45,43 +45,32 @@ class _AppUpdateSheetState extends ConsumerState<_AppUpdateSheet> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(appUpdateStateProvider);
-    final nightMode = ref.watch(nightModeProvider);
+    final theme = NightTheme.of(context);
     final canDismiss = !_isForceUpdate(state) && state is! UpdateDownloading;
     return PopScope(
       canPop: canDismiss,
-      child: SafeArea(
-        top: false,
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(
-              AppSpacing.s18, 0, AppSpacing.s18, AppSpacing.s18),
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.s22, AppSpacing.s18, AppSpacing.s22, AppSpacing.s22),
-          decoration:
-              nightMode ? nightDecoration() : softDecoration(AppColors.white),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                Expanded(
-                  child: Text(_titleFor(state),
-                      style: AppText.onNight(AppText.titleMedium, nightMode)),
+      child: XiguangBottomSheet(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Expanded(
+                child: Text(_titleFor(state),
+                    style:
+                        AppText.titleMedium.copyWith(color: theme.foreground)),
+              ),
+              if (canDismiss)
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(Icons.close_rounded, color: theme.foregroundMuted),
                 ),
-                if (canDismiss)
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(Icons.close_rounded,
-                        color: nightMode
-                            ? AppText.nightInkMuted
-                            : AppColors.inkMuted),
-                  ),
-              ]),
-              const SizedBox(height: AppSpacing.s12),
-              _bodyFor(context, state, nightMode),
-              const SizedBox(height: AppSpacing.s18),
-              _actionsFor(context, state, canDismiss, nightMode),
-            ],
-          ),
+            ]),
+            const SizedBox(height: AppSpacing.s12),
+            _bodyFor(context, state),
+            const SizedBox(height: AppSpacing.s18),
+            _actionsFor(context, state, canDismiss),
+          ],
         ),
       ),
     );
@@ -109,12 +98,13 @@ class _AppUpdateSheetState extends ConsumerState<_AppUpdateSheet> {
     };
   }
 
-  Widget _bodyFor(BuildContext context, UpdateState s, bool nightMode) {
-    final body = AppText.onNight(AppText.body, nightMode);
-    final caption = AppText.onNight(AppText.caption, nightMode);
+  Widget _bodyFor(BuildContext context, UpdateState s) {
+    final theme = NightTheme.of(context);
+    final body = AppText.body.copyWith(color: theme.foreground);
+    final caption = AppText.caption.copyWith(color: theme.foregroundMuted);
     switch (s) {
       case UpdateChecking():
-        return _CenteredLoader(label: '正在悄悄问一下服务器…', nightMode: nightMode);
+        return const _CenteredLoader(label: '正在悄悄问一下服务器…');
       case UpdateUpToDate(:final currentBuild):
         return Text('当前已是最新版本（build $currentBuild）。', style: body);
       case UpdateAvailable(:final version, :final currentBuild):
@@ -125,7 +115,7 @@ class _AppUpdateSheetState extends ConsumerState<_AppUpdateSheet> {
           children: [
             Text(
               '${version.latestVersion}（build ${version.latestBuild}）',
-              style: AppText.onNight(AppText.titleSmall, nightMode),
+              style: AppText.titleSmall.copyWith(color: theme.foreground),
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
@@ -138,7 +128,7 @@ class _AppUpdateSheetState extends ConsumerState<_AppUpdateSheet> {
             if (mustForceUpdate) ...[
               const SizedBox(height: AppSpacing.s10),
               Text('这是一次必须更新的版本，更新后即可继续使用。',
-                  style: caption.copyWith(color: AppColors.sunsetCoral)),
+                  style: caption.copyWith(color: theme.danger)),
             ],
           ],
         );
@@ -152,17 +142,15 @@ class _AppUpdateSheetState extends ConsumerState<_AppUpdateSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('${version.latestVersion}（build ${version.latestBuild}）',
-                style: AppText.onNight(AppText.titleSmall, nightMode)),
+                style: AppText.titleSmall.copyWith(color: theme.foreground)),
             const SizedBox(height: AppSpacing.s12),
             ClipRRect(
               borderRadius: BorderRadius.circular(AppRadius.pill),
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 8,
-                color: AppColors.teaGreen,
-                backgroundColor: nightMode
-                    ? AppColors.white.withValues(alpha: .14)
-                    : AppColors.line,
+                color: theme.accent,
+                backgroundColor: theme.border,
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -179,8 +167,7 @@ class _AppUpdateSheetState extends ConsumerState<_AppUpdateSheet> {
           style: body,
         );
       case UpdateFailed(:final message):
-        return Text(message,
-            style: body.copyWith(color: AppColors.sunsetCoral));
+        return Text(message, style: body.copyWith(color: theme.danger));
       case UpdateIdle():
         return Text('点击"开始检查"看看有没有新版本。', style: body);
     }
@@ -190,7 +177,6 @@ class _AppUpdateSheetState extends ConsumerState<_AppUpdateSheet> {
     BuildContext context,
     UpdateState s,
     bool canDismiss,
-    bool nightMode,
   ) {
     switch (s) {
       case UpdateChecking():
@@ -198,84 +184,80 @@ class _AppUpdateSheetState extends ConsumerState<_AppUpdateSheet> {
       case UpdateUpToDate():
         return Align(
           alignment: Alignment.centerRight,
-          child: FilledButton(
+          child: XiguangButton(
+            label: '知道了',
+            expand: false,
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('知道了'),
           ),
         );
       case UpdateAvailable(:final version, :final mustForceUpdate):
         return Row(children: [
           if (!mustForceUpdate)
             Expanded(
-              child: OutlinedButton(
+              child: XiguangButton(
+                label: '稍后再说',
+                variant: XiguangButtonVariant.secondary,
                 onPressed: () {
                   ref.read(appUpdateStateProvider.notifier).dismiss();
                   Navigator.of(context).pop();
                 },
-                child: const Text('稍后再说'),
               ),
             ),
           if (!mustForceUpdate) const SizedBox(width: AppSpacing.s12),
           Expanded(
-            child: FilledButton.icon(
+            child: XiguangButton(
+              label: '立即更新',
+              leading: const Icon(Icons.download_rounded, size: 18),
               onPressed: () =>
                   ref.read(appUpdateStateProvider.notifier).download(version),
-              icon: const Icon(Icons.download_rounded, size: 18),
-              label: const Text('立即更新'),
             ),
           ),
         ]);
       case UpdateDownloading():
         return const SizedBox.shrink();
       case UpdateReadyToInstall():
-        return SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: () =>
-                ref.read(appUpdateStateProvider.notifier).install(),
-            icon: const Icon(Icons.system_security_update_good_outlined,
-                size: 18),
-            label: const Text('打开系统安装器'),
-          ),
+        return XiguangButton(
+          label: '打开系统安装器',
+          leading:
+              const Icon(Icons.system_security_update_good_outlined, size: 18),
+          onPressed: () => ref.read(appUpdateStateProvider.notifier).install(),
         );
       case UpdateFailed():
         return Row(children: [
           Expanded(
-            child: OutlinedButton(
+            child: XiguangButton(
+              label: '稍后再说',
+              variant: XiguangButtonVariant.secondary,
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('稍后再说'),
             ),
           ),
           const SizedBox(width: AppSpacing.s12),
           Expanded(
-            child: FilledButton(
+            child: XiguangButton(
+              label: '重试',
               onPressed: () {
                 ref.read(appUpdateStateProvider.notifier).checkForUpdate();
               },
-              child: const Text('重试'),
             ),
           ),
         ]);
       case UpdateIdle():
-        return SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: () =>
-                ref.read(appUpdateStateProvider.notifier).checkForUpdate(),
-            child: const Text('开始检查'),
-          ),
+        return XiguangButton(
+          label: '开始检查',
+          onPressed: () =>
+              ref.read(appUpdateStateProvider.notifier).checkForUpdate(),
         );
     }
   }
 }
 
 class _CenteredLoader extends StatelessWidget {
-  const _CenteredLoader({required this.label, this.nightMode = false});
+  const _CenteredLoader({required this.label});
   final String label;
-  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.s12),
       child: Row(children: [
@@ -286,8 +268,8 @@ class _CenteredLoader extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.s12),
         Expanded(
-            child:
-                Text(label, style: AppText.onNight(AppText.body, nightMode))),
+            child: Text(label,
+                style: AppText.body.copyWith(color: theme.foreground))),
       ]),
     );
   }

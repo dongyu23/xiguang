@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -11,8 +12,8 @@ Future<void> main() async {
     (options) {
       options
         ..dsn = const String.fromEnvironment('SENTRY_DSN', defaultValue: '')
-        ..tracesSampleRate =
-            0.2 // M5: 20% sampling in production to reduce overhead
+        // Debug 模式下关闭 trace 采样，减少路由跳转/操作的开销
+        ..tracesSampleRate = kDebugMode ? 0.0 : 0.2
         ..debug = false;
     },
     appRunner: () => runZonedGuarded(

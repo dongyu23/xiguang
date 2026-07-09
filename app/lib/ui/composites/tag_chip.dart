@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../design/tokens/colors.dart';
+import '../../design/themes/extensions/night_theme.dart';
 import '../../design/tokens/radius.dart';
 import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
@@ -11,19 +11,18 @@ class TagChip extends StatelessWidget {
     super.key,
     required this.label,
     this.filled = false,
-    this.nightMode = false,
     this.onTap,
     this.onDeleted,
   });
 
   final String label;
   final bool filled;
-  final bool nightMode;
   final VoidCallback? onTap;
   final VoidCallback? onDeleted;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -31,18 +30,10 @@ class TagChip extends StatelessWidget {
             horizontal: AppSpacing.widgetPadding,
             vertical: AppSpacing.tagPadding),
         decoration: BoxDecoration(
-          color: nightMode
-              ? (filled
-                  ? AppColors.teaGreen.withValues(alpha: .82)
-                  : AppColors.white.withValues(alpha: .10))
-              : (filled ? AppColors.ink : AppColors.paper),
+          color: filled ? theme.accent.withValues(alpha: .82) : theme.surface,
           borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(
-            color: nightMode
-                ? (filled
-                    ? AppColors.teaGreen.withValues(alpha: .72)
-                    : AppColors.white.withValues(alpha: .16))
-                : (filled ? AppColors.ink : AppColors.line),
+            color: filled ? theme.accent : theme.border,
           ),
         ),
         child: Row(
@@ -51,9 +42,7 @@ class TagChip extends StatelessWidget {
             Text(
               label,
               style: AppText.chip.copyWith(
-                color: nightMode
-                    ? (filled ? AppColors.ink : AppText.nightInkMuted)
-                    : (filled ? AppColors.white : AppColors.inkMuted),
+                color: filled ? theme.background : theme.foregroundMuted,
               ),
             ),
             if (onDeleted != null) ...[
@@ -62,13 +51,9 @@ class TagChip extends StatelessWidget {
                 onTap: onDeleted,
                 child: Icon(Icons.close,
                     size: 14,
-                    color: nightMode
-                        ? (filled
-                            ? AppColors.ink.withValues(alpha: .72)
-                            : AppText.nightInkMuted)
-                        : (filled
-                            ? AppColors.white.withValues(alpha: .7)
-                            : AppColors.inkMuted)),
+                    color: filled
+                        ? theme.background.withValues(alpha: .72)
+                        : theme.foregroundMuted),
               ),
             ],
           ],
@@ -84,40 +69,31 @@ class MiniTag extends StatelessWidget {
     super.key,
     required this.label,
     this.filled = false,
-    this.nightMode = false,
     this.compact = false,
   });
 
   final String label;
   final bool filled;
-  final bool nightMode;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? AppSpacing.s7 : AppSpacing.sm,
         vertical: compact ? AppSpacing.s3 : AppSpacing.s5,
       ),
       decoration: BoxDecoration(
-        color: nightMode
-            ? (filled
-                ? AppColors.teaGreen.withValues(alpha: .72)
-                : AppColors.white.withValues(alpha: .10))
-            : (filled
-                ? AppColors.ink
-                : (compact
-                    ? AppColors.ink.withValues(alpha: .08)
-                    : AppColors.paper)),
+        color: filled
+            ? theme.accent.withValues(alpha: .72)
+            : theme.surface.withValues(alpha: compact ? .74 : 1),
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
         label,
         style: AppText.chip.copyWith(
-          color: nightMode
-              ? (filled ? AppColors.ink : AppText.nightInkMuted)
-              : (filled ? AppColors.white : AppColors.inkMuted),
+          color: filled ? theme.background : theme.foregroundMuted,
         ),
       ),
     );

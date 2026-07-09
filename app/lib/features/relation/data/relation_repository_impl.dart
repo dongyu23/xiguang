@@ -34,6 +34,7 @@ class RelationRepositoryImpl implements RelationRepositoryContract {
   @override
   Future<void> delete(int id) => _api.delete(id);
 
+  @override
   Future<List<Relation>> list({int? fragmentId}) async {
     final body = await _api.list(fragmentId: fragmentId);
     return (body['relations'] as List<dynamic>? ?? const [])

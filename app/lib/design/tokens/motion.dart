@@ -49,6 +49,15 @@ class AppMotion {
   /// 页面切换动画（GoRoute 过渡）
   static const Duration pageTransition = Duration(milliseconds: 260);
 
+  /// 黑胶与沉浸空间的慢速环境动效。
+  static const Duration vinylSlowOrbit = Duration(milliseconds: 5600);
+  static const Duration vinylOrbit = Duration(milliseconds: 4200);
+  static const Duration vinylSettle = Duration(milliseconds: 360);
+  static const Duration vinylAmbient = Duration(milliseconds: 4800);
+  static const Duration oceanAmbient = Duration(seconds: 6);
+  static const Duration starryAmbient = Duration(seconds: 8);
+  static const Duration canvasAmbient = Duration(milliseconds: 11000);
+
   // 曲线
   /// 进入加速（开屏退场、抽屉收起）
   static const Curve easeIn = Curves.easeInCubic;
@@ -61,4 +70,33 @@ class AppMotion {
 
   /// 呼吸/波动专用（正弦缓动）
   static const Curve sine = Curves.easeInOutSine;
+}
+
+/// 非视觉流程的时间配置。业务代码不得直接创建 Duration。
+class AppTiming {
+  AppTiming._();
+
+  static const Duration audioMeterTick = Duration(seconds: 1);
+  static const Duration backendConnectionTimeout = Duration(seconds: 5);
+
+  /// healthz 连通性探测专用短超时（轻量端点，无需 5s）
+  static const Duration healthzProbeTimeout = Duration(seconds: 2);
+  static const Duration authRequestTimeout = Duration(seconds: 8);
+  static const Duration updateCheckDelay = Duration(seconds: 30);
+  static const Duration themeModePoll = Duration(minutes: 1);
+  static const Duration syncEveryFiveMinutes = Duration(minutes: 5);
+  static const Duration syncHourly = Duration(hours: 1);
+  static const Duration tokenRefreshSkew = Duration(minutes: 1);
+  static const Duration fallbackTokenLifetime = Duration(minutes: 15);
+  static const Duration apiConnectTimeout = Duration(seconds: 10);
+  static const Duration apiReceiveTimeout = Duration(seconds: 15);
+  static const Duration apiSendTimeout = Duration(seconds: 10);
+  static const Duration updateConnectTimeout = Duration(seconds: 15);
+  static const Duration updateReceiveTimeout = Duration(minutes: 5);
+  static const Duration aiRequestTimeout = Duration(seconds: 70);
+
+  static Duration retryBackoff(int attempts) {
+    final milliseconds = (200 * (1 << attempts)).clamp(0, 3000);
+    return Duration(milliseconds: milliseconds);
+  }
 }

@@ -4,27 +4,16 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import '../../fragment/data/fragment_repository.dart';
+import '../../fragment/domain/fragment.dart';
+import '../domain/local_archive_repository.dart';
+import '../domain/local_export_result.dart';
 
-class LocalExportResult {
-  const LocalExportResult({
-    required this.directoryPath,
-    required this.markdownPath,
-    required this.fragmentCount,
-    required this.mediaCount,
-  });
-
-  final String directoryPath;
-  final String markdownPath;
-  final int fragmentCount;
-  final int mediaCount;
-}
-
-class LocalArchiveExporter {
+class LocalArchiveExporter implements LocalArchiveRepositoryPort {
   const LocalArchiveExporter();
 
+  @override
   Future<LocalExportResult> exportFragments(
-    List<LightFragmentModel> fragments,
+    List<Fragment> fragments,
   ) async {
     final root = await getApplicationDocumentsDirectory();
     final exportDir = Directory(p.join(

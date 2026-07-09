@@ -2453,7 +2453,7 @@ CLAUDE.md 不需要一开始就完美。一开始覆盖核心规范即可。后�
 | 深色背景上的标题 | `AppText.inverseTitle` | 20 |
 | 深色背景上的正文 | `AppText.inverseBody` | 13 |
 
-**夜间模式**：所有文本必须经过 `AppText.onNight(style, nightMode)` 处理颜色，不要直接传 `style`。
+**夜间模式**：所有文本颜色必须通过 `NightTheme.of(context)` 的 `foreground` / `foregroundMuted` / `accent` 处理日夜切换，不要直接传日间 `style`（`AppText.onNight` 已移除）。
 
 **禁止操作**：
 
@@ -2666,7 +2666,7 @@ ThemeData 已配 `iconTheme`：日间 `AppColors.ink`，夜间 `AppColors.nightI
 - [ ] BottomSheet 三件套齐全吗？
 - [ ] 按钮是否四选一，不是 `Container + GestureDetector` 自造？
 - [ ] 卡片是否用了 `softDecoration` / `nightDecoration`？
-- [ ] 夜间模式文本是否都过了 `AppText.onNight(...)`？
+- [ ] 夜间模式文本颜色是否通过 `NightTheme.of(context).foreground/foregroundMuted` 处理，而非硬编码日间色？
 - [ ] **图标颜色有没有硬编码 `AppColors.ink/inkMuted/teaGreen`？普通图标应不传 color 走 iconTheme，强调图标用 nightMode 三元**（§9.10）
 - [ ] 动效是否引用 `AppMotion.*`，没有出现裸 `Duration(milliseconds: 数字)` 或 `Curves.xxx`？
 - [ ] 如果文件含自绘动画，是否在顶部声明了 `// MOTION_EXEMPT: self-painted` 标记？
@@ -2813,6 +2813,17 @@ Row [
 | `SettingsSectionLabel` | 设置分组小标签 | `AppText.eyebrow`(11) |
 
 业务页面里出现"开关行 / 导航行 / 信息行 / 分组标签"必须用上述 4 个组件，**禁止**用 `Material + InkWell + Row` 自造。
+
+### 10.5b Chip / 标签芯片
+
+整个 App 的标签芯片只允许以下两个组件，**禁止**再用 `GestureDetector + Container` 自造 Chip：
+
+| 组件 | 用途 | 实现 | 使用场景 |
+|---|---|---|---|
+| `XiguangChip`（[lib/ui/composites/xiguang_chip.dart](app/lib/ui/composites/xiguang_chip.dart)） | 可选中的筛选 Chip | `FilterChip` 封装，`selected` + `onSelected` 语义，胶囊形 | 多选筛选、分类切换、柔光整理提示词选择 |
+| `TagChip` / `MiniTag`（[lib/ui/composites/tag_chip.dart](app/lib/ui/composites/tag_chip.dart)） | 展示型标签（可选删除） | 自绘 `Container`，`filled` + `onTap` + `onDeleted` 语义，方形圆角 | 光片详情标签展示、标签管理、光片卡片内迷你标签 |
+
+**选择依据**：需要"选中/未选中"状态切换用 `XiguangChip`；只需要展示标签（可能带删除）用 `TagChip` / `MiniTag`。两者 API 不互换，不要混用。
 
 ### 10.6 装饰性入口组件白名单（当前为空）
 

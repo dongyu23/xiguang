@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../../design/tokens/colors.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
+import '../../../../ui/composites/xiguang_bottom_sheet.dart';
+import '../../../../ui/composites/xiguang_card.dart';
 
 /// 平台感知的图片选择器。
 ///
@@ -50,37 +52,27 @@ Future<List<XFile>> _pickFromMobile(
   ImagePicker picker,
   int limit,
 ) async {
-  final nightMode = Theme.of(context).brightness == Brightness.dark;
   final source = await showModalBottomSheet<_ImageSource>(
     context: context,
     useRootNavigator: true,
-    showDragHandle: true,
-    backgroundColor: nightMode ? AppColors.nightSurfaceHigh : AppColors.white,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-    ),
-    builder: (context) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-            AppSpacing.s18, AppSpacing.sm, AppSpacing.s18, AppSpacing.s18),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _SourceTile(
-            icon: Icons.photo_camera_outlined,
-            title: '拍照',
-            subtitle: '使用相机拍一张新照片',
-            nightMode: nightMode,
-            onTap: () => Navigator.of(context).pop(_ImageSource.camera),
-          ),
-          const SizedBox(height: AppSpacing.s10),
-          _SourceTile(
-            icon: Icons.photo_library_outlined,
-            title: '从相册选择',
-            subtitle: '从相册或图片文件中选择照片',
-            nightMode: nightMode,
-            onTap: () => Navigator.of(context).pop(_ImageSource.gallery),
-          ),
-        ]),
-      ),
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (context) => XiguangBottomSheet(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        _SourceTile(
+          icon: Icons.photo_camera_outlined,
+          title: '拍照',
+          subtitle: '使用相机拍一张新照片',
+          onTap: () => Navigator.of(context).pop(_ImageSource.camera),
+        ),
+        const SizedBox(height: AppSpacing.s10),
+        _SourceTile(
+          icon: Icons.photo_library_outlined,
+          title: '从相册选择',
+          subtitle: '从相册或图片文件中选择照片',
+          onTap: () => Navigator.of(context).pop(_ImageSource.gallery),
+        ),
+      ]),
     ),
   );
   if (source == null) return const [];
@@ -119,60 +111,51 @@ class _SourceTile extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
-    required this.nightMode,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
-  final bool nightMode;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: nightMode
-          ? AppColors.white.withValues(alpha: .08)
-          : AppColors.paper.withValues(alpha: .62),
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s14, vertical: AppSpacing.s13),
-          child: Row(children: [
-            Container(
-              width: 42,
-              height: 42,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.teaGreen.withValues(alpha: .13),
-                borderRadius: BorderRadius.circular(AppRadius.md),
-              ),
-              child: Icon(icon, color: AppColors.teaGreen, size: 22),
-            ),
-            const SizedBox(width: AppSpacing.s12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: AppText.onNight(AppText.titleSmall, nightMode)),
-                  const SizedBox(height: AppSpacing.s3),
-                  Text(subtitle,
-                      style: AppText.onNight(AppText.caption, nightMode)),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded,
-                color: nightMode
-                    ? AppColors.white.withValues(alpha: .40)
-                    : AppColors.inkMuted),
-          ]),
-        ),
+    final theme = NightTheme.of(context);
+    return XiguangCard(
+      variant: XiguangCardVariant.outlined,
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s14,
+        vertical: AppSpacing.s13,
       ),
+      child: Row(children: [
+        Container(
+          width: 42,
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: theme.accent.withValues(alpha: .13),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          child: Icon(icon, color: theme.accent, size: 22),
+        ),
+        const SizedBox(width: AppSpacing.s12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: AppText.titleSmall.copyWith(color: theme.foreground)),
+              const SizedBox(height: AppSpacing.s3),
+              Text(subtitle,
+                  style:
+                      AppText.caption.copyWith(color: theme.foregroundMuted)),
+            ],
+          ),
+        ),
+        Icon(Icons.chevron_right_rounded, color: theme.foregroundMuted),
+      ]),
     );
   }
 }

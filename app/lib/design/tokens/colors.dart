@@ -62,6 +62,22 @@ class AppColors {
     Color(0xFFD4CBB8),
   ];
 
+  /// 情绪编辑器可选色，页面只消费语义色，不自行声明色值。
+  static const emotionEditorPalette = <Color>[
+    teaGreen,
+    mistBlue,
+    sunsetCoral,
+    lilac,
+    emotionHappy,
+    emotionLost,
+    emotionStruck,
+    emotionUnclear,
+    Color(0xFFC9B8D4),
+    Color(0xFFD4C5B8),
+    Color(0xFFB8C9D4),
+    Color(0xFFD4B8C0),
+  ];
+
   /// 情绪名 → 颜色。默认 7 个走静态 map；自定义情绪走 hash 兜底色板，
   /// 保证 emotionColor() 同步可用（无需查 DB），且与情绪表里 autoColorForName 一致。
   static Color emotionColor(String emotion) {

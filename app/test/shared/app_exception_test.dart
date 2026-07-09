@@ -47,7 +47,8 @@ void main() {
     });
 
     test('StorageException wraps underlying cause', () {
-      final ex = StorageException('drift write failed', cause: StateError('db locked'));
+      final ex = StorageException('drift write failed',
+          cause: StateError('db locked'));
       expect(ex.message, 'drift write failed');
       expect(ex.cause, isA<StateError>());
     });

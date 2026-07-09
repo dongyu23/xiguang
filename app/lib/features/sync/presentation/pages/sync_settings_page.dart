@@ -1,18 +1,21 @@
+// PAGE_SIZE_EXEMPT: migration in progress; connection and server configuration cards will be extracted.
 import 'package:flutter/material.dart';
 import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../app/providers.dart';
+import '../providers/sync_providers.dart';
 import '../../../../ui/composites/settings_widgets.dart';
-import '../../../../ui/primitives/night_background.dart';
 import '../../../../ui/primitives/page_back_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
+import '../../../../ui/composites/xiguang_card.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../domain/sync_config.dart';
 import '../../domain/sync_status.dart';
 
@@ -41,7 +44,7 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   Widget build(BuildContext context) {
     final config = ref.watch(syncConfigProvider);
     final status = ref.watch(syncStatusProvider);
-    final nightMode = ref.watch(nightModeProvider);
+    final theme = NightTheme.of(context);
     final baseUrl = ref.watch(apiBaseUrlProvider);
 
     baseUrl.whenData((url) {
@@ -52,98 +55,78 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
     });
 
     final overlayStyle =
-        nightMode ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark;
+        theme.isNight ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
-      child: Stack(children: [
-        const Positioned.fill(child: NightBackgroundPlaceholder()),
-        const Positioned.fill(child: AtmosphereBackground()),
-        Scaffold(
-          backgroundColor: Colors.transparent,
-          body: SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(22, 12, 22,
-                  64 + 10 + MediaQuery.paddingOf(context).bottom + 30),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _SyncHeader(nightMode: nightMode),
-                        const SizedBox(height: AppSpacing.s18),
-                        _ConnectionCard(
-                          status: status,
-                          nightMode: nightMode,
-                          testing: _testing,
-                          syncing: _syncing,
-                          onTestConnection: () => _testConnection(),
-                          onSyncNow: () => _syncNow(),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        _SectionLabel('连接参数', nightMode: nightMode),
-                        const SizedBox(height: AppSpacing.sm),
-                        _ServerUrlCard(
-                          baseUrl: baseUrl,
-                          controller: _urlController,
-                          nightMode: nightMode,
-                          saving: _savingUrl,
-                          errorText: _urlError,
-                          onChanged: (_) {
-                            if (_urlError != null) {
-                              setState(() => _urlError = null);
-                            }
-                          },
-                          onSave: _saveBaseUrl,
-                          onReset: _resetBaseUrl,
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        _SectionLabel('同步时机', nightMode: nightMode),
-                        const SizedBox(height: AppSpacing.sm),
-                        _Card(nightMode: nightMode, children: [
-                          for (final freq in SyncFrequency.values)
-                            _FrequencyTile(
-                              frequency: freq,
-                              selected: config.frequency == freq,
-                              nightMode: nightMode,
-                              onTap: () => _updateConfig(
-                                  config.copyWith(frequency: freq)),
-                            ),
-                        ]),
-                        const SizedBox(height: AppSpacing.md),
-                        _SectionLabel('网络限制', nightMode: nightMode),
-                        const SizedBox(height: AppSpacing.sm),
-                        _Card(nightMode: nightMode, children: [
-                          SettingsSwitchRow(
-                            label: '仅在 Wi-Fi 下同步',
-                            subtitle: '开启后，使用移动数据时不自动同步。',
-                            value: config.wifiOnly,
-                            nightMode: nightMode,
-                            onChanged: (v) =>
-                                _updateConfig(config.copyWith(wifiOnly: v)),
-                          ),
-                        ]),
-                        const SizedBox(height: AppSpacing.md),
-                        _SectionLabel('同步开关', nightMode: nightMode),
-                        const SizedBox(height: AppSpacing.sm),
-                        _Card(nightMode: nightMode, children: [
-                          SettingsSwitchRow(
-                            label: '启用云同步',
-                            subtitle: '关闭后，光片仅保存在本地，不会推送到服务器。',
-                            value: config.enabled,
-                            nightMode: nightMode,
-                            onChanged: (v) =>
-                                _updateConfig(config.copyWith(enabled: v)),
-                          ),
-                        ]),
-                      ]),
-                ),
-              ),
-            ),
-          ),
+      child: XiguangPage(
+        backgroundLayer: const AtmosphereBackground(),
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.s22,
+          AppSpacing.s12,
+          AppSpacing.s22,
+          AppSpacing.pageBottomNav + MediaQuery.paddingOf(context).bottom,
         ),
-      ]),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const _SyncHeader(),
+          const SizedBox(height: AppSpacing.s18),
+          _ConnectionCard(
+            status: status,
+            testing: _testing,
+            syncing: _syncing,
+            onTestConnection: () => _testConnection(),
+            onSyncNow: () => _syncNow(),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const _SectionLabel('连接参数'),
+          const SizedBox(height: AppSpacing.sm),
+          _ServerUrlCard(
+            baseUrl: baseUrl,
+            controller: _urlController,
+            saving: _savingUrl,
+            errorText: _urlError,
+            onChanged: (_) {
+              if (_urlError != null) {
+                setState(() => _urlError = null);
+              }
+            },
+            onSave: _saveBaseUrl,
+            onReset: _resetBaseUrl,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const _SectionLabel('同步时机'),
+          const SizedBox(height: AppSpacing.sm),
+          _Card(children: [
+            for (final freq in SyncFrequency.values)
+              _FrequencyTile(
+                frequency: freq,
+                selected: config.frequency == freq,
+                onTap: () => _updateConfig(config.copyWith(frequency: freq)),
+              ),
+          ]),
+          const SizedBox(height: AppSpacing.md),
+          const _SectionLabel('网络限制'),
+          const SizedBox(height: AppSpacing.sm),
+          _Card(children: [
+            SettingsSwitchRow(
+              label: '仅在 Wi-Fi 下同步',
+              subtitle: '开启后，使用移动数据时不自动同步。',
+              value: config.wifiOnly,
+              onChanged: (v) => _updateConfig(config.copyWith(wifiOnly: v)),
+            ),
+          ]),
+          const SizedBox(height: AppSpacing.md),
+          const _SectionLabel('同步开关'),
+          const SizedBox(height: AppSpacing.sm),
+          _Card(children: [
+            SettingsSwitchRow(
+              label: '启用云同步',
+              subtitle: '关闭后，光片仅保存在本地，不会推送到服务器。',
+              value: config.enabled,
+              onChanged: (v) => _updateConfig(config.copyWith(enabled: v)),
+            ),
+          ]),
+        ]),
+      ),
     );
   }
 
@@ -288,7 +271,6 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
 class _ConnectionCard extends StatelessWidget {
   const _ConnectionCard({
     required this.status,
-    required this.nightMode,
     required this.testing,
     required this.syncing,
     required this.onTestConnection,
@@ -296,7 +278,6 @@ class _ConnectionCard extends StatelessWidget {
   });
 
   final SyncStatus status;
-  final bool nightMode;
   final bool testing;
   final bool syncing;
   final VoidCallback onTestConnection;
@@ -304,6 +285,7 @@ class _ConnectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final hasError = status.error != null && status.error!.isNotEmpty;
     final statusTitle = status.connected
         ? '已连接'
@@ -315,7 +297,7 @@ class _ConnectionCard extends StatelessWidget {
         : hasError
             ? '请确认服务器地址、网络和后端服务状态。'
             : '点一下测试连接，确认当前服务器是否可用。';
-    return _Card(nightMode: nightMode, children: [
+    return _Card(children: [
       Row(children: [
         Container(
           width: 12,
@@ -333,12 +315,12 @@ class _ConnectionCard extends StatelessWidget {
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(
               statusTitle,
-              style: AppText.onNight(AppText.titleSmall, nightMode),
+              style: AppText.titleSmall.copyWith(color: theme.foreground),
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
               statusHint,
-              style: AppText.onNight(AppText.caption, nightMode),
+              style: AppText.caption.copyWith(color: theme.foregroundMuted),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -346,20 +328,14 @@ class _ConnectionCard extends StatelessWidget {
         ),
       ]),
       const SizedBox(height: AppSpacing.s12),
+      _InfoRow(label: '服务端版本', value: 'Rev ${status.lastServerRev}'),
+      _InfoRow(label: '待推送', value: '${status.pendingCount} 条'),
       _InfoRow(
-          label: '服务端版本',
-          value: 'Rev ${status.lastServerRev}',
-          nightMode: nightMode),
-      _InfoRow(
-          label: '待推送',
-          value: '${status.pendingCount} 条',
-          nightMode: nightMode),
-      _InfoRow(
-          label: '上次同步',
-          value: status.lastSyncAt != null
-              ? '${status.lastSyncAt!.hour.toString().padLeft(2, '0')}:${status.lastSyncAt!.minute.toString().padLeft(2, '0')}:${status.lastSyncAt!.second.toString().padLeft(2, '0')}'
-              : '尚未同步',
-          nightMode: nightMode),
+        label: '上次同步',
+        value: status.lastSyncAt != null
+            ? '${status.lastSyncAt!.hour.toString().padLeft(2, '0')}:${status.lastSyncAt!.minute.toString().padLeft(2, '0')}:${status.lastSyncAt!.second.toString().padLeft(2, '0')}'
+            : '尚未同步',
+      ),
       const SizedBox(height: AppSpacing.s12),
       Row(children: [
         Expanded(
@@ -388,10 +364,6 @@ class _ConnectionCard extends StatelessWidget {
                   )
                 : const Icon(Icons.sync_rounded, size: 17),
             label: Text(syncing ? '同步中...' : '立即同步'),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.teaGreen,
-              foregroundColor: Colors.white,
-            ),
           ),
         ),
       ]),
@@ -400,27 +372,21 @@ class _ConnectionCard extends StatelessWidget {
 }
 
 class _SyncHeader extends StatelessWidget {
-  const _SyncHeader({required this.nightMode});
-
-  final bool nightMode;
+  const _SyncHeader();
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Row(
       children: [
         PageBackButton(
           onTap: () => Navigator.of(context).maybePop(),
-          nightMode: nightMode,
-          iconColor: nightMode ? AppText.nightInk : AppColors.ink,
         ),
         const SizedBox(width: AppSpacing.s12),
         Expanded(
           child: Text(
             '云同步',
-            style: AppText.onNight(
-              AppText.titleLarge,
-              nightMode,
-            ),
+            style: AppText.titleLarge.copyWith(color: theme.foreground),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -434,7 +400,6 @@ class _ServerUrlCard extends StatelessWidget {
   const _ServerUrlCard({
     required this.baseUrl,
     required this.controller,
-    required this.nightMode,
     required this.saving,
     required this.errorText,
     required this.onChanged,
@@ -444,7 +409,6 @@ class _ServerUrlCard extends StatelessWidget {
 
   final AsyncValue<String> baseUrl;
   final TextEditingController controller;
-  final bool nightMode;
   final bool saving;
   final String? errorText;
   final ValueChanged<String> onChanged;
@@ -453,21 +417,19 @@ class _ServerUrlCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     final loading = baseUrl.isLoading || saving;
-    final inputFill = nightMode
-        ? AppColors.white.withValues(alpha: .08)
-        : AppColors.mistBlue.withValues(alpha: .12);
-    final borderColor =
-        nightMode ? AppColors.white.withValues(alpha: .14) : AppColors.line;
+    final inputFill = theme.surface;
+    final borderColor = theme.border;
 
-    return _Card(nightMode: nightMode, children: [
+    return _Card(children: [
       TextField(
         controller: controller,
         enabled: !loading,
         keyboardType: TextInputType.url,
         autocorrect: false,
         onChanged: onChanged,
-        style: AppText.onNight(AppText.body, nightMode),
+        style: AppText.body.copyWith(color: theme.foreground),
         decoration: InputDecoration(
           labelText: '后端地址',
           hintText: 'http://127.0.0.1:8088/api/v1',
@@ -492,8 +454,7 @@ class _ServerUrlCard extends StatelessWidget {
       if (baseUrl.hasError) ...[
         const SizedBox(height: AppSpacing.sm),
         Text('读取地址失败，将使用默认地址。',
-            style: AppText.onNight(AppText.caption, nightMode)
-                .copyWith(color: AppColors.sunsetCoral)),
+            style: AppText.caption.copyWith(color: theme.danger)),
       ],
       const SizedBox(height: AppSpacing.s12),
       Row(children: [
@@ -528,17 +489,16 @@ class _FrequencyTile extends StatelessWidget {
   const _FrequencyTile({
     required this.frequency,
     required this.selected,
-    required this.nightMode,
     required this.onTap,
   });
 
   final SyncFrequency frequency;
   final bool selected;
-  final bool nightMode;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: onTap,
@@ -548,14 +508,12 @@ class _FrequencyTile extends StatelessWidget {
         child: Row(children: [
           Expanded(
             child: Text(frequency.label,
-                style: AppText.onNight(AppText.titleSmall, nightMode)),
+                style: AppText.titleSmall.copyWith(color: theme.foreground)),
           ),
           Icon(
             selected ? Icons.radio_button_checked : Icons.radio_button_off,
             size: 20,
-            color: selected
-                ? AppColors.teaGreen
-                : (nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
+            color: selected ? theme.accent : theme.foregroundMuted,
           ),
         ]),
       ),
@@ -566,52 +524,52 @@ class _FrequencyTile extends StatelessWidget {
 // _SwitchTile 已删除，统一用 ui/composites/settings_widgets.dart 的 SettingsSwitchRow。
 
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.label, {required this.nightMode});
+  const _SectionLabel(this.label);
   final String label;
-  final bool nightMode;
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(left: AppSpacing.s2),
-        child: Text(label, style: AppText.onNight(AppText.eyebrow, nightMode)),
-      );
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: AppSpacing.s2),
+      child: Text(label,
+          style: AppText.eyebrow.copyWith(color: theme.foregroundMuted)),
+    );
+  }
 }
 
 class _Card extends StatelessWidget {
-  const _Card({required this.nightMode, required this.children});
-  final bool nightMode;
+  const _Card({required this.children});
   final List<Widget> children;
   @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(AppSpacing.s18),
-        decoration:
-            nightMode ? nightDecoration() : softDecoration(AppColors.white),
+  Widget build(BuildContext context) => XiguangCard(
         child: Column(
             crossAxisAlignment: CrossAxisAlignment.start, children: children),
       );
 }
 
 class _InfoRow extends StatelessWidget {
-  const _InfoRow(
-      {required this.label, required this.value, required this.nightMode});
+  const _InfoRow({required this.label, required this.value});
   final String label, value;
-  final bool nightMode;
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.s10),
-        child: Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              SizedBox(
-                  width: 80,
-                  child: Text(label,
-                      style: AppText.onNight(AppText.caption, nightMode))),
-              Expanded(
-                  child: Text(value,
-                      style: AppText.onNight(AppText.body, nightMode))),
-            ]),
-      );
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.s10),
+      child: Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            SizedBox(
+                width: 80,
+                child: Text(label,
+                    style: AppText.caption
+                        .copyWith(color: theme.foregroundMuted))),
+            Expanded(
+                child: Text(value,
+                    style: AppText.body.copyWith(color: theme.foreground))),
+          ]),
+    );
+  }
 }
 
 // nightDecoration() 已移除，使用 shadows.dart 中的 nightDecoration()

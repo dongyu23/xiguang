@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../app/providers.dart';
+import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
-import '../../../../ui/primitives/night_background.dart';
 import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../ui/composites/xiguang_empty_state.dart';
+import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../domain/star_graph.dart';
 import '../providers/starmap_provider.dart';
@@ -23,49 +24,35 @@ class StarmapPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final graph = ref.watch(starGraphProvider);
-    final nightMode = ref.watch(nightModeProvider);
-    return Stack(children: [
-      const Positioned.fill(child: NightBackgroundPlaceholder()),
-      const Positioned.fill(child: AtmosphereBackground()),
-      SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(AppSpacing.s22, AppSpacing.s18,
-              AppSpacing.s22, AppSpacing.pageBottomNav),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _Header(
-                      nightMode: nightMode,
-                      onExit: () => _exit(context),
-                    ),
-                    const SizedBox(height: AppSpacing.s20),
-                    graph.when(
-                      data: (value) => _GraphPanel(graph: value),
-                      loading: () => Container(
-                        height: 380,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          gradient: AppColors.gradientNight,
-                        ),
-                        child: const CircularProgressIndicator(),
-                      ),
-                      error: (_, __) => Text('星图暂时无法展开，请稍后再试。',
-                          style: AppText.onNight(AppText.body, nightMode)),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text('这里展示已经确认的织线关系。',
-                        style: AppText.onNight(AppText.bodyMuted, nightMode)),
-                  ]),
+    final theme = NightTheme.of(context);
+    return XiguangPage(
+      backgroundLayer: const AtmosphereBackground(),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _Header(
+          onExit: () => _exit(context),
+        ),
+        const SizedBox(height: AppSpacing.s20),
+        graph.when(
+          data: (value) => _GraphPanel(graph: value),
+          loading: () => Container(
+            height: 380,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              gradient: AppColors.gradientNight,
             ),
+            child: const CircularProgressIndicator(),
+          ),
+          error: (_, __) => const XiguangEmptyState(
+            title: '星图暂时无法展开',
+            description: '请稍后再试，已经确认的织线不会丢失。',
           ),
         ),
-      ),
-    ]);
+        const SizedBox(height: AppSpacing.md),
+        Text('这里展示已经确认的织线关系。',
+            style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted)),
+      ]),
+    );
   }
 
   void _exit(BuildContext context) {
@@ -153,43 +140,40 @@ class _GraphPainter extends CustomPainter {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.nightMode, required this.onExit});
+  const _Header({required this.onExit});
 
-  final bool nightMode;
   final VoidCallback onExit;
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Expanded(
           child: Text('STARMAP',
-              style: AppText.onNight(AppText.eyebrow, nightMode)),
+              style: AppText.eyebrow.copyWith(color: theme.foregroundMuted)),
         ),
-        PageBackButton(nightMode: nightMode, onTap: onExit),
+        PageBackButton(onTap: onExit),
       ]),
       const SizedBox(height: AppSpacing.sm),
       Row(children: [
         Expanded(
-          child: Text('星图', style: AppText.onNight(AppText.hero, nightMode)),
+          child:
+              Text('星图', style: AppText.hero.copyWith(color: theme.foreground)),
         ),
         Container(
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-                color: nightMode
-                    ? AppColors.white.withValues(alpha: .10)
-                    : AppColors.white.withValues(alpha: .86),
+                color: theme.surface.withValues(alpha: .86),
                 shape: BoxShape.circle),
-            child: Icon(Icons.blur_circular_rounded,
-                color: nightMode ? AppColors.nightInk : AppColors.ink)),
+            child: Icon(Icons.blur_circular_rounded, color: theme.foreground)),
       ]),
       const SizedBox(height: AppSpacing.sm),
       Text('旧光之间的联系，在这里慢慢亮起来。',
-          style: AppText.onNight(AppText.body, nightMode)),
+          style: AppText.body.copyWith(color: theme.foregroundMuted)),
     ]);
   }
 }
 
 // _ExitButton 已删除，统一使用 lib/ui/primitives/page_back_button.dart 的 PageBackButton。
-

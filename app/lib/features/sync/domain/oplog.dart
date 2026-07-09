@@ -6,6 +6,8 @@ part 'oplog.g.dart';
 /// 同步操作日志
 @freezed
 class OpLog with _$OpLog {
+  // Freezed forwards this factory annotation to json_serializable.
+  // ignore: invalid_annotation_target
   @JsonSerializable(fieldRename: FieldRename.snake)
   const factory OpLog({
     required String clientOpId,
