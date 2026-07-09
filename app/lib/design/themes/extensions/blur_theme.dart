@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../tokens/colors.dart';
+
 /// 毛玻璃主题扩展 — 组件可通过 Theme.of(context).extension<BlurTheme>() 访问
 class BlurTheme extends ThemeExtension<BlurTheme> {
   const BlurTheme({
@@ -16,13 +18,13 @@ class BlurTheme extends ThemeExtension<BlurTheme> {
   factory BlurTheme.light() => const BlurTheme(
         sigma: 8,
         opacity: .86,
-        tint: Color(0xFFFFFCF6),
+        tint: AppColors.white,
       );
 
   factory BlurTheme.heavy() => const BlurTheme(
         sigma: 12,
         opacity: .92,
-        tint: Color(0xFFF6F3EC),
+        tint: AppColors.paper,
       );
 
   @override

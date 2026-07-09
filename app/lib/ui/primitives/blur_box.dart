@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../design/tokens/blur.dart';
+import '../../design/tokens/colors.dart';
 import '../../design/tokens/radius.dart';
 
 /// 毛玻璃容器 — BackdropFilter + ImageFilter.blur
@@ -17,7 +18,7 @@ class BlurBox extends StatelessWidget {
     required this.child,
     this.sigma = AppBlur.medium,
     this.borderRadius = AppRadius.md,
-    this.tint = const Color(0xFFFFFCF6),
+    this.tint = AppColors.white,
     this.tintOpacity = .86,
     this.padding,
     this.width,
@@ -35,6 +36,10 @@ class BlurBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isNight = Theme.of(context).brightness == Brightness.dark;
+    final effectiveTint = (tint == AppColors.white && isNight)
+        ? AppColors.nightSurfaceHigh
+        : tint;
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
@@ -44,7 +49,7 @@ class BlurBox extends StatelessWidget {
           height: height,
           padding: padding,
           decoration: BoxDecoration(
-            color: tint.withValues(alpha: tintOpacity),
+            color: effectiveTint.withValues(alpha: tintOpacity),
             borderRadius: BorderRadius.circular(borderRadius),
           ),
           child: child,

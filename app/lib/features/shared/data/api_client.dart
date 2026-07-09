@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 
 typedef TokenRefreshCallback = Future<String?> Function();
@@ -17,12 +19,15 @@ class ApiClient {
 
   static const defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8088/api/v1',
+    defaultValue: 'http://192.168.5.200:8088/api/v1',
   );
 
   final Dio _dio;
   String? _accessToken;
   TokenRefreshCallback? _refreshToken;
+
+  /// C4: Lock to prevent concurrent token refreshes
+  Completer<bool>? _refreshLock;
 
   String get baseUrl => _dio.options.baseUrl;
   bool get hasToken => _accessToken != null;
@@ -140,13 +145,33 @@ class ApiClient {
       if (!allowRefresh || !_isUnauthorized(error) || _refreshToken == null) {
         rethrow;
       }
-      final token = await _refreshToken!();
-      if (token == null || token.isEmpty) {
-        rethrow;
+      // C4: Coalesce concurrent refreshes into a single refresh call
+      if (_refreshLock != null) {
+        // Another request is already refreshing — wait for it
+        final success = await _refreshLock!.future;
+        if (!success) rethrow;
+        // Refresh succeeded, retry with new token
+        final response = await request();
+        return _unwrap(response.data);
       }
-      _accessToken = token;
-      final response = await request();
-      return _unwrap(response.data);
+      // We are the first to hit 401 — do the refresh
+      _refreshLock = Completer<bool>();
+      try {
+        final token = await _refreshToken!();
+        if (token == null || token.isEmpty) {
+          _refreshLock!.complete(false);
+          rethrow;
+        }
+        _accessToken = token;
+        _refreshLock!.complete(true);
+        final response = await request();
+        return _unwrap(response.data);
+      } catch (e) {
+        _refreshLock!.complete(false);
+        rethrow;
+      } finally {
+        _refreshLock = null;
+      }
     }
   }
 
@@ -164,14 +189,34 @@ class ApiClient {
     return (options ?? Options()).copyWith(headers: headers);
   }
 
+  /// 解包 API 响应，兼容两种格式：
+  /// 1. 当前格式: { ok: true, data: ... }
+  /// 2. 规范格式: { code: "success", message: "ok", data: ... }
   Map<String, dynamic> _unwrap(Map<String, dynamic>? body) {
     if (body == null) return const {};
+
+    // 成功响应 — 规范格式 { code: "success", data: ... }
+    if (body['code'] == 'success' && body['data'] is Map<String, dynamic>) {
+      return body['data'] as Map<String, dynamic>;
+    }
+    // 成功响应 — 当前格式 { ok: true, data: ... }
     if (body['ok'] == true && body['data'] is Map<String, dynamic>) {
       return body['data'] as Map<String, dynamic>;
     }
     if (body['ok'] == true) {
       return {'value': body['data']};
     }
+
+    // 错误响应 — 规范格式 { code: "xxx", message: "..." }
+    final code = body['code'] as String?;
+    if (code != null && code != 'success') {
+      throw DioException(
+        requestOptions: RequestOptions(path: _dio.options.baseUrl),
+        error: {'code': code, 'message': body['message'] ?? ''},
+        type: DioExceptionType.badResponse,
+      );
+    }
+    // 错误响应 — 当前格式 { ok: false, error: ... }
     throw DioException(
       requestOptions: RequestOptions(path: _dio.options.baseUrl),
       error: body['error'] ?? body,
@@ -184,8 +229,15 @@ class ApiClient {
     if (status == 401) return true;
     final body = error.response?.data;
     if (body is Map<String, dynamic>) {
+      // 规范格式: { code: "auth.unauthorized" }
+      final code = body['code'] as String?;
+      if (code != null && code.contains('unauthorized')) return true;
+      // 当前格式: { error: { code: "unauthorized" } }
       final apiError = body['error'];
-      return apiError is Map && apiError['code'] == 'unauthorized';
+      if (apiError is Map) {
+        final errorCode = apiError['code']?.toString() ?? '';
+        if (errorCode.contains('unauthorized')) return true;
+      }
     }
     return false;
   }

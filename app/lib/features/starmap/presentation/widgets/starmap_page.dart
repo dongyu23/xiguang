@@ -4,13 +4,16 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
-import '../../../../design/tokens/shadows.dart';
+import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
+import '../../../../ui/primitives/night_background.dart';
+import '../../../../ui/primitives/page_back_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../domain/star_graph.dart';
 import '../providers/starmap_provider.dart';
 
-/// 织线页 — 可视化个人星图
+/// 星图页 — 可视化个人关系图
 ///
 /// 星点可拖拽建立连线。第一版用 StarrySpace + InteractiveViewer。
 /// ⚠️ 手势冲突：双指→InteractiveViewer(缩放平移)；单指拖星点→GestureDetector
@@ -22,11 +25,13 @@ class StarmapPage extends ConsumerWidget {
     final graph = ref.watch(starGraphProvider);
     final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
+      const Positioned.fill(child: NightBackgroundPlaceholder()),
       const Positioned.fill(child: AtmosphereBackground()),
       SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 104),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.s22, AppSpacing.s18,
+              AppSpacing.s22, AppSpacing.pageBottomNav),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
@@ -37,22 +42,22 @@ class StarmapPage extends ConsumerWidget {
                       nightMode: nightMode,
                       onExit: () => _exit(context),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: AppSpacing.s20),
                     graph.when(
                       data: (value) => _GraphPanel(graph: value),
                       loading: () => Container(
                         height: 380,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
                           gradient: AppColors.gradientNight,
                         ),
                         child: const CircularProgressIndicator(),
                       ),
-                      error: (error, _) => Text('星图暂时无法展开：$error',
+                      error: (_, __) => Text('星图暂时无法展开，请稍后再试。',
                           style: AppText.onNight(AppText.body, nightMode)),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.md),
                     Text('这里展示已经确认的织线关系。',
                         style: AppText.onNight(AppText.bodyMuted, nightMode)),
                   ]),
@@ -84,7 +89,7 @@ class _GraphPanel extends StatelessWidget {
         height: 380,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           gradient: AppColors.gradientNight,
         ),
         child: Text('先留下几束光，星图会慢慢亮起来。', style: AppText.inverseBody),
@@ -93,7 +98,7 @@ class _GraphPanel extends StatelessWidget {
     return Container(
       height: 380,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         gradient: AppColors.gradientNight,
       ),
       clipBehavior: Clip.antiAlias,
@@ -158,75 +163,33 @@ class _Header extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Expanded(
-          child:
-              Text('WEAVE', style: AppText.onNight(AppText.eyebrow, nightMode)),
+          child: Text('STARMAP',
+              style: AppText.onNight(AppText.eyebrow, nightMode)),
         ),
-        _ExitButton(nightMode: nightMode, onTap: onExit),
+        PageBackButton(nightMode: nightMode, onTap: onExit),
       ]),
-      const SizedBox(height: 8),
+      const SizedBox(height: AppSpacing.sm),
       Row(children: [
         Expanded(
-          child: Text('织线', style: AppText.onNight(AppText.hero, nightMode)),
+          child: Text('星图', style: AppText.onNight(AppText.hero, nightMode)),
         ),
         Container(
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-                color: AppColors.white.withValues(alpha: .86),
+                color: nightMode
+                    ? AppColors.white.withValues(alpha: .10)
+                    : AppColors.white.withValues(alpha: .86),
                 shape: BoxShape.circle),
-            child:
-                const Icon(Icons.blur_circular_rounded, color: AppColors.ink)),
+            child: Icon(Icons.blur_circular_rounded,
+                color: nightMode ? AppColors.nightInk : AppColors.ink)),
       ]),
-      const SizedBox(height: 8),
-      Text('星点之间，有一条细细的线。', style: AppText.onNight(AppText.body, nightMode)),
+      const SizedBox(height: AppSpacing.sm),
+      Text('旧光之间的联系，在这里慢慢亮起来。',
+          style: AppText.onNight(AppText.body, nightMode)),
     ]);
   }
 }
 
-class _ExitButton extends StatelessWidget {
-  const _ExitButton({required this.nightMode, required this.onTap});
+// _ExitButton 已删除，统一使用 lib/ui/primitives/page_back_button.dart 的 PageBackButton。
 
-  final bool nightMode;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = nightMode ? AppColors.white : AppColors.ink;
-    final background = nightMode
-        ? AppColors.white.withValues(alpha: .12)
-        : AppColors.white.withValues(alpha: .92);
-    final border =
-        nightMode ? AppColors.white.withValues(alpha: .22) : AppColors.line;
-    return Tooltip(
-      message: '退出已织线',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: onTap,
-          child: Container(
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: background,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: border),
-              boxShadow: nightMode ? null : softShadow,
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.close_rounded, size: 18, color: foreground),
-              const SizedBox(width: 5),
-              Text(
-                '退出',
-                style: AppText.caption.copyWith(
-                  color: foreground,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-}

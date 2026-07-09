@@ -63,6 +63,16 @@ class StarryPainter extends CustomPainter {
   final int starCount;
   final List<Offset>? nodePositions;
 
+  // M9: Reuse Paint objects to avoid per-frame allocations
+  static final _dustPaint = Paint();
+  static final _linePaint = Paint()
+    ..color = AppColors.white.withValues(alpha: .24)
+    ..strokeWidth = 1.2;
+  static final _glowPaint = Paint()
+    ..color = AppColors.white.withValues(alpha: .22);
+  static final _starPaint = Paint()
+    ..color = AppColors.white.withValues(alpha: .86);
+
   @override
   void paint(Canvas canvas, Size size) {
     // 背景星尘
@@ -70,27 +80,23 @@ class StarryPainter extends CustomPainter {
       final x = (i * 37 % size.width).toDouble();
       final y = (i * 53 % size.height).toDouble();
       final brightness = .08 + .06 * sin(phase + i * .7);
+      _dustPaint.color = AppColors.white.withValues(alpha: brightness);
       canvas.drawCircle(
         Offset(x, y),
         i.isEven ? 1.4 : 2.1,
-        Paint()..color = AppColors.white.withValues(alpha: brightness),
+        _dustPaint,
       );
     }
 
     // 星点节点（光片位置）
     final positions = nodePositions ?? _defaultPositions(size);
-    final linePaint = Paint()
-      ..color = AppColors.white.withValues(alpha: .24)
-      ..strokeWidth = 1.2;
     for (var i = 0; i < positions.length - 1; i++) {
-      canvas.drawLine(positions[i], positions[i + 1], linePaint);
+      canvas.drawLine(positions[i], positions[i + 1], _linePaint);
     }
 
-    final glowPaint = Paint()..color = AppColors.white.withValues(alpha: .22);
-    final starPaint = Paint()..color = AppColors.white.withValues(alpha: .86);
     for (var i = 0; i < positions.length; i++) {
-      canvas.drawCircle(positions[i], 18 + i * 2, glowPaint);
-      canvas.drawCircle(positions[i], 5 + i.toDouble(), starPaint);
+      canvas.drawCircle(positions[i], 18 + i * 2, _glowPaint);
+      canvas.drawCircle(positions[i], 5 + i.toDouble(), _starPaint);
     }
   }
 

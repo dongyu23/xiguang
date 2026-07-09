@@ -1,30 +1,26 @@
-/// Fragment 实体 — "光片"
-///
-/// TODO: 用 freezed + json_serializable 重写
-class Fragment {
-  const Fragment({
-    required this.id,
-    required this.publicId,
-    required this.userId,
-    required this.contentText,
-    this.emotion,
-    this.status = FragmentStatus.twilight,
-    this.mediaUrls = const [],
-    this.tags = const [],
-    required this.createdAt,
-    required this.updatedAt,
-  });
+import 'package:freezed_annotation/freezed_annotation.dart';
 
-  final int id;
-  final String publicId;
-  final int userId;
-  final String contentText;
-  final String? emotion;
-  final FragmentStatus status;
-  final List<String> mediaUrls;
-  final List<String> tags;
-  final DateTime createdAt;
-  final DateTime updatedAt;
+part 'fragment.freezed.dart';
+part 'fragment.g.dart';
+
+/// Fragment 实体 — "光片"
+@freezed
+class Fragment with _$Fragment {
+  const factory Fragment({
+    required int id,
+    @Default('') String publicId,
+    @Default(0) int userId,
+    @Default('') String contentText,
+    String? emotion,
+    @Default(FragmentStatus.twilight) FragmentStatus status,
+    @Default([]) List<String> mediaUrls,
+    @Default([]) List<String> tags,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+  }) = _Fragment;
+
+  factory Fragment.fromJson(Map<String, dynamic> json) =>
+      _$FragmentFromJson(json);
 }
 
 enum FragmentStatus { twilight, stardust, echo, seed, tide, islandCore }

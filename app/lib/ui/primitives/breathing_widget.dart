@@ -26,7 +26,7 @@ class BreathingWidget extends StatefulWidget {
 }
 
 class _BreathingWidgetState extends State<BreathingWidget>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _controller;
 
   @override
@@ -35,11 +35,27 @@ class _BreathingWidgetState extends State<BreathingWidget>
     _controller = AnimationController(
       vsync: this,
       duration: widget.duration,
-    )..repeat(reverse: true);
+    );
+    // M11: Delay animation start by one frame to avoid first-frame jank
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _controller.repeat(reverse: true);
+    });
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // M11: Pause animation when app is backgrounded
+    if (state == AppLifecycleState.paused && _controller.isAnimating) {
+      _controller.stop();
+    } else if (state == AppLifecycleState.resumed && !_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
   }

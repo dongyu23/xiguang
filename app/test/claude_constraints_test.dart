@@ -210,7 +210,6 @@ void main() {
       'lib/features/relation/data/relation_repository_impl.dart',
       'lib/features/relation/presentation/providers/relation_provider.dart',
       'lib/features/relation/presentation/pages/weave_page.dart',
-      'lib/features/relation/presentation/pages/relation_select_page.dart',
       'lib/features/relation/presentation/widgets/relation_type_picker.dart',
       'lib/features/relation/presentation/widgets/relation_note_input.dart',
       'lib/features/starmap/domain/star_node.dart',

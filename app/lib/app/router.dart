@@ -6,6 +6,10 @@ import 'package:go_router/go_router.dart';
 
 import 'providers.dart';
 import '../design/tokens/colors.dart';
+import '../design/tokens/motion.dart';
+import '../design/tokens/radius.dart';
+import '../design/tokens/spacing.dart';
+import '../design/tokens/typography.dart';
 import '../features/auth/presentation/pages/login_page.dart';
 import '../features/auth/presentation/pages/register_page.dart';
 import '../features/fragment/presentation/pages/capture_page.dart';
@@ -24,18 +28,22 @@ import '../features/profile/presentation/pages/mine_page.dart';
 import '../features/relation/presentation/pages/relation_ledger_page.dart';
 import '../features/relation/presentation/pages/weave_page.dart';
 import '../features/sync/presentation/pages/sync_settings_page.dart';
+import '../features/emotion/presentation/pages/emotion_manage_page.dart';
 import '../ui/spaces/space_canvas.dart';
 
+import '../ui/primitives/night_background.dart';
 import 'navigator.dart';
 
 /// GoRouter + StatefulShellRoute.indexedStack
 ///
 /// 四个底部 Tab 作为一级入口；光片详情/织线保留为上下文页面。
-GoRouter createRouter(WidgetRef ref) {
+/// [refreshListenable] 用于在 auth 状态变化时触发重定向，避免重建整个路由。
+GoRouter createRouter(WidgetRef ref, [Listenable? refreshListenable]) {
   final shellRouteKey = GlobalKey<StatefulNavigationShellState>();
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/login',
+    refreshListenable: refreshListenable,
     redirect: (context, state) {
       final restore = ref.read(authRestoreProvider);
       final signedIn = ref.read(authSessionProvider) != null;
@@ -48,8 +56,19 @@ GoRouter createRouter(WidgetRef ref) {
         return isRestoreRoute ? null : '/auth-restoring';
       }
       if (isRestoreRoute) return signedIn ? '/capture' : '/login';
-      if (!signedIn && !isAuthRoute) return '/login';
-      if (signedIn && path == '/login') return '/capture';
+      // 深链接支持：未登录时记录原始路径，登录后回跳
+      if (!signedIn && !isAuthRoute) {
+        final returnTo = Uri.encodeComponent(state.uri.toString());
+        return '/login?return_to=$returnTo';
+      }
+      // 登录后回跳到原始路径（深链接），否则去首页
+      if (signedIn && path == '/login') {
+        final returnTo = state.uri.queryParameters['return_to'];
+        if (returnTo != null && returnTo.isNotEmpty) {
+          return Uri.decodeComponent(returnTo);
+        }
+        return '/capture';
+      }
       return null;
     },
     routes: [
@@ -109,6 +128,9 @@ GoRouter createRouter(WidgetRef ref) {
             GoRoute(
                 path: '/sync-settings',
                 builder: (_, __) => const SyncSettingsPage()),
+            GoRoute(
+                path: '/emotions/manage',
+                builder: (_, __) => const EmotionManagePage()),
           ]),
         ],
       ),
@@ -174,18 +196,20 @@ class _AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<_AppShell> {
   DateTime? _lastBackPress;
+  int? _reportedTabIndex;
 
   @override
   Widget build(BuildContext context) {
-    ref.read(activeTabIndexProvider.notifier).state =
-        widget.navigationShell.currentIndex;
+    final currentIndex = widget.navigationShell.currentIndex;
+    _reportActiveTab(currentIndex);
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         final now = DateTime.now();
         if (_lastBackPress != null &&
-            now.difference(_lastBackPress!) < const Duration(seconds: 2)) {
+            now.difference(_lastBackPress!) < AppMotion.snackbar) {
           SystemNavigator.pop();
           return;
         }
@@ -194,35 +218,117 @@ class _AppShellState extends ConsumerState<_AppShell> {
           context,
           SnackBar(
             content: const Text('再按一次退出隙光'),
-            duration: const Duration(seconds: 2),
+            duration: AppMotion.snackbar,
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.fromLTRB(24, 0, 24, 100),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.lg)),
           ),
         );
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: widget.navigationShell,
-        bottomNavigationBar: _XiguangNavBar(
-          selectedIndex: widget.navigationShell.currentIndex,
-          onTap: (i) {
-            if (i == widget.navigationShell.currentIndex) {
-              ref.read(scrollToTopSignalProvider.notifier).state++;
-            } else {
-              widget.navigationShell.goBranch(i, initialLocation: true);
-            }
-          },
+        body: Stack(
+          children: [
+            // C2: Single AtmosphereBackground for all tabs (prevents 4x simultaneous animations)
+            const Positioned.fill(child: NightBackgroundPlaceholder()),
+            const Positioned.fill(child: AtmosphereBackground()),
+            widget.navigationShell,
+            const Positioned(
+              left: 16,
+              right: 16,
+              top: 10,
+              child: _BackendDisconnectedBanner(),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 10 + bottomPadding,
+              child: _XiguangNavBar(
+                selectedIndex: currentIndex,
+                onTap: (i) {
+                  if (i == currentIndex) {
+                    ref.read(scrollToTopSignalProvider.notifier).state++;
+                  } else {
+                    widget.navigationShell.goBranch(i, initialLocation: true);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _reportActiveTab(int index) {
+    if (_reportedTabIndex == index) return;
+    _reportedTabIndex = index;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final notifier = ref.read(activeTabIndexProvider.notifier);
+      if (notifier.state != index) notifier.state = index;
+    });
+  }
+}
+
+class _BackendDisconnectedBanner extends ConsumerWidget {
+  const _BackendDisconnectedBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(syncStatusProvider);
+    if (status.connected) return const SizedBox.shrink();
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final nightMode = ref.watch(nightModeProvider);
+    return Padding(
+      padding: EdgeInsets.only(top: topPadding),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: nightMode
+                ? AppColors.nightSurfaceHigh.withValues(alpha: .92)
+                : AppColors.white.withValues(alpha: .94),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: AppColors.sunsetCoral.withValues(alpha: .30),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: nightMode ? .20 : .08),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.cloud_off_outlined,
+                size: 16,
+                color: AppColors.sunsetCoral,
+              ),
+              const SizedBox(width: AppSpacing.s6),
+              Text(
+                '后端未连接，本地记录仍可使用',
+                style: AppText.caption.copyWith(
+                  color: nightMode ? AppColors.white : AppColors.ink,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// 底部导航栏 — 隙 / 线 / 屿 / 我的
+/// 底部导航栏 — 隙 / 线 / 屿 / 我的（Telegram 风格浮岛）
 ///
-/// 选中态用滑动 pill 指示器，从旧 tab 平移到新 tab，不用淡入淡出。
+/// 选中态用滑动 pill 指示器，从旧 tab 平移到新 tab。
 class _XiguangNavBar extends ConsumerWidget {
   const _XiguangNavBar({required this.selectedIndex, required this.onTap});
 
@@ -231,83 +337,72 @@ class _XiguangNavBar extends ConsumerWidget {
 
   static const _items = [
     ('assets/nav_icons/nav_gap.png', '隙', 'capture', 34.0, 28.0),
-    ('assets/nav_icons/nav_thread.png', '线', 'timeline', 28.0, 23.0),
+    ('assets/nav_icons/nav_thread.png', '线', 'timeline', 32.0, 26.0),
     ('assets/nav_icons/nav_island.png', '屿', 'universe', 34.0, 28.0),
     ('assets/nav_icons/nav_mine.png', '我的', 'mine', 34.0, 28.0),
   ];
 
   static const _pillHMargin = 4.0;
-  static const _pillVMargin = 2.0;
+  static const _pillVMargin = 3.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final nightMode = ref.watch(nightModeProvider);
-
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
-    final navHeight = 78.0 + bottomInset;
-    final navBottomPadding = bottomInset > 8 ? bottomInset : 8.0;
     return Container(
-      height: navHeight,
-      padding: EdgeInsets.fromLTRB(8, 6, 8, navBottomPadding),
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       decoration: BoxDecoration(
-        color: (nightMode ? const Color(0xFF172625) : const Color(0xFFFFFCF6))
-            .withValues(alpha: nightMode ? .97 : .96),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        color: nightMode ? AppColors.nightSurfaceHigh : AppColors.white,
+        borderRadius: BorderRadius.circular(AppRadius.xxl),
         boxShadow: [
           BoxShadow(
-              color: (nightMode ? Colors.black : const Color(0xFF23413F))
-                  .withValues(alpha: nightMode ? .28 : .075),
-              blurRadius: 30,
-              spreadRadius: -8,
-              offset: const Offset(0, -8))
-        ],
-        border: Border(
-          top: BorderSide(
-            color: nightMode
-                ? AppColors.white.withValues(alpha: .10)
-                : const Color(0xFFE4DDD0),
+            color: Colors.black.withValues(alpha: nightMode ? .24 : .08),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
           ),
-        ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: nightMode ? .12 : .04),
+            blurRadius: 40,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
-      child: SafeArea(
-        top: false,
-        bottom: false,
-        minimum: EdgeInsets.zero,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final tabWidth = constraints.maxWidth / _items.length;
-            return Stack(
-              children: [
-                // 滑动 pill — 选中指示器在 tab 之间平移
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.easeInOutCubic,
-                  left: selectedIndex * tabWidth + _pillHMargin,
-                  top: _pillVMargin,
-                  bottom: _pillVMargin,
-                  child: Container(
-                    width: tabWidth - _pillHMargin * 2,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF72A58F)
-                          .withValues(alpha: nightMode ? .24 : .16),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tabWidth = constraints.maxWidth / _items.length;
+          return Stack(
+            children: [
+              // 滑动 pill — 选中指示器在 tab 之间平移
+              AnimatedPositioned(
+                duration: AppMotion.pageSwap,
+                curve: AppMotion.microMovement,
+                left: selectedIndex * tabWidth + _pillHMargin,
+                top: _pillVMargin,
+                bottom: _pillVMargin,
+                child: Container(
+                  width: tabWidth - _pillHMargin * 2,
+                  decoration: BoxDecoration(
+                    color: AppColors.teaGreen
+                        .withValues(alpha: nightMode ? .22 : .12),
+                    borderRadius: BorderRadius.circular(AppRadius.xl),
                   ),
                 ),
-                // Tab 按钮
-                Row(
-                  children: List.generate(_items.length, (i) {
-                    final selected = selectedIndex == i;
-                    return Expanded(
-                      child: InkWell(
-                        key: ValueKey('nav-${_items[i].$3}'),
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: () => onTap(i),
-                        child: Container(
-                          constraints: const BoxConstraints(minHeight: 58),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child:
-                              Column(mainAxisSize: MainAxisSize.min, children: [
+              ),
+              // Tab 按钮
+              Row(
+                children: List.generate(_items.length, (i) {
+                  final selected = selectedIndex == i;
+                  return Expanded(
+                    child: InkWell(
+                      key: ValueKey('nav-${_items[i].$3}'),
+                      borderRadius: BorderRadius.circular(AppRadius.xl),
+                      onTap: () => onTap(i),
+                      child: SizedBox(
+                        height: 52,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
                             _NavIcon(
                               assetPath: _items[i].$1,
                               selected: selected,
@@ -315,29 +410,30 @@ class _XiguangNavBar extends ConsumerWidget {
                               width: _items[i].$4,
                               height: _items[i].$5,
                             ),
-                            const SizedBox(height: 4),
-                            Text(_items[i].$2,
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: selected
-                                        ? (nightMode
-                                            ? AppColors.white
-                                            : const Color(0xFF233332))
-                                        : (nightMode
-                                            ? AppColors.white
-                                                .withValues(alpha: .62)
-                                            : const Color(0xFF78827D)))),
-                          ]),
+                            const SizedBox(height: AppSpacing.s3),
+                            Text(
+                              _items[i].$2,
+                              style: AppText.nav.copyWith(
+                                color: selected
+                                    ? (nightMode
+                                        ? AppColors.white
+                                        : AppColors.ink)
+                                    : (nightMode
+                                        ? AppColors.white.withValues(alpha: .50)
+                                        : AppColors.inkMuted
+                                            .withValues(alpha: .72)),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    );
-                  }),
-                ),
-              ],
-            );
-          },
-        ),
+                    ),
+                  );
+                }),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -368,17 +464,7 @@ class _NavIcon extends StatelessWidget {
       filterQuality: FilterQuality.high,
       opacity: selected
           ? const AlwaysStoppedAnimation(1)
-          : AlwaysStoppedAnimation(nightMode ? .72 : .66),
+          : AlwaysStoppedAnimation(nightMode ? .55 : .50),
     );
   }
-}
-
-class FragmentEditPlaceholder extends StatelessWidget {
-  const FragmentEditPlaceholder({super.key, required this.id});
-  final String id;
-  @override
-  Widget build(_) => Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Center(child: Text('编辑光片: $id')),
-      );
 }

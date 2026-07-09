@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../design/tokens/spacing.dart';
 
 class TimeRiverItem extends StatelessWidget {
   const TimeRiverItem({super.key, required this.child});
@@ -8,6 +9,7 @@ class TimeRiverItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8), child: child);
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        child: child);
   }
 }

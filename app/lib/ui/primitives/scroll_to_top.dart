@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../design/tokens/motion.dart';
 
 /// 监听 [scrollToTopSignalProvider]，信号变化时滚到顶部。
 /// 自动管理 [ScrollController] 生命周期。
 class ScrollToTop extends ConsumerStatefulWidget {
   const ScrollToTop({super.key, required this.builder});
 
-  final Widget Function(BuildContext context, ScrollController controller) builder;
+  final Widget Function(BuildContext context, ScrollController controller)
+      builder;
 
   @override
   ConsumerState<ScrollToTop> createState() => _ScrollToTopState();
@@ -31,8 +33,8 @@ class _ScrollToTopState extends ConsumerState<ScrollToTop> {
         _lastSignal = next;
         _controller.animateTo(
           0,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOutCubic,
+          duration: AppMotion.slow,
+          curve: AppMotion.easeOut,
         );
       }
     });

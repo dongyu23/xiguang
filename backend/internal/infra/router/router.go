@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"xiguang/backend/internal/ai"
+	"xiguang/backend/internal/app_release"
 	"xiguang/backend/internal/asr"
 	"xiguang/backend/internal/auth"
 	"xiguang/backend/internal/emotion"
@@ -29,6 +30,18 @@ import (
 func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 	authSvc := auth.New(pool, cfg)
 	fragmentSvc := fragment.New(pool)
+	releaseMod := app_release.New(pool, cfg, authSvc.Middleware)
+	// 在 /users/me 等响应里 piggyback 最新版本 meta，客户端可以零额外请求拿到提示。
+	authSvc.SetMetaProvider(func(r *http.Request) any {
+		meta := releaseMod.Service.LatestMeta(r.Context(),
+			r.URL.Query().Get("channel"),
+			r.URL.Query().Get("platform"),
+		)
+		if meta == nil {
+			return nil
+		}
+		return meta
+	})
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -46,6 +59,7 @@ func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 	r.Route("/api/v1", func(api chi.Router) {
 		api.Mount("/auth", authSvc.Routes())
 		api.Mount("/emotions", emotion.Routes())
+		api.Mount("/app", releaseMod.Handler.PublicRoutes())
 
 		api.Group(func(private chi.Router) {
 			private.Use(authSvc.Middleware)
@@ -64,6 +78,9 @@ func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 			private.Mount("/ai", ai.New(pool, cfg).Routes())
 			private.Mount("/asr", asr.New(cfg).Routes())
 		})
+
+		// 管理员路由：路径段以 /admin 开头，内部由 RequireAdmin 中间件校验。
+		api.Mount("/admin/releases", releaseMod.Handler.AdminRoutes())
 	})
 	return r
 }

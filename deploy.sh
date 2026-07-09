@@ -123,6 +123,9 @@ download_configs() {
 pull_and_start() {
     cd "$INSTALL_DIR"
 
+    # App 在线更新：APK 静态目录，nginx 与后端共享此卷。
+    mkdir -p "$INSTALL_DIR/app-releases"
+
     info "拉取镜像（首次可能需要几分钟）..."
     $COMPOSE_CMD pull
 

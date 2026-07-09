@@ -6,6 +6,8 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- 在线更新：触发系统安装器需要 REQUEST_INSTALL_PACKAGES。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:label="隙光"
@@ -39,6 +41,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- 禁用 Impeller，回退 Skia 渲染。
+             vivo mali GPU 对 Impeller 的 Vulkan 纹理格式(format 0x38/0x3b)不兼容，
+             导致切换夜间模式 / 复杂 Stack 布局时 native 崩溃(tombstone)。
+             Skia 更稳定，性能在 MVP 阶段足够。 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
 
         <!-- FileProvider for image_picker camera support on Android 7+ -->
         <provider

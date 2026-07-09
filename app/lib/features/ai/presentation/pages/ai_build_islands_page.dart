@@ -1,15 +1,19 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/motion.dart';
+import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
+import '../../../../ui/primitives/night_background.dart';
+import '../../../../ui/primitives/page_back_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../data/ai_api.dart';
 
@@ -20,8 +24,7 @@ class AiBuildIslandsPage extends ConsumerStatefulWidget {
   ConsumerState<AiBuildIslandsPage> createState() => _AiBuildIslandsPageState();
 }
 
-class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
-    with TickerProviderStateMixin {
+class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
   int _phase = 0;
   String? _error;
   String? _outcomeStatus;
@@ -29,28 +32,11 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
   final _selectedIslandKeys = <String>{};
   final _createdIslandKeys = <String>{};
   bool _confirming = false;
-  late final AnimationController _starController;
-  late final AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
-    _starController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
     _startAnalysis();
-  }
-
-  @override
-  void dispose() {
-    _starController.dispose();
-    _pulseController.dispose();
-    super.dispose();
   }
 
   Future<void> _startAnalysis() async {
@@ -60,7 +46,9 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     for (var i = 0; i < phases.length; i++) {
       if (!mounted) return;
       setState(() => _phase = i);
-      await Future.delayed(const Duration(seconds: 2));
+      // 每段提示停留 2s——语义类比 SnackBar 展示时长，复用 AppMotion.snackbar
+      // 避免为单一阶段流程膨胀 token 库
+      await Future.delayed(AppMotion.snackbar);
     }
 
     try {
@@ -124,7 +112,8 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
       return true;
     } catch (_) {
       if (mounted) {
-        showOverlaySnackBar(context, 
+        showOverlaySnackBar(
+          context,
           SnackBar(content: Text('创建「$name」失败，请稍后再试。')),
         );
       }
@@ -158,7 +147,8 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     if (!mounted) return;
     setState(() => _confirming = false);
     if (createdCount > 0) {
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         SnackBar(content: Text('已把 $createdCount 座岛屿加入你的宇宙。')),
       );
     }
@@ -166,55 +156,77 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
 
   @override
   Widget build(BuildContext context) {
+    final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
+      const Positioned.fill(child: NightBackgroundPlaceholder()),
       const Positioned.fill(child: AtmosphereBackground()),
       Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: const Text('星图管理员'),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-        ),
         body: SafeArea(
-          child: _result != null
-              ? _buildResults()
-              : _error != null
-                  ? _buildError()
-                  : _buildAnalyzing(),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.s22,
+                    AppSpacing.s12, AppSpacing.s22, AppSpacing.pageBottomNav),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _AiBuildHeader(
+                      nightMode: nightMode,
+                      onBack: () => Navigator.of(context).maybePop(),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Expanded(
+                      child: _result != null
+                          ? _buildResults(nightMode)
+                          : _error != null
+                              ? _buildError(nightMode)
+                              : _buildAnalyzing(nightMode),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     ]);
   }
 
-  Widget _buildAnalyzing() {
+  Widget _buildAnalyzing(bool nightMode) {
     final phases = ['正在读你的光片…', '发现了一些隐秘的联系…', '正在给它们取名字…'];
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 400),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          // Animated star field
-          SizedBox(
-            width: 200,
-            height: 200,
-            child: AnimatedBuilder(
-              animation: Listenable.merge([_starController, _pulseController]),
-              builder: (_, __) => CustomPaint(
-                  painter: _AnalyzingPainter(
-                progress: _starController.value,
-                pulse: _pulseController.value,
-              )),
+          Container(
+            width: 116,
+            height: 116,
+            decoration: BoxDecoration(
+              color: AppColors.lilac.withValues(alpha: .18),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(
+                color: AppColors.lilac.withValues(alpha: .24),
+              ),
+            ),
+            child: Icon(
+              Icons.auto_awesome_outlined,
+              size: 44,
+              color: nightMode ? AppText.nightInk : AppColors.ink,
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: AppSpacing.xl),
           Text(
             phases[_phase.clamp(0, phases.length - 1)],
-            style: AppText.titleMedium,
+            style: AppText.onNight(AppText.titleSmall, nightMode),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           LinearProgressIndicator(
-            value: (_phase + _starController.value) / phases.length,
-            color: AppColors.teaGreen,
+            value: (_phase + 1) / phases.length,
+            color: nightMode ? AppText.nightAccent : AppColors.teaGreen,
             backgroundColor: AppColors.teaGreen.withValues(alpha: .12),
           ),
         ]),
@@ -222,16 +234,19 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     );
   }
 
-  Widget _buildError() {
+  Widget _buildError(bool nightMode) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.auto_awesome_outlined,
-              size: 64, color: AppColors.inkMuted),
-          const SizedBox(height: 24),
-          Text(_error!, style: AppText.body, textAlign: TextAlign.center),
-          const SizedBox(height: 24),
+          Icon(Icons.auto_awesome_outlined,
+              size: 64,
+              color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
+          const SizedBox(height: AppSpacing.lg),
+          Text(_error!,
+              style: AppText.onNight(AppText.body, nightMode),
+              textAlign: TextAlign.center),
+          const SizedBox(height: AppSpacing.lg),
           FilledButton.icon(
             onPressed: () {
               setState(() {
@@ -248,7 +263,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
             label: Text(_outcomeStatus == 'not_enough' ? '重新看看' : '再试一次'),
           ),
           if (_outcomeStatus == 'not_enough') ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.s10),
             TextButton.icon(
               onPressed: () => context.go('/capture'),
               icon: const Icon(Icons.add_rounded),
@@ -260,49 +275,45 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     );
   }
 
-  Widget _buildResults() {
+  Widget _buildResults(bool nightMode) {
     final islands = (_result!['islands'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
     if (islands.isEmpty) {
       return Center(
         child: Text(
           _result!['message'] as String? ?? '这些光各自散落着，暂时没有明显的星座。',
-          style: AppText.body,
+          style: AppText.onNight(AppText.body, nightMode),
           textAlign: TextAlign.center,
         ),
       );
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(22, 12, 22, 104),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                _result!['message'] as String? ?? '发现了一些联系。',
-                style: AppText.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '先挑一挑想留下的岛，最后再正式加入你的宇宙。',
-                style: AppText.body,
-              ),
-              const SizedBox(height: 20),
-              ...islands.asMap().entries.map(
-                    (entry) => _buildIslandCard(entry.value, entry.key),
-                  ),
-              _buildConfirmPanel(islands),
-            ],
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            _result!['message'] as String? ?? '发现了一些联系。',
+            style: AppText.onNight(AppText.titleSmall, nightMode),
           ),
-        ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '先挑一挑想留下的岛，最后再正式加入你的宇宙。',
+            style: AppText.onNight(AppText.body, nightMode),
+          ),
+          const SizedBox(height: AppSpacing.s20),
+          ...islands.asMap().entries.map(
+                (entry) => _buildIslandCard(entry.value, entry.key, nightMode),
+              ),
+          _buildConfirmPanel(islands, nightMode),
+        ],
       ),
     );
   }
 
-  Widget _buildIslandCard(Map<String, dynamic> island, int index) {
+  Widget _buildIslandCard(
+      Map<String, dynamic> island, int index, bool nightMode) {
     final name = island['name'] as String;
     final key = _islandKey(index, island);
     final selected = _selectedIslandKeys.contains(key);
@@ -313,13 +324,15 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     final confidence = island['confidence'] as String? ?? 'medium';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
-      decoration: softDecoration(created
-          ? AppColors.teaGreen.withValues(alpha: .08)
-          : selected
-              ? AppColors.white
-              : AppColors.paper),
+      margin: const EdgeInsets.only(bottom: AppSpacing.s14),
+      padding: const EdgeInsets.all(AppSpacing.s18),
+      decoration: softDecoration(
+          created
+              ? AppColors.teaGreen.withValues(alpha: .08)
+              : selected
+                  ? AppColors.white
+                  : AppColors.paper,
+          nightMode: nightMode),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -330,7 +343,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: AppColors.emotionColor(name),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 child: Icon(
                   created ? Icons.check_rounded : Icons.auto_awesome_outlined,
@@ -339,28 +352,28 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpacing.s12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     name,
-                    style: AppText.titleSmall,
+                    style: AppText.onNight(AppText.titleSmall, nightMode),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xs),
                   Text(
                     '${fragmentIds.length} 束光 · ${_confidenceLabel(confidence)}',
-                    style: AppText.caption,
+                    style: AppText.onNight(AppText.caption, nightMode),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpacing.s12),
             _IslandStatusPill(
               label: created
                   ? '已加入'
@@ -368,15 +381,16 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
                       ? '待加入'
                       : '已跳过',
               selected: selected || created,
+              nightMode: nightMode,
             ),
           ]),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.s12),
           Text(
             island['description'] as String? ?? '',
-            style: AppText.body,
+            style: AppText.onNight(AppText.body, nightMode),
           ),
           if (!created) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
@@ -403,7 +417,8 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
     );
   }
 
-  Widget _buildConfirmPanel(List<Map<String, dynamic>> islands) {
+  Widget _buildConfirmPanel(
+      List<Map<String, dynamic>> islands, bool nightMode) {
     final pendingCount = islands.asMap().entries.where((entry) {
       final key = _islandKey(entry.key, entry.value);
       return _selectedIslandKeys.contains(key) &&
@@ -417,19 +432,19 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
             : '选择岛屿后再确认';
 
     return Container(
-      margin: const EdgeInsets.only(top: 2),
-      padding: const EdgeInsets.all(18),
-      decoration: softDecoration(AppColors.white),
+      margin: const EdgeInsets.only(top: AppSpacing.s2),
+      padding: const EdgeInsets.all(AppSpacing.s18),
+      decoration: softDecoration(AppColors.white, nightMode: nightMode),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('最后确认', style: AppText.titleSmall),
-        const SizedBox(height: 6),
+        Text('最后确认', style: AppText.onNight(AppText.titleSmall, nightMode)),
+        const SizedBox(height: AppSpacing.s6),
         Text(
           pendingCount > 0
               ? '确认后，星图管理员才会把选中的岛屿和光片关系写入你的宇宙。'
               : '可以恢复上面的岛屿，再一起加入。',
-          style: AppText.bodyMuted,
+          style: AppText.onNight(AppText.bodyMuted, nightMode),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.s14),
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
@@ -468,22 +483,30 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage>
 }
 
 class _IslandStatusPill extends StatelessWidget {
-  const _IslandStatusPill({required this.label, required this.selected});
+  const _IslandStatusPill({
+    required this.label,
+    required this.selected,
+    required this.nightMode,
+  });
 
   final String label;
   final bool selected;
+  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.teaGreen : AppColors.inkMuted;
+    final color = selected
+        ? (nightMode ? AppText.nightAccent : AppColors.teaGreen)
+        : (nightMode ? AppText.nightInkMuted : AppColors.inkMuted);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color.withValues(alpha: selected ? .12 : .08),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: color.withValues(alpha: .26)),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s10, vertical: AppSpacing.s6),
         child: Text(
           label,
           style: AppText.chip.copyWith(color: color),
@@ -495,57 +518,35 @@ class _IslandStatusPill extends StatelessWidget {
   }
 }
 
-class _AnalyzingPainter extends CustomPainter {
-  _AnalyzingPainter({required this.progress, required this.pulse});
+class _AiBuildHeader extends StatelessWidget {
+  const _AiBuildHeader({required this.onBack, required this.nightMode});
 
-  final double progress;
-  final double pulse;
+  final VoidCallback onBack;
+  final bool nightMode;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final rng = Random(42);
-    final dotPaint = Paint()..color = AppColors.teaGreen.withValues(alpha: .18);
-
-    // Star particles
-    for (var i = 0; i < 30; i++) {
-      final angle = rng.nextDouble() * 2 * pi;
-      final dist = rng.nextDouble() * min(size.width, size.height) * 0.45;
-      final x = center.dx + cos(angle + progress * 2 * pi) * dist;
-      final y = center.dy + sin(angle + progress * 2 * pi) * dist;
-      final radius = 1.2 + rng.nextDouble() * 2.0 + pulse * 0.6;
-      canvas.drawCircle(Offset(x, y), radius, dotPaint);
-    }
-
-    // Central glow
-    final glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          AppColors.teaGreen.withValues(alpha: .22 + pulse * .1),
-          AppColors.teaGreen.withValues(alpha: .04),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(center: center, radius: 60));
-    canvas.drawCircle(center, 60, glowPaint);
-
-    // Connecting lines between some particles
-    final linePaint = Paint()
-      ..color = AppColors.teaGreen.withValues(alpha: .08)
-      ..strokeWidth = 0.8;
-    for (var i = 0; i < 8; i++) {
-      final a1 = rng.nextDouble() * 2 * pi;
-      final d1 = rng.nextDouble() * min(size.width, size.height) * 0.4;
-      final a2 = rng.nextDouble() * 2 * pi;
-      final d2 = rng.nextDouble() * min(size.width, size.height) * 0.4;
-      canvas.drawLine(
-        Offset(center.dx + cos(a1) * d1, center.dy + sin(a1) * d1),
-        Offset(center.dx + cos(a2) * d2, center.dy + sin(a2) * d2),
-        linePaint,
-      );
-    }
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        PageBackButton(onTap: onBack, nightMode: nightMode),
+        const SizedBox(width: AppSpacing.s12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('星图管理员',
+                  style: AppText.onNight(AppText.titleMedium, nightMode)),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                '读光片、找联系、给出候选小岛。',
+                style: AppText.onNight(AppText.caption, nightMode),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
-
-  @override
-  bool shouldRepaint(covariant _AnalyzingPainter old) =>
-      old.progress != progress || old.pulse != pulse;
 }

@@ -1,13 +1,15 @@
+import 'package:freezed_annotation/freezed_annotation.dart';
+
 import '../../fragment/domain/fragment.dart';
 
-class DateGroup {
-  const DateGroup({
-    required this.dateLabel,
-    required this.fragments,
-    this.emotionDots = const [],
-  });
+part 'date_group.freezed.dart';
 
-  final String dateLabel;
-  final List<Fragment> fragments;
-  final List<String> emotionDots;
+/// 日期分组 — 时间河流中的一个日期节点
+@freezed
+class DateGroup with _$DateGroup {
+  const factory DateGroup({
+    required String dateLabel,
+    required List<Fragment> fragments,
+    @Default([]) List<String> emotionDots,
+  }) = _DateGroup;
 }

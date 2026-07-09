@@ -17,6 +17,7 @@ type Repository interface {
 	FindByUsername(ctx context.Context, username string) (domain.User, error)
 	FindByID(ctx context.Context, id int64) (domain.User, error)
 	UpdateUser(ctx context.Context, id int64, params domain.UpdateUserParams) (domain.User, error)
+	UpdatePassword(ctx context.Context, userID int64, passwordHash string) error
 	InsertRefreshToken(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error
 	FindRefreshUserID(ctx context.Context, tokenHash string) (int64, error)
 	RotateRefreshToken(ctx context.Context, oldTokenHash, newTokenHash string, expiresAt time.Time) (int64, error)
@@ -150,6 +151,17 @@ func (r *PG) UpdateUser(ctx context.Context, id int64, params domain.UpdateUserP
 		id, params.Nickname, params.AvatarKey, params.AIEnabled, params.PrivacyMode).
 		Scan(&user.ID, &user.PublicID, &user.Username, &user.Nickname, &user.AvatarKey, &user.AIEnabled, &user.PrivacyMode, &user.CreatedAt)
 	return user, err
+}
+
+func (r *PG) UpdatePassword(ctx context.Context, userID int64, passwordHash string) error {
+	tag, err := r.db.Exec(ctx, `UPDATE users SET password_hash=$2, updated_at=now() WHERE id=$1 AND deleted_at IS NULL`, userID, passwordHash)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (r *PG) InsertRefreshToken(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error {

@@ -40,6 +40,10 @@ func (f *fakeAuthRepo) UpdateUser(ctx context.Context, id int64, params domain.U
 	return user, nil
 }
 
+func (f *fakeAuthRepo) UpdatePassword(ctx context.Context, userID int64, passwordHash string) error {
+	return nil
+}
+
 func (f *fakeAuthRepo) InsertRefreshToken(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error {
 	f.refreshTokens[tokenHash] = userID
 	return nil

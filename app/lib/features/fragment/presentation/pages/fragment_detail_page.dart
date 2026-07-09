@@ -12,13 +12,18 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/motion.dart';
+import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
 import '../../data/fragment_repository.dart';
 import '../../../ai/data/ai_api.dart';
 import '../../../../ui/composites/image_grid.dart';
 import '../../../../ui/composites/media_image.dart';
 import '../../../../ui/composites/tag_chip.dart';
+import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../ui/primitives/night_background.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import 'image_attachment_picker.dart';
 
@@ -99,23 +104,25 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
   Future<void> _acceptPolish(
       LightFragmentModel fragment, String newText) async {
     try {
-      await ref.read(fragmentRepositoryProvider).updateFragmentText(
+      // H5: Use centralized updateText
+      await ref.read(fragmentsProvider.notifier).updateText(
             fragment.id,
             newText,
             emotion: fragment.emotion,
             tags: fragment.tags,
           );
       _contentController.text = newText;
-      await ref.read(fragmentsProvider.notifier).refresh();
-      ref.invalidate(localTimelineGroupsProvider);
       if (!mounted) return;
       setState(() => _polishState = _PolishState.idle);
-      showOverlaySnackBar(context, 
-        const SnackBar(content: Text('润色已保存。'), duration: Duration(seconds: 2)),
+      showOverlaySnackBar(
+        context,
+        SnackBar(
+            content: const Text('润色已保存。'), duration: AppMotion.snackbar),
       );
     } catch (_) {
       if (mounted) {
-        showOverlaySnackBar(context, 
+        showOverlaySnackBar(
+          context,
           const SnackBar(content: Text('保存失败，请稍后再试。')),
         );
       }
@@ -125,19 +132,22 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
   @override
   Widget build(BuildContext context) {
     final fragmentID = int.tryParse(widget.id) ?? 0;
-    final fragments = ref.watch(fragmentsProvider);
+    // 只 watch 目标光片，列表中其他光片变化不触发此页重建
+    final fragmentAsync = ref.watch(fragmentsProvider.select((asyncValue) {
+      return asyncValue.whenData(
+          (items) => items.where((item) => item.id == fragmentID).firstOrNull);
+    }));
     final polishEnabled = ref.watch(aiPolishEnabledProvider);
     final nightMode = ref.watch(nightModeProvider);
 
     return Stack(children: [
+      const Positioned.fill(child: NightBackgroundPlaceholder()),
       const Positioned.fill(child: AtmosphereBackground()),
       Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: fragments.when(
-            data: (items) {
-              final fragment =
-                  items.where((item) => item.id == fragmentID).firstOrNull;
+          child: fragmentAsync.when(
+            data: (fragment) {
               if (fragment == null) {
                 return _MissingLightState(
                   nightMode: nightMode,
@@ -147,7 +157,8 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
               _syncEditors(fragment);
               return SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(22, 10, 22, 104),
+                padding: EdgeInsets.fromLTRB(22, 8, 22,
+                    64 + 10 + MediaQuery.paddingOf(context).bottom + 30),
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 560),
@@ -158,7 +169,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                           nightMode: nightMode,
                           onBack: () => context.pop(),
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: AppSpacing.s12),
                         _LightEditCard(
                           fragment: fragment,
                           contentController: _contentController,
@@ -168,15 +179,6 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                           onEmotionChanged: (value) =>
                               setState(() => _emotion = value),
                         ),
-                        const SizedBox(height: 14),
-                        _MediaPanel(
-                          urls: fragment.mediaUrls,
-                          nightMode: nightMode,
-                          picking: _pickingImage,
-                          pickingAudio: _pickingAudio,
-                          onPickImages: () => _pickImages(fragment),
-                          onPickAudio: () => _pickAudio(fragment),
-                        ),
                         if (_polishState == _PolishState.loading ||
                             _polishState == _PolishState.done ||
                             _polishState == _PolishState.error)
@@ -184,6 +186,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                             state: _polishState,
                             polishedText: _polishedText,
                             message: _polishMessage,
+                            nightMode: nightMode,
                             onAccept: _polishState == _PolishState.done &&
                                     _polishedText.isNotEmpty
                                 ? () => _acceptPolish(fragment, _polishedText)
@@ -194,7 +197,7 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                                 : null,
                             onDiscard: _resetPolish,
                           ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: AppSpacing.s12),
                         _ActionDock(
                           saving: _saving,
                           polishEnabled: polishEnabled &&
@@ -206,8 +209,17 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                             _contentController.text,
                             _emotion,
                           ),
-                          onDelete: () => _delete(fragment),
+                          onDelete: () => _confirmDelete(fragment),
                           onWeave: () => context.push('/weave/${fragment.id}'),
+                        ),
+                        const SizedBox(height: AppSpacing.s14),
+                        _MediaPanel(
+                          urls: fragment.mediaUrls,
+                          nightMode: nightMode,
+                          picking: _pickingImage,
+                          pickingAudio: _pickingAudio,
+                          onPickImages: () => _pickImages(fragment),
+                          onPickAudio: () => _pickAudio(fragment),
                         ),
                       ],
                     ),
@@ -216,8 +228,9 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) =>
-                Center(child: Text('暂时无法打开这束光：$error', style: AppText.body)),
+            error: (_, __) => const Center(
+              child: Text('暂时无法打开这束光，请稍后再试。', style: AppText.body),
+            ),
           ),
         ),
       ),
@@ -236,7 +249,8 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     if (_saving) return;
     final text = _contentController.text.trim();
     if (text.isEmpty) {
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('至少留下一句话。'),
           behavior: SnackBarBehavior.floating,
@@ -246,20 +260,20 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     }
     setState(() => _saving = true);
     try {
-      await ref.read(fragmentRepositoryProvider).updateFragmentText(
+      // H5: Use centralized updateText to avoid cascade invalidation
+      await ref.read(fragmentsProvider.notifier).updateText(
             fragment.id,
             text,
             emotion: _emotion,
             tags: _parseTags(_tagController.text),
           );
-      await ref.read(fragmentsProvider.notifier).refresh();
-      ref.invalidate(localTimelineGroupsProvider);
       if (!mounted) return;
       setState(() {
         _saving = false;
         _loadedFragmentId = null;
       });
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('这束光已经重新放好。'),
           behavior: SnackBarBehavior.floating,
@@ -268,7 +282,8 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('暂时无法保存修改，请稍后再试。'),
           behavior: SnackBarBehavior.floating,
@@ -277,10 +292,40 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     }
   }
 
+  Future<void> _confirmDelete(LightFragmentModel fragment) async {
+    final nw = ref.read(nightModeProvider);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: nw ? AppColors.nightSurface : AppColors.white,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md)),
+        title: Text('删除这束光？', style: AppText.onNight(AppText.titleMedium, nw)),
+        content: Text('删除后无法恢复，也会从线和小岛里消失。',
+            style: AppText.onNight(AppText.body, nw)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.sunsetCoral,
+              foregroundColor: AppColors.white,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('确认删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _delete(fragment);
+  }
+
   Future<void> _delete(LightFragmentModel fragment) async {
-    await ref.read(fragmentRepositoryProvider).deleteFragment(fragment.id);
-    ref.invalidate(fragmentsProvider);
-    ref.invalidate(localTimelineGroupsProvider);
+    // H5: Use centralized deleteMany for proper invalidation
+    await ref.read(fragmentsProvider.notifier).deleteMany({fragment.id});
     if (mounted) context.pop();
   }
 
@@ -299,7 +344,8 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
       }
       final newUrls = await _mediaUrlsFromPickedImages(picked);
       final merged = _mergeMediaUrls(fragment.mediaUrls, newUrls);
-      await ref.read(fragmentRepositoryProvider).updateFragmentText(
+      // H5: Use centralized updateText
+      await ref.read(fragmentsProvider.notifier).updateText(
             fragment.id,
             _contentController.text.trim().isEmpty
                 ? fragment.contentText
@@ -308,14 +354,13 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
             tags: _parseTags(_tagController.text),
             mediaUrls: merged,
           );
-      await ref.read(fragmentsProvider.notifier).refresh();
-      ref.invalidate(localTimelineGroupsProvider);
       if (!mounted) return;
       setState(() {
         _pickingImage = false;
         _loadedFragmentId = null;
       });
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('画面已经附着到这束光。'),
           behavior: SnackBarBehavior.floating,
@@ -324,7 +369,8 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _pickingImage = false);
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('暂时无法补充图片，请稍后再试。'),
           behavior: SnackBarBehavior.floating,
@@ -364,7 +410,8 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
         throw StateError('audio_file_missing');
       }
       final merged = _mergeAudioUrl(fragment.mediaUrls, audioUrl);
-      await ref.read(fragmentRepositoryProvider).updateFragmentText(
+      // H5: Use centralized updateText
+      await ref.read(fragmentsProvider.notifier).updateText(
             fragment.id,
             _contentController.text.trim().isEmpty
                 ? fragment.contentText
@@ -373,14 +420,13 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
             tags: _parseTags(_tagController.text),
             mediaUrls: merged,
           );
-      await ref.read(fragmentsProvider.notifier).refresh();
-      ref.invalidate(localTimelineGroupsProvider);
       if (!mounted) return;
       setState(() {
         _pickingAudio = false;
         _loadedFragmentId = null;
       });
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('录音文件已经附着到这束光。'),
           behavior: SnackBarBehavior.floating,
@@ -389,7 +435,8 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _pickingAudio = false);
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('暂时无法补充录音文件，请稍后再试。'),
           behavior: SnackBarBehavior.floating,
@@ -448,9 +495,11 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     return 'audio/mp4';
   }
 
+  static final _tagSplitter = RegExp(r'[\s,，#]+');
+
   List<String> _parseTags(String value) {
     return value
-        .split(RegExp(r'[\s,，#]+'))
+        .split(_tagSplitter)
         .map((tag) => tag.trim())
         .where((tag) => tag.isNotEmpty)
         .toSet()
@@ -493,53 +542,27 @@ class _DetailHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(children: [
-      Tooltip(
-        message: '返回线',
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: onBack,
-            child: Container(
-              width: 42,
-              height: 42,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: nightMode
-                    ? AppColors.white.withValues(alpha: .10)
-                    : AppColors.white.withValues(alpha: .76),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: nightMode
-                      ? AppColors.white.withValues(alpha: .12)
-                      : AppColors.line,
-                ),
-              ),
-              child: Icon(
-                Icons.arrow_back_rounded,
-                color: nightMode ? AppText.nightInk : AppColors.ink,
-              ),
-            ),
-          ),
-        ),
+      PageBackButton(
+        onTap: onBack,
+        nightMode: nightMode,
+        iconColor: nightMode ? AppText.nightInk : AppColors.ink,
       ),
-      const SizedBox(width: 12),
+      const SizedBox(width: AppSpacing.s12),
       Expanded(
         child: Text(
           '光片详情',
           textAlign: TextAlign.center,
-          style: AppText.onNight(AppText.hero, nightMode).copyWith(
-            fontSize: 30,
-          ),
+          style: AppText.onNight(AppText.titleLarge, nightMode),
         ),
       ),
-      const SizedBox(width: 12),
+      const SizedBox(width: AppSpacing.s12),
       const SizedBox(width: 42, height: 42),
     ]);
   }
 }
 
-class _LightEditCard extends StatelessWidget {
+/// M16: StatefulWidget to isolate emotion change rebuilds from the parent page.
+class _LightEditCard extends StatefulWidget {
   const _LightEditCard({
     required this.fragment,
     required this.contentController,
@@ -556,67 +579,72 @@ class _LightEditCard extends StatelessWidget {
   final bool nightMode;
   final ValueChanged<String> onEmotionChanged;
 
+  @override
+  State<_LightEditCard> createState() => _LightEditCardState();
+}
+
+class _LightEditCardState extends State<_LightEditCard> {
+  late String _emotion = widget.emotion;
+
   static const _emotions = ['平静', '开心', '疲惫', '焦虑', '失落', '被击中', '混乱', '说不清'];
 
   @override
   Widget build(BuildContext context) {
-    final cardColor = nightMode ? const Color(0xFF203231) : AppColors.white;
+    final nw = widget.nightMode;
+    final cardColor = nw ? AppColors.nightCard : AppColors.white;
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.s15, AppSpacing.md, AppSpacing.s14),
       decoration:
-          (nightMode ? _nightDecoration() : softDecoration(cardColor)).copyWith(
+          (nw ? _nightDecoration() : softDecoration(cardColor)).copyWith(
         border: Border.all(
-          color: AppColors.emotionColor(emotion).withValues(alpha: .32),
+          color: AppColors.emotionColor(_emotion).withValues(alpha: .32),
         ),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text(fragment.dateLabel,
-              style: AppText.onNight(AppText.eyebrow, nightMode)),
+          Text(widget.fragment.dateLabel,
+              style: AppText.onNight(AppText.eyebrow, nw)),
           const Spacer(),
-          Text(fragment.time,
-              style: AppText.onNight(AppText.caption, nightMode)),
+          Text(widget.fragment.time,
+              style: AppText.onNight(AppText.caption, nw)),
         ]),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.s11),
         TextField(
-          controller: contentController,
-          minLines: 5,
-          maxLines: 12,
-          style: AppText.onNight(AppText.body, nightMode).copyWith(
-            fontSize: 17,
-            height: 1.62,
-            fontWeight: FontWeight.w600,
-          ),
+          controller: widget.contentController,
+          minLines: 3,
+          maxLines: 10,
+          style: AppText.onNight(AppText.bodyStrong, nw),
           decoration: InputDecoration(
             hintText: '写下这束光...',
-            hintStyle: AppText.onNight(AppText.placeholder, nightMode),
+            hintStyle: AppText.onNight(AppText.placeholder, nw),
             filled: true,
-            fillColor: nightMode
+            fillColor: nw
                 ? AppColors.white.withValues(alpha: .06)
                 : AppColors.paper.withValues(alpha: .46),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.s13, vertical: AppSpacing.s12),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide: BorderSide.none,
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.s6),
         Align(
           alignment: Alignment.centerRight,
           child: ValueListenableBuilder<TextEditingValue>(
-            valueListenable: contentController,
+            valueListenable: widget.contentController,
             builder: (context, value, _) {
               final count = value.text.trim().runes.length;
               return Text(
                 '$count 字',
-                style: AppText.onNight(AppText.caption, nightMode),
+                style: AppText.onNight(AppText.caption, nw),
               );
             },
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.s10),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -624,27 +652,34 @@ class _LightEditCard extends StatelessWidget {
               .map(
                 (item) => TagChip(
                   label: item,
-                  filled: item == emotion,
-                  nightMode: nightMode,
-                  onTap: () => onEmotionChanged(item),
+                  filled: item == _emotion,
+                  nightMode: nw,
+                  onTap: () {
+                    setState(() => _emotion = item);
+                    widget.onEmotionChanged(item);
+                  },
                 ),
               )
               .toList(),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.s10),
         TextField(
-          controller: tagController,
-          style: AppText.onNight(AppText.body, nightMode),
+          controller: widget.tagController,
+          style: AppText.onNight(AppText.body, nw),
           decoration: InputDecoration(
             prefixIcon: const Icon(Icons.sell_outlined, size: 18),
             hintText: '可选标签，用空格分隔',
-            hintStyle: AppText.onNight(AppText.placeholder, nightMode),
+            hintStyle: AppText.onNight(AppText.placeholder, nw),
             filled: true,
-            fillColor: nightMode
+            fillColor: nw
                 ? AppColors.white.withValues(alpha: .06)
                 : AppColors.paper.withValues(alpha: .56),
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.s12, vertical: AppSpacing.s12),
+            prefixIconConstraints:
+                const BoxConstraints(minWidth: 42, minHeight: 42),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               borderSide: BorderSide.none,
             ),
           ),
@@ -653,20 +688,7 @@ class _LightEditCard extends StatelessWidget {
     );
   }
 
-  BoxDecoration _nightDecoration() {
-    return BoxDecoration(
-      color: const Color(0xFF203231).withValues(alpha: .84),
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: AppColors.white.withValues(alpha: .10)),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: .16),
-          blurRadius: 24,
-          offset: const Offset(0, 14),
-        ),
-      ],
-    );
-  }
+  BoxDecoration _nightDecoration() => nightDecoration();
 }
 
 class _MediaPanel extends StatelessWidget {
@@ -693,11 +715,11 @@ class _MediaPanel extends StatelessWidget {
     final hasVisuals = visualUrls.isNotEmpty;
     final hasAudio = audioUrls.isNotEmpty;
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: nightMode
           ? BoxDecoration(
-              color: const Color(0xFF203231).withValues(alpha: .80),
-              borderRadius: BorderRadius.circular(8),
+              color: AppColors.nightCard.withValues(alpha: .80),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               border: Border.all(color: AppColors.white.withValues(alpha: .10)),
             )
           : softDecoration(AppColors.white),
@@ -706,8 +728,8 @@ class _MediaPanel extends StatelessWidget {
           Icon(Icons.photo_library_outlined,
               size: 18,
               color: nightMode ? AppText.nightAccent : AppColors.teaGreen),
-          const SizedBox(width: 8),
-          Text('附着的画面', style: AppText.onNight(AppText.titleMedium, nightMode)),
+          const SizedBox(width: AppSpacing.sm),
+          Text('附着的画面', style: AppText.onNight(AppText.titleSmall, nightMode)),
           const Spacer(),
           if (hasVisuals)
             Tooltip(
@@ -728,16 +750,16 @@ class _MediaPanel extends StatelessWidget {
                   foregroundColor:
                       nightMode ? AppText.nightAccent : AppColors.teaGreen,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                 ),
               ),
             ),
         ]),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.s12),
         if (hasVisuals)
           ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             child: ImageGrid(
               urls: visualUrls,
               onImageTap: (url) => _showImagePreview(context, url),
@@ -750,7 +772,7 @@ class _MediaPanel extends StatelessWidget {
             onPickImages: onPickImages,
           ),
         if (hasAudio) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: AppSpacing.s12),
           _AudioAttachmentList(
             urls: audioUrls,
             nightMode: nightMode,
@@ -758,7 +780,7 @@ class _MediaPanel extends StatelessWidget {
             onPickAudio: onPickAudio,
           ),
         ] else ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: AppSpacing.s12),
           _EmptyAudioUpload(
             nightMode: nightMode,
             picking: pickingAudio,
@@ -800,8 +822,8 @@ class _AudioAttachmentList extends StatelessWidget {
           size: 18,
           color: nightMode ? AppText.nightAccent : AppColors.teaGreen,
         ),
-        const SizedBox(width: 8),
-        Text('附着的声音', style: AppText.onNight(AppText.titleMedium, nightMode)),
+        const SizedBox(width: AppSpacing.sm),
+        Text('附着的声音', style: AppText.onNight(AppText.titleSmall, nightMode)),
         const Spacer(),
         Tooltip(
           message: '补充录音文件',
@@ -821,16 +843,16 @@ class _AudioAttachmentList extends StatelessWidget {
               foregroundColor:
                   nightMode ? AppText.nightAccent : AppColors.teaGreen,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadius.md),
               ),
             ),
           ),
         ),
       ]),
-      const SizedBox(height: 10),
+      const SizedBox(height: AppSpacing.s10),
       ...urls.map(
         (url) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
           child: _AudioAttachmentTile(url: url, nightMode: nightMode),
         ),
       ),
@@ -853,13 +875,14 @@ class _EmptyAudioUpload extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 128),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      constraints: const BoxConstraints(minHeight: 94),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s14, vertical: AppSpacing.s12),
       decoration: BoxDecoration(
         color: nightMode
             ? AppColors.white.withValues(alpha: .05)
             : AppColors.paper.withValues(alpha: .44),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
           color: nightMode
               ? AppColors.white.withValues(alpha: .10)
@@ -873,15 +896,15 @@ class _EmptyAudioUpload extends StatelessWidget {
             color: nightMode ? AppText.nightAccent : AppColors.teaGreen,
             size: 22,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.sm),
           Text(
             '附着的声音',
-            style: AppText.onNight(AppText.titleMedium, nightMode),
+            style: AppText.onNight(AppText.titleSmall, nightMode),
           ),
         ]),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.s10),
         SizedBox(
-          width: 176,
+          width: 150,
           child: FilledButton.icon(
             onPressed: picking ? null : onPickAudio,
             icon: picking
@@ -901,9 +924,9 @@ class _EmptyAudioUpload extends StatelessWidget {
               disabledForegroundColor: nightMode
                   ? AppText.nightInk.withValues(alpha: .62)
                   : AppColors.ink.withValues(alpha: .54),
-              padding: const EdgeInsets.symmetric(vertical: 13),
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s11),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadius.md),
               ),
             ),
           ),
@@ -959,7 +982,8 @@ class _AudioAttachmentTileState extends State<_AudioAttachmentTile> {
       await _player.play();
     } catch (_) {
       if (!mounted) return;
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('暂时无法播放这段声音。'),
           behavior: SnackBarBehavior.floating,
@@ -983,12 +1007,13 @@ class _AudioAttachmentTileState extends State<_AudioAttachmentTile> {
   Widget build(BuildContext context) {
     final legacy = _isLegacyAudioCue(widget.url);
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.s12, AppSpacing.s10, AppSpacing.s12, AppSpacing.s10),
       decoration: BoxDecoration(
         color: widget.nightMode
             ? AppColors.white.withValues(alpha: .07)
             : AppColors.paper.withValues(alpha: .62),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
           color: widget.nightMode
               ? AppColors.white.withValues(alpha: .12)
@@ -1017,7 +1042,7 @@ class _AudioAttachmentTileState extends State<_AudioAttachmentTile> {
             );
           },
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: Text(
             legacy ? '旧声音记录 · 无法回放' : '这一刻的声音',
@@ -1044,13 +1069,14 @@ class _EmptyMediaUpload extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 152),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+      constraints: const BoxConstraints(minHeight: 108),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s14, vertical: AppSpacing.s14),
       decoration: BoxDecoration(
         color: nightMode
             ? AppColors.white.withValues(alpha: .06)
             : AppColors.paper.withValues(alpha: .54),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
           color: nightMode
               ? AppColors.white.withValues(alpha: .12)
@@ -1059,24 +1085,24 @@ class _EmptyMediaUpload extends StatelessWidget {
       ),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         Container(
-          width: 48,
-          height: 48,
+          width: 40,
+          height: 40,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: nightMode
                 ? AppText.nightAccent.withValues(alpha: .14)
                 : AppColors.teaGreen.withValues(alpha: .13),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Icon(
             Icons.image_outlined,
             color: nightMode ? AppText.nightAccent : AppColors.teaGreen,
-            size: 25,
+            size: 22,
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: AppSpacing.s10),
         SizedBox(
-          width: 160,
+          width: 146,
           child: FilledButton.icon(
             onPressed: picking ? null : onPickImages,
             icon: picking
@@ -1096,9 +1122,9 @@ class _EmptyMediaUpload extends StatelessWidget {
               disabledForegroundColor: nightMode
                   ? AppText.nightInk.withValues(alpha: .62)
                   : AppColors.ink.withValues(alpha: .54),
-              padding: const EdgeInsets.symmetric(vertical: 13),
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s11),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadius.md),
               ),
             ),
           ),
@@ -1128,7 +1154,8 @@ class _ImagePreviewDialog extends StatelessWidget {
         Positioned.fill(
           child: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 58, 14, 22),
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.s14, 58, AppSpacing.s14, AppSpacing.s22),
               child: Center(
                 child: Hero(
                   tag: 'fragment-media-$url',
@@ -1136,7 +1163,7 @@ class _ImagePreviewDialog extends StatelessWidget {
                     minScale: .8,
                     maxScale: 4,
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       child: MediaImage(
                         source: url,
                         fit: BoxFit.contain,
@@ -1159,8 +1186,8 @@ class _ImagePreviewDialog extends StatelessWidget {
           child: IconButton.filled(
             tooltip: '关闭',
             style: IconButton.styleFrom(
-              backgroundColor: Colors.white.withValues(alpha: .18),
-              foregroundColor: Colors.white,
+              backgroundColor: AppColors.white.withValues(alpha: .18),
+              foregroundColor: AppColors.white,
             ),
             onPressed: () => Navigator.of(context).pop(),
             icon: const Icon(Icons.close_rounded),
@@ -1193,6 +1220,7 @@ class _ActionDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(children: [
+      // 主操作：保存
       SizedBox(
         width: double.infinity,
         child: FilledButton.icon(
@@ -1204,63 +1232,72 @@ class _ActionDock extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.check_rounded, size: 20),
-          label: Text(saving ? '正在保存' : '保存修改'),
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.teaGreen,
-            foregroundColor: AppColors.white,
-            padding: const EdgeInsets.symmetric(vertical: 15),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
+          label: Text(saving ? '正在保存' : '保存'),
         ),
       ),
-      const SizedBox(height: 10),
+      const SizedBox(height: AppSpacing.s10),
+      // 次级操作：... 菜单
       Row(children: [
         if (polishEnabled) ...[
           Expanded(child: _PolishButton(onTap: onPolish)),
-          const SizedBox(width: 10),
+          const SizedBox(width: AppSpacing.s10),
         ],
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: saving ? null : onDelete,
-            icon: const Icon(Icons.delete_outline_rounded, size: 18),
-            label: const Text('删除这束光'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor:
-                  nightMode ? AppColors.sunsetCoral : AppColors.teaGreen,
-              side: BorderSide(
-                color: nightMode
-                    ? AppColors.sunsetCoral.withValues(alpha: .62)
-                    : AppColors.inkMuted,
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
         Expanded(
           child: OutlinedButton.icon(
             onPressed: onWeave,
             icon: const Icon(Icons.blur_circular_rounded, size: 18),
-            label: const Text('织在一起'),
+            label: const Text('织线'),
             style: OutlinedButton.styleFrom(
-              foregroundColor:
-                  nightMode ? AppText.nightAccent : AppColors.ink,
+              foregroundColor: nightMode ? AppText.nightAccent : AppColors.ink,
               side: BorderSide(
                 color: nightMode
                     ? AppColors.white.withValues(alpha: .18)
                     : AppColors.line,
               ),
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
             ),
           ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        PopupMenuButton<String>(
+          tooltip: '更多操作',
+          icon: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: nightMode
+                    ? AppColors.white.withValues(alpha: .18)
+                    : AppColors.line,
+              ),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(Icons.more_horiz_rounded,
+                size: 20,
+                color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+          ),
+          onSelected: (value) {
+            switch (value) {
+              case 'delete':
+                onDelete();
+                break;
+            }
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'delete',
+              child: Row(children: [
+                Icon(Icons.delete_outline_rounded,
+                    size: 18, color: AppColors.sunsetCoral),
+                const SizedBox(width: AppSpacing.s10),
+                Text('删除这束光',
+                    style:
+                        AppText.body.copyWith(color: AppColors.sunsetCoral)),
+              ]),
+            ),
+          ],
         ),
       ]),
     ]);
@@ -1277,10 +1314,10 @@ class _MissingLightState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Text('没有找到这束光。', style: AppText.onNight(AppText.body, nightMode)),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.s12),
           OutlinedButton.icon(
             onPressed: onBack,
             icon: const Icon(Icons.arrow_back_rounded),
@@ -1313,7 +1350,7 @@ class _PolishButtonState extends State<_PolishButton>
     super.initState();
     _breathe = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
+      duration: AppMotion.breath,
     )..repeat(reverse: true);
   }
 
@@ -1325,6 +1362,7 @@ class _PolishButtonState extends State<_PolishButton>
 
   @override
   Widget build(BuildContext context) {
+    // 动画受 TickerMode 控制 — 父级关闭 TickerMode 时自动暂停
     return AnimatedBuilder(
       animation: _breathe,
       builder: (_, __) {
@@ -1332,7 +1370,7 @@ class _PolishButtonState extends State<_PolishButton>
         return FilledButton.icon(
           onPressed: widget.onTap,
           icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-          label: const Text('AI 润色'),
+          label: const Text('润色', maxLines: 1),
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.lilac.withValues(alpha: alpha),
             foregroundColor: AppColors.ink,
@@ -1352,6 +1390,7 @@ class _PolishResultCard extends StatefulWidget {
     required this.state,
     required this.polishedText,
     required this.message,
+    required this.nightMode,
     this.onAccept,
     this.onRetry,
     this.onDiscard,
@@ -1360,6 +1399,7 @@ class _PolishResultCard extends StatefulWidget {
   final _PolishState state;
   final String polishedText;
   final String message;
+  final bool nightMode;
   final VoidCallback? onAccept;
   final VoidCallback? onRetry;
   final VoidCallback? onDiscard;
@@ -1377,8 +1417,23 @@ class _PolishResultCardState extends State<_PolishResultCard>
     super.initState();
     _shimmer = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat();
+      duration: AppMotion.shimmer,
+    );
+    _updateShimmer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PolishResultCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.state != widget.state) _updateShimmer();
+  }
+
+  void _updateShimmer() {
+    if (widget.state == _PolishState.loading) {
+      if (!_shimmer.isAnimating) _shimmer.repeat();
+    } else {
+      _shimmer.stop();
+    }
   }
 
   @override
@@ -1390,13 +1445,15 @@ class _PolishResultCardState extends State<_PolishResultCard>
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.only(top: AppSpacing.s14),
       child: AnimatedBuilder(
         animation: _shimmer,
         builder: (_, __) {
           return Container(
-            padding: const EdgeInsets.all(18),
-            decoration: softDecoration(AppColors.white).copyWith(
+            padding: const EdgeInsets.all(AppSpacing.s18),
+            decoration:
+                softDecoration(AppColors.white, nightMode: widget.nightMode)
+                    .copyWith(
               border: Border.all(
                 color: AppColors.lilac.withValues(alpha: .22),
               ),
@@ -1408,7 +1465,7 @@ class _PolishResultCardState extends State<_PolishResultCard>
                 Row(children: [
                   const Icon(Icons.auto_awesome_outlined,
                       size: 16, color: AppColors.lilac),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: AppSpacing.s6),
                   Text(
                     _headerText,
                     style: AppText.eyebrow.copyWith(color: AppColors.lilac),
@@ -1417,17 +1474,22 @@ class _PolishResultCardState extends State<_PolishResultCard>
                   if (widget.onDiscard != null)
                     InkWell(
                       onTap: widget.onDiscard,
-                      child: const Icon(Icons.close_rounded,
-                          size: 18, color: AppColors.inkMuted),
+                      child: Icon(Icons.close_rounded,
+                          size: 18,
+                          color: widget.nightMode
+                              ? AppText.nightInkMuted
+                              : AppColors.inkMuted),
                     ),
                 ]),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.s12),
 
                 // Content area
                 if (widget.state == _PolishState.loading)
-                  _ShimmerBlock(shimmer: _shimmer.value)
+                  _ShimmerBlock(
+                      shimmer: _shimmer.value, nightMode: widget.nightMode)
                 else if (widget.state == _PolishState.error)
-                  Text(widget.message, style: AppText.body)
+                  Text(widget.message,
+                      style: AppText.onNight(AppText.body, widget.nightMode))
                 else if (widget.state == _PolishState.done)
                   _buildDone(),
               ],
@@ -1439,27 +1501,30 @@ class _PolishResultCardState extends State<_PolishResultCard>
   }
 
   Widget _buildDone() {
+    final nw = widget.nightMode;
     if (widget.polishedText.isEmpty) {
       return Text(widget.message.isNotEmpty ? widget.message : '它已经足够好了。',
-          style: AppText.body);
+          style: AppText.onNight(AppText.body, nw));
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       // Polished text
       Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(AppSpacing.s14),
         decoration: BoxDecoration(
-          color: AppColors.lilac.withValues(alpha: .06),
-          borderRadius: BorderRadius.circular(8),
+          color: AppColors.lilac.withValues(alpha: nw ? .12 : .06),
+          borderRadius: BorderRadius.circular(AppRadius.md),
         ),
-        child: Text(widget.polishedText, style: AppText.body),
+        child:
+            Text(widget.polishedText, style: AppText.onNight(AppText.body, nw)),
       ),
       if (widget.message.isNotEmpty) ...[
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         Text(widget.message,
-            style: AppText.caption.copyWith(color: AppColors.teaGreen)),
+            style: AppText.caption.copyWith(
+                color: nw ? AppText.nightAccent : AppColors.teaGreen)),
       ],
-      const SizedBox(height: 14),
+      const SizedBox(height: AppSpacing.s14),
       // Actions
       Row(children: [
         Expanded(
@@ -1468,12 +1533,12 @@ class _PolishResultCardState extends State<_PolishResultCard>
             child: const Text('保留原文'),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppSpacing.s10),
         Expanded(
-          child: GlowButton(
-            label: '采纳润色',
-            icon: Icons.check_rounded,
+          child: FilledButton.icon(
             onPressed: widget.onAccept,
+            icon: const Icon(Icons.check_rounded, size: 18),
+            label: const Text('采纳润色'),
           ),
         ),
       ]),
@@ -1492,21 +1557,23 @@ class _PolishResultCardState extends State<_PolishResultCard>
 
 /// 闪烁骨架 — loading 态
 class _ShimmerBlock extends StatelessWidget {
-  const _ShimmerBlock({required this.shimmer});
+  const _ShimmerBlock({required this.shimmer, required this.nightMode});
   final double shimmer;
+  final bool nightMode;
 
   @override
   Widget build(BuildContext context) {
-    final baseAlpha = 0.06 + shimmer * 0.06;
+    final baseAlpha =
+        nightMode ? (0.08 + shimmer * 0.08) : (0.06 + shimmer * 0.06);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _shimmerBar(260, baseAlpha),
-      const SizedBox(height: 10),
+      const SizedBox(height: AppSpacing.s10),
       _shimmerBar(180, baseAlpha * .8),
-      const SizedBox(height: 10),
+      const SizedBox(height: AppSpacing.s10),
       _shimmerBar(220, baseAlpha * .6),
-      const SizedBox(height: 14),
+      const SizedBox(height: AppSpacing.s14),
       Text('星图管理员正在帮你轻轻润色这束光...',
-          style: AppText.caption.copyWith(color: AppColors.inkMuted)),
+          style: AppText.onNight(AppText.caption, nightMode)),
     ]);
   }
 
@@ -1516,34 +1583,12 @@ class _ShimmerBlock extends StatelessWidget {
       height: 14,
       decoration: BoxDecoration(
         color: AppColors.lilac.withValues(alpha: alpha.clamp(0.03, 1)),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadius.xs),
       ),
     );
   }
 }
 
-/// GlowButton for the accept action
-class GlowButton extends StatelessWidget {
-  const GlowButton({
-    super.key,
-    required this.label,
-    required this.icon,
-    this.onPressed,
-  });
-  final String label;
-  final IconData icon;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
-      style: FilledButton.styleFrom(
-        backgroundColor: AppColors.teaGreen,
-        foregroundColor: Colors.white,
-      ),
-    );
-  }
-}
+/// fragment 详情底部的"保留原文 / 采纳润色"操作行用标准 FilledButton + OutlinedButton；
+/// 之前此处自定义过一个同名 GlowButton（与 lib/ui/primitives/glow_button.dart 重名），
+/// 现已删除以遵守 §9.2 "按钮四选一，不要发明新按钮" 铁律。

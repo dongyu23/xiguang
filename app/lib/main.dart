@@ -11,7 +11,8 @@ Future<void> main() async {
     (options) {
       options
         ..dsn = const String.fromEnvironment('SENTRY_DSN', defaultValue: '')
-        ..tracesSampleRate = 1.0
+        ..tracesSampleRate =
+            0.2 // M5: 20% sampling in production to reduce overhead
         ..debug = false;
     },
     appRunner: () => runZonedGuarded(

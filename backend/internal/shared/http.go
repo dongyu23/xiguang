@@ -33,6 +33,20 @@ func WriteJSON(w http.ResponseWriter, status int, data any) {
 	}
 }
 
+// WriteJSONWithMeta 在标准响应里 piggyback 一个 meta 字段，用于把版本提示等
+// 轻量信息搭载在高频接口的响应里。meta 为 nil 时退化为普通 WriteJSON。
+func WriteJSONWithMeta(w http.ResponseWriter, status int, data any, meta any) {
+	if meta == nil {
+		WriteJSON(w, status, data)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(APIResponse{OK: true, Data: data, Meta: meta}); err != nil {
+		slog.Error("write json", "error", err)
+	}
+}
+
 func WriteError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

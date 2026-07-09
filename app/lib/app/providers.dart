@@ -1,32 +1,28 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../features/auth/data/auth_repository.dart';
 import '../features/ai/data/ai_api.dart';
 import '../features/ai/data/ai_repository_impl.dart';
-import '../features/fragment/data/fragment_repository.dart';
-import '../features/island/data/island_repository.dart';
-import '../features/relation/data/relation_api.dart';
-import '../features/relation/data/relation_repository_impl.dart';
-import '../features/relation/domain/relation.dart';
 import '../features/space/data/space_api.dart';
 import '../features/space/data/space_repository_impl.dart';
-import '../features/starmap/data/starmap_api.dart';
-import '../features/starmap/data/starmap_repository_impl.dart';
-import '../features/stats/data/stats_api.dart';
-import '../features/stats/data/stats_repository_impl.dart';
-import '../features/timeline/domain/date_group.dart';
-import '../features/timeline/domain/timeline_query.dart';
 import '../features/timeline/data/timeline_api.dart';
 import '../features/timeline/data/timeline_repository_impl.dart';
-import '../features/whitenoise/data/whitenoise_api.dart';
-import '../features/whitenoise/data/whitenoise_repository_impl.dart';
-import '../features/sync/data/sync_api.dart';
-import '../features/sync/domain/oplog.dart';
-import '../features/sync/domain/sync_config.dart';
-import '../features/sync/domain/sync_status.dart';
-import '../features/sync/engine/sync_engine.dart';
 import '../features/shared/data/api_client.dart';
+import '../features/shared/data/local/app_database.dart';
+
+// Re-export all feature-level providers so existing imports don't break.
+export '../features/auth/presentation/providers/auth_providers.dart';
+export '../features/fragment/presentation/providers/fragment_providers.dart';
+export '../features/timeline/presentation/providers/timeline_providers.dart';
+export '../features/island/presentation/providers/island_providers.dart';
+export '../features/sync/presentation/providers/sync_providers.dart';
+export '../features/relation/presentation/providers/relation_providers.dart';
+export '../features/stats/presentation/providers/stats_providers.dart';
+export '../features/starmap/presentation/providers/starmap_providers.dart';
+export '../features/whitenoise/presentation/providers/whitenoise_providers.dart';
 
 const _apiBaseUrlPrefsKey = 'xiguang.api_base_url';
 
@@ -56,6 +52,14 @@ String? validateApiBaseUrl(String value) {
 
 final apiBaseUrlProvider =
     AsyncNotifierProvider<ApiBaseUrlNotifier, String>(ApiBaseUrlNotifier.new);
+
+/// 全局 AppDatabase 单例 - fragment / sync / emotion 三个模块共用同一实例，
+/// 避免各自 new AppDatabase() 导致多连接打开同一 sqlite 文件（卡顿 + 锁竞争）。
+final appDatabaseProvider = Provider<AppDatabase>((ref) {
+  final db = AppDatabase();
+  ref.onDispose(() => db.close());
+  return db;
+});
 
 class ApiBaseUrlNotifier extends AsyncNotifier<String> {
   @override
@@ -95,266 +99,118 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return _apiClient;
 });
 
+/// 夜间模式选项
+enum NightModeOption {
+  /// 跟随系统时间自动切换（6:00-18:00 日间，其余夜间）
+  system,
+
+  /// 强制日间模式
+  light,
+
+  /// 强制夜间模式
+  dark,
+}
+
+/// 夜间模式选项 Provider — 存储用户选择的模式
+final nightModeOptionProvider = StateProvider<NightModeOption>(
+  (ref) => NightModeOption.system,
+);
+
+/// 夜间模式初始化：从磁盘读取上次状态，并启动定时器
+final nightModeLoadedProvider = FutureProvider<bool>((ref) async {
+  final prefs = await SharedPreferences.getInstance();
+
+  // 读取模式选项（兼容旧版本：如果没有 option 字段，根据 night_mode 推断）
+  final optionIndex = prefs.getInt('xiguang.night_mode_option');
+  NightModeOption option;
+  if (optionIndex != null) {
+    option = NightModeOption.values[optionIndex];
+  } else {
+    // 兼容旧版本：如果之前保存了 night_mode，转换为对应选项
+    final oldNightMode = prefs.getBool('xiguang.night_mode') ?? false;
+    option = oldNightMode ? NightModeOption.dark : NightModeOption.system;
+  }
+  ref.read(nightModeOptionProvider.notifier).state = option;
+
+  // 计算当前夜间模式状态
+  final isNight = _resolveNightMode(option);
+  ref.read(nightModeProvider.notifier).state = isNight;
+
+  // 启动定时器，每分钟检查一次（用于 system 模式）
+  _startAutoSwitchTimer(ref);
+
+  return isNight;
+});
+
+/// 根据选项解析当前是否为夜间模式
+bool _resolveNightMode(NightModeOption option) {
+  switch (option) {
+    case NightModeOption.system:
+      final hour = TimeOfDay.now().hour;
+      // 6:00-18:00 日间，其余夜间
+      return hour < 6 || hour >= 18;
+    case NightModeOption.light:
+      return false;
+    case NightModeOption.dark:
+      return true;
+  }
+}
+
+Timer? _autoSwitchTimer;
+
+/// 启动自动切换定时器
+void _startAutoSwitchTimer(Ref ref) {
+  _autoSwitchTimer?.cancel();
+  _autoSwitchTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+    final option = ref.read(nightModeOptionProvider);
+    if (option == NightModeOption.system) {
+      final isNight = _resolveNightMode(option);
+      ref.read(nightModeProvider.notifier).state = isNight;
+    }
+  });
+}
+
+/// 停止自动切换定时器（用于测试或清理）
+void stopAutoSwitchTimer() {
+  _autoSwitchTimer?.cancel();
+  _autoSwitchTimer = null;
+}
+
 final nightModeProvider = StateProvider<bool>((ref) => false);
+
+/// 持久化夜间模式选项到磁盘
+Future<void> persistNightModeOption(NightModeOption option) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt('xiguang.night_mode_option', option.index);
+  // 同时保存 night_mode 以兼容旧版本
+  await prefs.setBool('xiguang.night_mode', _resolveNightMode(option));
+}
+
+/// 更新夜间模式选项并立即生效
+Future<void> updateNightModeOption(
+    WidgetRef ref, NightModeOption option) async {
+  ref.read(nightModeOptionProvider.notifier).state = option;
+  final isNight = _resolveNightMode(option);
+  ref.read(nightModeProvider.notifier).state = isNight;
+  await persistNightModeOption(option);
+}
+
 final aiPolishEnabledProvider = StateProvider<bool>((ref) => false);
 final activeTabIndexProvider = StateProvider<int>((ref) => 0);
 
 /// 点击当前标签页时递增，触发对应页面滚动到顶部。
 final scrollToTopSignalProvider = StateProvider<int>((ref) => 0);
 
-final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  return AuthRepository(ref.watch(apiClientProvider));
-});
+// ── Repository providers that remain here ──
 
 final aiRepositoryProvider = Provider<AIRepositoryImpl>((ref) {
   return AIRepositoryImpl(AIApi(ref.watch(apiClientProvider)));
-});
-
-final fragmentRepositoryProvider = Provider<FragmentRepository>((ref) {
-  return FragmentRepository(
-    ref.watch(apiClientProvider),
-    ref.watch(authRepositoryProvider),
-  );
-});
-
-final islandRepositoryProvider = Provider<IslandRepository>((ref) {
-  return IslandRepository(
-    ref.watch(apiClientProvider),
-    ref.watch(authRepositoryProvider),
-    ref.watch(fragmentRepositoryProvider),
-  );
-});
-
-final relationRepositoryProvider = Provider<RelationRepositoryImpl>((ref) {
-  return RelationRepositoryImpl(RelationApi(ref.watch(apiClientProvider)));
 });
 
 final timelineRepositoryProvider = Provider<TimelineRepositoryImpl>((ref) {
   return TimelineRepositoryImpl(TimelineApi(ref.watch(apiClientProvider)));
 });
 
-final statsRepositoryProvider = Provider<StatsRepositoryImpl>((ref) {
-  return StatsRepositoryImpl(StatsApi(ref.watch(apiClientProvider)));
-});
-
-final starMapRepositoryProvider = Provider<StarMapRepositoryImpl>((ref) {
-  return StarMapRepositoryImpl(StarMapApi(ref.watch(apiClientProvider)));
-});
-
 final spaceRepositoryProvider = Provider<SpaceRepositoryImpl>((ref) {
   return SpaceRepositoryImpl(SpaceApi(ref.watch(apiClientProvider)));
-});
-
-final whiteNoiseRepositoryProvider = Provider<WhiteNoiseRepositoryImpl>((ref) {
-  return WhiteNoiseRepositoryImpl(WhiteNoiseApi(ref.watch(apiClientProvider)));
-});
-
-final sessionProvider = FutureProvider<AuthSession>((ref) {
-  final current = ref.watch(authSessionProvider);
-  if (current != null) return current;
-  return ref.watch(authRepositoryProvider).ensureSession();
-});
-
-final authRestoreProvider = FutureProvider<AuthSession?>((ref) {
-  return ref.watch(authRepositoryProvider).restoreSession();
-});
-
-final authSessionProvider = StateProvider<AuthSession?>((ref) {
-  return ref.watch(authRepositoryProvider).currentSession;
-});
-
-final fragmentsProvider =
-    AsyncNotifierProvider<FragmentsNotifier, List<LightFragmentModel>>(
-  FragmentsNotifier.new,
-);
-
-class FragmentsNotifier extends AsyncNotifier<List<LightFragmentModel>> {
-  @override
-  Future<List<LightFragmentModel>> build() async {
-    return ref.watch(fragmentRepositoryProvider).listFragments();
-  }
-
-  Future<void> capture({
-    required String text,
-    required String emotion,
-    required List<String> tags,
-    List<String> mediaUrls = const [],
-  }) async {
-    await captureWithResult(
-      text: text,
-      emotion: emotion,
-      tags: tags,
-      mediaUrls: mediaUrls,
-    );
-  }
-
-  Future<LightFragmentModel> captureWithResult({
-    required String text,
-    required String emotion,
-    required List<String> tags,
-    List<String> mediaUrls = const [],
-  }) async {
-    final previous = state.value ?? const [];
-    state =
-        const AsyncLoading<List<LightFragmentModel>>().copyWithPrevious(state);
-    try {
-      final created =
-          await ref.watch(fragmentRepositoryProvider).createFragment(
-                text: text,
-                emotion: emotion,
-                tags: tags,
-                mediaUrls: mediaUrls,
-              );
-      state = AsyncData(
-          [created, ...previous.where((item) => item.id != created.id)]);
-      ref.invalidate(islandsProvider);
-      ref.invalidate(localTimelineGroupsProvider);
-      return created;
-    } on LocalDraftException catch (error) {
-      state = AsyncData([
-        error.fragment,
-        ...previous.where((item) => item.id != error.fragment.id)
-      ]);
-      ref.invalidate(islandsProvider);
-      ref.invalidate(localTimelineGroupsProvider);
-      return error.fragment;
-    } catch (error, stackTrace) {
-      state = AsyncError<List<LightFragmentModel>>(error, stackTrace)
-          .copyWithPrevious(AsyncData(previous));
-      rethrow;
-    }
-  }
-
-  Future<void> refresh() async {
-    state =
-        const AsyncLoading<List<LightFragmentModel>>().copyWithPrevious(state);
-    state = await AsyncValue.guard(
-        () => ref.watch(fragmentRepositoryProvider).listFragments());
-  }
-
-  Future<void> deleteMany(Set<int> ids) async {
-    if (ids.isEmpty) return;
-    final previous = state.value ?? const [];
-    state =
-        AsyncData(previous.where((item) => !ids.contains(item.id)).toList());
-    try {
-      final repository = ref.watch(fragmentRepositoryProvider);
-      for (final id in ids) {
-        await repository.deleteFragment(id);
-      }
-      ref.invalidate(islandsProvider);
-      ref.invalidate(localTimelineGroupsProvider);
-    } catch (error, stackTrace) {
-      state = AsyncError<List<LightFragmentModel>>(error, stackTrace)
-          .copyWithPrevious(AsyncData(previous));
-      rethrow;
-    }
-  }
-}
-
-final islandsProvider = FutureProvider<List<IslandModel>>((ref) async {
-  final islands = ref.watch(islandRepositoryProvider);
-  // Pass already-loaded fragments to avoid redundant load in offline mode.
-  final fragments = ref.watch(fragmentsProvider).valueOrNull;
-  return islands.listIslands(cachedFragments: fragments);
-});
-
-final localTimelineGroupsProvider =
-    FutureProvider<List<DateGroup>>((ref) async {
-  return ref.watch(timelineRepositoryProvider).list(const TimelineQuery());
-});
-
-final fragmentRelationsProvider =
-    FutureProvider.family<List<Relation>, int>((ref, fragmentId) {
-  return ref.watch(relationRepositoryProvider).list(fragmentId: fragmentId);
-});
-
-final relationsProvider = FutureProvider<List<Relation>>((ref) {
-  return ref.watch(relationRepositoryProvider).list();
-});
-
-// ── 云同步 ──
-
-final syncConfigProvider = StateProvider<SyncConfig>((ref) {
-  return const SyncConfig();
-});
-
-/// 全局 SyncEngine — 生命周期与应用一致，不随 URL/Config 变化重建
-final syncEngineProvider = Provider<SyncEngine>((ref) {
-  // 用 ref.read 而非 ref.watch：config 变化时不应重建引擎
-  final config = ref.read(syncConfigProvider);
-  final api = SyncApi(ref.read(apiClientProvider));
-  final engine = SyncEngine(api: api, config: config);
-
-  // 初始同步
-  ref.read(syncStatusProvider.notifier).state = engine.status;
-
-  // 同步状态变化 → 更新 UI
-  engine.onStatusChanged = () {
-    ref.read(syncStatusProvider.notifier).state = engine.status;
-  };
-
-  // Pull 到远端变更后刷新本地缓存
-  engine.onRemoteChangesApplied = () {
-    ref.invalidate(fragmentsProvider);
-    ref.invalidate(islandsProvider);
-    ref.invalidate(localTimelineGroupsProvider);
-  };
-
-  // 异步探测连通性（不阻塞 UI）
-  engine.checkConnection().then((_) {
-    ref.read(syncStatusProvider.notifier).state = engine.status;
-  });
-
-  // Fragment 变更 → 入队 OpLog
-  ref.read(fragmentRepositoryProvider).onFragmentChanged =
-      (entityType, opType, fragmentId, payload) {
-    if (!config.enabled) return;
-    // public_id (UUID) 优先，数字 id 兜底（离线 fragment 无 UUID）
-    final publicId = (payload['public_id'] as String?) ?? fragmentId.toString();
-    final op = OpLog(
-      clientOpId: engine.nextOpId(entityType, opType),
-      entityType: entityType,
-      opType: opType,
-      entityPublicId: publicId,
-      payload: payload,
-      clientSeq: 0,
-      baseServerVersion: engine.currentServerRev,
-    );
-    engine.enqueue(op);
-  };
-
-  // 启动时恢复持久化状态
-  engine.restorePendingOps();
-
-  ref.onDispose(() {
-    engine.onStatusChanged = null;
-    engine.onRemoteChangesApplied = null;
-    ref.read(fragmentRepositoryProvider).onFragmentChanged = null;
-  });
-
-  return engine;
-});
-
-/// 同步状态 — engine.onStatusChanged 中更新
-final syncStatusProvider = StateProvider<SyncStatus>((ref) {
-  return const SyncStatus(
-    lastServerRev: 0,
-    pendingCount: 0,
-    lastSyncAt: null,
-    isSyncing: false,
-  );
-});
-
-final syncNowProvider = FutureProvider.autoDispose<void>((ref) async {
-  final engine = ref.read(syncEngineProvider);
-  final newStatus = await engine.syncNow();
-  ref.read(syncStatusProvider.notifier).state = newStatus;
-});
-
-final syncConnectionProvider = FutureProvider.autoDispose<bool>((ref) async {
-  final engine = ref.read(syncEngineProvider);
-  final ok = await engine.checkConnection();
-  ref.read(syncStatusProvider.notifier).state = engine.status;
-  return ok;
 });

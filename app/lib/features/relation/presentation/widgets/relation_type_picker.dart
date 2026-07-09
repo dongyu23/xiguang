@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
 
 class RelationTypePicker extends StatelessWidget {
   const RelationTypePicker({
@@ -49,7 +51,7 @@ class RelationTypePicker extends StatelessWidget {
       value: 'custom',
       label: '旧光',
       icon: Icons.circle_rounded,
-      color: Color(0xFFB8C5B2),
+      color: AppColors.emotionUnclear,
     ),
   ];
 
@@ -86,9 +88,10 @@ class _RelationChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        duration: AppMotion.quick,
+        curve: AppMotion.easeOut,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s14, vertical: AppSpacing.s11),
         decoration: BoxDecoration(
           color: selected
               ? AppColors.white.withValues(alpha: .96)
@@ -97,7 +100,7 @@ class _RelationChip extends StatelessWidget {
           border: Border.all(
             color: selected
                 ? AppColors.lilac
-                : Colors.white.withValues(alpha: .72),
+                : AppColors.white.withValues(alpha: .72),
             width: selected ? 1.4 : 1,
           ),
           boxShadow: selected
@@ -125,12 +128,11 @@ class _RelationChip extends StatelessWidget {
               size: 13,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.sm),
           Text(
             option.label,
             style: AppText.chip.copyWith(
               color: selected ? AppColors.ink : AppColors.inkMuted,
-              fontSize: 13,
             ),
           ),
         ]),

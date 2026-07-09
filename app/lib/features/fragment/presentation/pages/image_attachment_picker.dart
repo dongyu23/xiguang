@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
 
 /// 平台感知的图片选择器。
 ///
@@ -24,9 +25,8 @@ Future<List<XFile>> pickImageAttachments({
   return _pickFromMobile(context, picker, limit);
 }
 
-bool get _isDesktop =>
-    !kIsWeb &&
-    (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+final bool _isDesktop =
+    !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
 // ── 桌面：直接用 file_picker 选图 ──
 
@@ -50,28 +50,33 @@ Future<List<XFile>> _pickFromMobile(
   ImagePicker picker,
   int limit,
 ) async {
+  final nightMode = Theme.of(context).brightness == Brightness.dark;
   final source = await showModalBottomSheet<_ImageSource>(
     context: context,
+    useRootNavigator: true,
     showDragHandle: true,
-    backgroundColor: AppColors.white,
+    backgroundColor: nightMode ? AppColors.nightSurfaceHigh : AppColors.white,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
     ),
     builder: (context) => SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.s18, AppSpacing.sm, AppSpacing.s18, AppSpacing.s18),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           _SourceTile(
             icon: Icons.photo_camera_outlined,
             title: '拍照',
             subtitle: '使用相机拍一张新照片',
+            nightMode: nightMode,
             onTap: () => Navigator.of(context).pop(_ImageSource.camera),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.s10),
           _SourceTile(
             icon: Icons.photo_library_outlined,
             title: '从相册选择',
             subtitle: '从相册或图片文件中选择照片',
+            nightMode: nightMode,
             onTap: () => Navigator.of(context).pop(_ImageSource.gallery),
           ),
         ]),
@@ -114,24 +119,29 @@ class _SourceTile extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    required this.nightMode,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
+  final bool nightMode;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.paper.withValues(alpha: .62),
-      borderRadius: BorderRadius.circular(8),
+      color: nightMode
+          ? AppColors.white.withValues(alpha: .08)
+          : AppColors.paper.withValues(alpha: .62),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s14, vertical: AppSpacing.s13),
           child: Row(children: [
             Container(
               width: 42,
@@ -139,22 +149,27 @@ class _SourceTile extends StatelessWidget {
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: AppColors.teaGreen.withValues(alpha: .13),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppRadius.md),
               ),
               child: Icon(icon, color: AppColors.teaGreen, size: 22),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpacing.s12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppText.titleSmall),
-                  const SizedBox(height: 3),
-                  Text(subtitle, style: AppText.caption),
+                  Text(title,
+                      style: AppText.onNight(AppText.titleSmall, nightMode)),
+                  const SizedBox(height: AppSpacing.s3),
+                  Text(subtitle,
+                      style: AppText.onNight(AppText.caption, nightMode)),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: AppColors.inkMuted),
+            Icon(Icons.chevron_right_rounded,
+                color: nightMode
+                    ? AppColors.white.withValues(alpha: .40)
+                    : AppColors.inkMuted),
           ]),
         ),
       ),

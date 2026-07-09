@@ -43,7 +43,9 @@ class _NightModeButtonState extends ConsumerState<NightModeButton> {
       child: IconButton(
         tooltip: nightMode ? '切回白天' : '夜间轻开',
         onPressed: () {
-          ref.read(nightModeProvider.notifier).state = !nightMode;
+          final newOption =
+              nightMode ? NightModeOption.light : NightModeOption.dark;
+          updateNightModeOption(ref, newOption);
           _playSwitchSound();
         },
         constraints: const BoxConstraints.tightFor(width: 40, height: 40),

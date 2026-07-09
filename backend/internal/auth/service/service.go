@@ -22,9 +22,11 @@ import (
 )
 
 var (
-	ErrInvalidAccount = errors.New("invalid_account")
-	ErrLoginFailed    = errors.New("login_failed")
-	ErrRefreshFailed  = errors.New("refresh_failed")
+	ErrInvalidAccount   = errors.New("invalid_account")
+	ErrLoginFailed      = errors.New("login_failed")
+	ErrRefreshFailed    = errors.New("refresh_failed")
+	ErrWrongPassword    = errors.New("wrong_password")
+	ErrPasswordTooShort = errors.New("password_too_short")
 )
 
 type Service struct {
@@ -90,6 +92,29 @@ func (s *Service) UpdateMe(ctx context.Context, id int64, params domain.UpdateUs
 		params.PrivacyMode = "private"
 	}
 	return s.repo.UpdateUser(ctx, id, params)
+}
+
+func (s *Service) ChangePassword(ctx context.Context, userID int64, oldPassword, newPassword string) error {
+	if len(newPassword) < 6 {
+		return ErrPasswordTooShort
+	}
+	user, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	// FindByID 不返回 password_hash，需要重新查
+	fullUser, err := s.repo.FindByUsername(ctx, user.Username)
+	if err != nil {
+		return err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(fullUser.PasswordHash), []byte(oldPassword)) != nil {
+		return ErrWrongPassword
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpdatePassword(ctx, userID, string(hash))
 }
 
 func (s *Service) Refresh(ctx context.Context, refreshToken string) (domain.TokenPair, error) {

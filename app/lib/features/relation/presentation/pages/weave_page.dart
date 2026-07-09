@@ -4,9 +4,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
+import '../../../../ui/primitives/night_background.dart';
+import '../../../../ui/primitives/page_back_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../../fragment/data/fragment_repository.dart';
 import '../../../relation/domain/relation.dart';
@@ -30,6 +34,7 @@ class _WeavePageState extends ConsumerState<WeavePage> {
   _CandidateSort _candidateSort = _CandidateSort.newest;
   bool _isSubmitting = false;
   bool _completed = false;
+  String? _submitNotice;
 
   @override
   void dispose() {
@@ -42,6 +47,7 @@ class _WeavePageState extends ConsumerState<WeavePage> {
     final fragments = ref.watch(fragmentsProvider);
     final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
+      const Positioned.fill(child: NightBackgroundPlaceholder()),
       const Positioned.fill(child: AtmosphereBackground()),
       const Positioned.fill(child: _ThreadMist()),
       Scaffold(
@@ -50,10 +56,10 @@ class _WeavePageState extends ConsumerState<WeavePage> {
           child: fragments.when(
             data: (items) => _buildContent(context, items, nightMode),
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => Center(
+            error: (_, __) => Center(
               child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text('暂时无法展开这些光：$error',
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Text('暂时无法展开这些光，请稍后再试。',
                     style: AppText.onNight(AppText.body, nightMode)),
               ),
             ),
@@ -85,122 +91,116 @@ class _WeavePageState extends ConsumerState<WeavePage> {
     final selected =
         candidates.where((item) => item.id == effectiveTargetId).firstOrNull;
 
-    return Stack(children: [
-      SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(22, 10, 22, 132),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _Header(onBack: () => context.pop(), nightMode: nightMode),
-              const SizedBox(height: 18),
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const _StepThread(),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _SectionLabel(
-                          icon: Icons.wb_twilight_rounded,
-                          label: '当前这束光',
-                          nightMode: nightMode,
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(AppSpacing.s22, AppSpacing.s10,
+          AppSpacing.s22, AppSpacing.pageBottomNav),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _Header(onBack: () => context.pop(), nightMode: nightMode),
+            const SizedBox(height: AppSpacing.s18),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const _StepThread(),
+              const SizedBox(width: AppSpacing.s14),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SectionLabel(
+                        icon: Icons.wb_twilight_rounded,
+                        label: '当前这束光',
+                        nightMode: nightMode,
+                      ),
+                      const SizedBox(height: AppSpacing.s10),
+                      _CurrentLightCard(fragment: source),
+                      const SizedBox(height: AppSpacing.s12),
+                      _ExistingRelations(
+                        sourceId: source.id,
+                        fragments: items,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      _SectionLabel(
+                        icon: Icons.blur_circular_rounded,
+                        label: '选择另一束光',
+                        trailing: _SortPill(
+                          value: _candidateSort,
+                          onChanged: (value) =>
+                              setState(() => _candidateSort = value),
                         ),
-                        const SizedBox(height: 10),
-                        _CurrentLightCard(fragment: source),
-                        const SizedBox(height: 12),
-                        _ExistingRelations(
-                          sourceId: source.id,
-                          fragments: items,
-                        ),
-                        const SizedBox(height: 24),
-                        _SectionLabel(
-                          icon: Icons.blur_circular_rounded,
-                          label: '选择另一束光',
-                          trailing: _SortPill(
-                            value: _candidateSort,
-                            onChanged: (value) =>
-                                setState(() => _candidateSort = value),
-                          ),
-                          nightMode: nightMode,
-                        ),
-                        const SizedBox(height: 10),
-                        if (candidates.isEmpty)
-                          _EmptyCandidatesCard()
-                        else
-                          ...candidates.map(
-                            (fragment) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _CandidateLightTile(
-                                fragment: fragment,
-                                selected: fragment.id == effectiveTargetId,
-                                onTap: () =>
-                                    setState(() => _targetId = fragment.id),
-                              ),
+                        nightMode: nightMode,
+                      ),
+                      const SizedBox(height: AppSpacing.s10),
+                      if (candidates.isEmpty)
+                        _EmptyCandidatesCard()
+                      else
+                        ...candidates.map(
+                          (fragment) => Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.s10),
+                            child: _CandidateLightTile(
+                              fragment: fragment,
+                              selected: fragment.id == effectiveTargetId,
+                              onTap: () =>
+                                  setState(() => _targetId = fragment.id),
                             ),
                           ),
-                        const SizedBox(height: 14),
-                        _SectionLabel(
-                          icon: Icons.hub_rounded,
-                          label: '关系类型',
-                          nightMode: nightMode,
                         ),
-                        const SizedBox(height: 12),
-                        RelationTypePicker(
-                          selectedType: _relationType,
-                          onSelected: (type) =>
-                              setState(() => _relationType = type),
-                        ),
-                        const SizedBox(height: 24),
-                        _SectionLabel(
-                          icon: Icons.short_text_rounded,
-                          label: '写一句关系说明',
-                          suffix: '可选',
-                          nightMode: nightMode,
-                        ),
-                        const SizedBox(height: 10),
-                        RelationNoteInput(controller: _noteController),
-                      ]),
-                ),
-              ]),
+                      const SizedBox(height: AppSpacing.s14),
+                      _SectionLabel(
+                        icon: Icons.hub_rounded,
+                        label: '关系类型',
+                        nightMode: nightMode,
+                      ),
+                      const SizedBox(height: AppSpacing.s12),
+                      RelationTypePicker(
+                        selectedType: _relationType,
+                        onSelected: (type) =>
+                            setState(() => _relationType = type),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      _SectionLabel(
+                        icon: Icons.short_text_rounded,
+                        label: '写一句关系说明',
+                        suffix: '可选',
+                        nightMode: nightMode,
+                      ),
+                      const SizedBox(height: AppSpacing.s10),
+                      RelationNoteInput(controller: _noteController),
+                      const SizedBox(height: AppSpacing.s18),
+                      _SubmitButton(
+                        enabled: selected != null && !_isSubmitting,
+                        isSubmitting: _isSubmitting,
+                        onPressed: selected == null
+                            ? null
+                            : () => _submit(source, selected),
+                      ),
+                      AnimatedSwitcher(
+                        duration: AppMotion.normal,
+                        child: _completed || _submitNotice != null
+                            ? Padding(
+                                key: ValueKey(
+                                  _completed
+                                      ? 'weave-complete-toast'
+                                      : 'weave-submit-notice',
+                                ),
+                                padding:
+                                    const EdgeInsets.only(top: AppSpacing.s10),
+                                child: _completed
+                                    ? const _CompleteToast()
+                                    : _SubmitNotice(text: _submitNotice!),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ]),
+              ),
             ]),
-          ),
+          ]),
         ),
       ),
-      Positioned(
-        left: 22,
-        right: 22,
-        bottom: 18,
-        child: SafeArea(
-          top: false,
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                _SubmitButton(
-                  enabled: selected != null && !_isSubmitting,
-                  isSubmitting: _isSubmitting,
-                  onPressed:
-                      selected == null ? null : () => _submit(source, selected),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 240),
-                  child: _completed
-                      ? const Padding(
-                          key: ValueKey('weave-complete-toast'),
-                          padding: EdgeInsets.only(top: 10),
-                          child: _CompleteToast(),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ]),
-            ),
-          ),
-        ),
-      ),
-    ]);
+    );
   }
 
   List<LightFragmentModel> _sortedCandidates(
@@ -229,21 +229,34 @@ class _WeavePageState extends ConsumerState<WeavePage> {
     setState(() {
       _isSubmitting = true;
       _completed = false;
+      _submitNotice = null;
     });
-    final relation = await ref.read(fragmentRepositoryProvider).weave(
-          sourceFragmentId: source.id,
-          targetFragmentId: selected.id,
-          relationType: _relationType,
-          note: _noteController.text,
-        );
-    if (!mounted) return;
-    ref.invalidate(fragmentRelationsProvider(source.id));
-    ref.invalidate(relationsProvider);
-    ref.invalidate(starGraphProvider);
-    setState(() {
-      _isSubmitting = false;
-      _completed = relation != null;
-    });
+    try {
+      final relation = await ref.read(fragmentRepositoryProvider).weave(
+            sourceFragmentId: source.id,
+            targetFragmentId: selected.id,
+            relationType: _relationType,
+            note: _noteController.text,
+          );
+      if (!mounted) return;
+      if (relation != null) {
+        ref.invalidate(fragmentRelationsProvider(source.id));
+        ref.invalidate(relationsProvider);
+        ref.invalidate(starGraphProvider);
+      }
+      setState(() {
+        _isSubmitting = false;
+        _completed = relation != null;
+        _submitNotice = relation == null ? '后端暂时没有回应，这条线还没有写入。' : null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false;
+        _completed = false;
+        _submitNotice = '后端暂时没有回应，这条线还没有写入。';
+      });
+    }
   }
 }
 
@@ -269,15 +282,15 @@ class _ExistingRelations extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('已经织好的线', style: AppText.onNight(AppText.caption, nightMode)),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             ...items.take(4).map((relation) {
               final other = _otherFragment(relation);
               return Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.only(bottom: AppSpacing.s6),
                 child: Row(children: [
                   const Icon(Icons.blur_circular_rounded,
                       size: 16, color: AppColors.teaGreen),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       '${_relationLabel(relation.relationType)} · ${other?.title ?? '另一束光'}',
@@ -335,15 +348,10 @@ class _Header extends StatelessWidget {
     return Stack(alignment: Alignment.center, children: [
       Align(
         alignment: Alignment.centerLeft,
-        child: Material(
-          color: AppColors.white.withValues(alpha: .74),
-          shape: const CircleBorder(),
-          child: IconButton(
-            tooltip: '返回',
-            onPressed: onBack,
-            icon: const Icon(Icons.chevron_left_rounded),
-            color: AppColors.inkMuted,
-          ),
+        child: PageBackButton(
+          onTap: onBack,
+          nightMode: nightMode,
+          iconColor: nightMode ? AppText.nightInkMuted : AppColors.inkMuted,
         ),
       ),
       Column(mainAxisSize: MainAxisSize.min, children: [
@@ -351,7 +359,7 @@ class _Header extends StatelessWidget {
           '织线',
           style: AppText.onNight(AppText.hero, nightMode),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppSpacing.s6),
         Text(
           '让两束光轻轻靠近。',
           style: AppText.onNight(AppText.bodyMuted, nightMode),
@@ -361,19 +369,20 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _CurrentLightCard extends StatelessWidget {
+class _CurrentLightCard extends ConsumerWidget {
   const _CurrentLightCard({required this.fragment});
 
   final LightFragmentModel fragment;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nightMode = ref.watch(nightModeProvider);
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _glassDecoration(),
+      padding: const EdgeInsets.all(AppSpacing.s18),
+      decoration: _glassDecoration(nightMode: nightMode),
       child: Row(children: [
         _LightGlyph(color: fragment.color, icon: Icons.graphic_eq_rounded),
-        const SizedBox(width: 16),
+        const SizedBox(width: AppSpacing.md),
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -381,14 +390,13 @@ class _CurrentLightCard extends StatelessWidget {
               fragment.contentText,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: AppText.body.copyWith(
+              style: AppText.onNight(AppText.body, nightMode).copyWith(
                 height: 1.46,
-                fontWeight: FontWeight.w400,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.s10),
             Text('${fragment.dateLabel} · ${fragment.emotion}',
-                style: AppText.bodyMuted),
+                style: AppText.onNight(AppText.bodyMuted, nightMode)),
           ]),
         ),
       ]),
@@ -396,7 +404,7 @@ class _CurrentLightCard extends StatelessWidget {
   }
 }
 
-class _CandidateLightTile extends StatelessWidget {
+class _CandidateLightTile extends ConsumerWidget {
   const _CandidateLightTile({
     required this.fragment,
     required this.selected,
@@ -408,21 +416,26 @@ class _CandidateLightTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nightMode = ref.watch(nightModeProvider);
     return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.lg),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        padding: const EdgeInsets.all(12),
+        duration: AppMotion.quick,
+        curve: AppMotion.easeOut,
+        padding: const EdgeInsets.all(AppSpacing.s12),
         decoration: BoxDecoration(
-          color: AppColors.white.withValues(alpha: selected ? .9 : .66),
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          color: nightMode
+              ? AppColors.white.withValues(alpha: selected ? .12 : .06)
+              : AppColors.white.withValues(alpha: selected ? .9 : .66),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(
             color: selected
                 ? AppColors.lilac.withValues(alpha: .9)
-                : Colors.white.withValues(alpha: .74),
+                : (nightMode
+                    ? AppColors.white.withValues(alpha: .12)
+                    : AppColors.white.withValues(alpha: .74)),
             width: selected ? 1.4 : 1,
           ),
           boxShadow: selected
@@ -437,7 +450,7 @@ class _CandidateLightTile extends StatelessWidget {
         ),
         child: Row(children: [
           _MiniImage(fragment: fragment),
-          const SizedBox(width: 13),
+          const SizedBox(width: AppSpacing.s13),
           Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -445,16 +458,17 @@ class _CandidateLightTile extends StatelessWidget {
                 fragment.contentText,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: AppText.body.copyWith(height: 1.42),
+                style: AppText.onNight(AppText.body, nightMode)
+                    .copyWith(height: 1.42),
               ),
-              const SizedBox(height: 7),
+              const SizedBox(height: AppSpacing.s7),
               Text('${fragment.dateLabel} · ${fragment.emotion}',
-                  style: AppText.bodyMuted),
+                  style: AppText.onNight(AppText.bodyMuted, nightMode)),
             ]),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: AppSpacing.s10),
           AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
+            duration: AppMotion.quick,
             width: 28,
             height: 28,
             decoration: BoxDecoration(
@@ -463,7 +477,9 @@ class _CandidateLightTile extends StatelessWidget {
               border: Border.all(
                 color: selected
                     ? AppColors.lilac
-                    : AppColors.inkMuted.withValues(alpha: .35),
+                    : (nightMode
+                        ? AppColors.white.withValues(alpha: .18)
+                        : AppColors.inkMuted.withValues(alpha: .35)),
                 width: 1.4,
               ),
             ),
@@ -546,16 +562,16 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(children: [
       Icon(icon, size: 18, color: AppColors.teaGreen),
-      const SizedBox(width: 8),
+      const SizedBox(width: AppSpacing.sm),
       Text(
         label,
         style: AppText.onNight(
-          AppText.titleMedium.copyWith(fontSize: 17),
+          AppText.titleSmall,
           nightMode,
         ),
       ),
       if (suffix != null) ...[
-        const SizedBox(width: 6),
+        const SizedBox(width: AppSpacing.s6),
         Text(suffix!, style: AppText.onNight(AppText.caption, nightMode)),
       ],
       if (trailing != null) ...[
@@ -566,14 +582,15 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _SortPill extends StatelessWidget {
+class _SortPill extends ConsumerWidget {
   const _SortPill({required this.value, required this.onChanged});
 
   final _CandidateSort value;
   final ValueChanged<_CandidateSort> onChanged;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nightMode = ref.watch(nightModeProvider);
     return PopupMenuButton<_CandidateSort>(
       tooltip: '选择排序方式',
       initialValue: value,
@@ -585,15 +602,21 @@ class _SortPill extends StatelessWidget {
             value: _CandidateSort.nearSourceTime, child: Text('靠近当前光片时间')),
       ],
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s10, vertical: AppSpacing.s6),
         decoration: BoxDecoration(
-          color: AppColors.white.withValues(alpha: .5),
+          color: nightMode
+              ? AppColors.white.withValues(alpha: .08)
+              : AppColors.white.withValues(alpha: .5),
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(_label, style: AppText.caption.copyWith(color: AppColors.ink)),
-          const SizedBox(width: 4),
-          const Icon(Icons.expand_more_rounded, size: 16, color: AppColors.ink),
+          Text(_label,
+              style: AppText.onNight(AppText.caption, nightMode).copyWith(
+                  color: nightMode ? AppText.nightInk : AppColors.ink)),
+          const SizedBox(width: AppSpacing.xs),
+          Icon(Icons.expand_more_rounded,
+              size: 16, color: nightMode ? AppText.nightInk : AppColors.ink),
         ]),
       ),
     );
@@ -634,53 +657,47 @@ class _SubmitButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: FilledButton(
-        onPressed: enabled ? onPressed : null,
-        style: FilledButton.styleFrom(
-          backgroundColor: AppColors.ink,
-          disabledBackgroundColor: AppColors.inkMuted.withValues(alpha: .34),
-          foregroundColor: AppColors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-          ),
-          elevation: 0,
-        ),
-        child: isSubmitting
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.white,
-                ),
-              )
-            : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                const Icon(Icons.auto_awesome_rounded, size: 19),
-                const SizedBox(width: 8),
-                Text('织好这条线',
-                    style: AppText.inverseBody.copyWith(fontSize: 17)),
-              ]),
+    return FilledButton(
+      onPressed: enabled ? onPressed : null,
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.ink,
+        disabledBackgroundColor: AppColors.inkMuted.withValues(alpha: .34),
+        foregroundColor: AppColors.white,
+        elevation: 0,
       ),
+      child: isSubmitting
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.white,
+              ),
+            )
+          : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Icon(Icons.auto_awesome_rounded, size: 19),
+              const SizedBox(width: AppSpacing.sm),
+              Text('织好这条线', style: AppText.inverseTitle),
+            ]),
     );
   }
 }
 
-class _CompleteToast extends StatelessWidget {
+class _CompleteToast extends ConsumerWidget {
   const _CompleteToast();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nightMode = ref.watch(nightModeProvider);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-      decoration: BoxDecoration(
-        color: AppColors.white.withValues(alpha: .9),
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: Colors.white.withValues(alpha: .8)),
-        boxShadow: softShadow,
-      ),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s18, vertical: AppSpacing.s13),
+      decoration: nightMode
+          ? nightDecoration(radius: AppRadius.md)
+          : softDecoration(AppColors.white, radius: AppRadius.md).copyWith(
+              color: AppColors.white.withValues(alpha: .9),
+              border: Border.all(color: AppColors.white.withValues(alpha: .8)),
+            ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Container(
           width: 24,
@@ -693,11 +710,11 @@ class _CompleteToast extends StatelessWidget {
           child: const Icon(Icons.check_rounded,
               size: 16, color: AppColors.teaGreen),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppSpacing.s10),
         Flexible(
           child: Text(
             '这两束光之间，有了一条细细的线。',
-            style: AppText.body,
+            style: AppText.onNight(AppText.body, nightMode),
             textAlign: TextAlign.center,
           ),
         ),
@@ -706,31 +723,71 @@ class _CompleteToast extends StatelessWidget {
   }
 }
 
-class _EmptyCandidatesCard extends StatelessWidget {
+class _SubmitNotice extends StatelessWidget {
+  const _SubmitNotice({required this.text});
+
+  final String text;
+
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: _glassDecoration(),
-      child: Text('还没有另一束旧光可以连接。先去捕下一束光，线会在这里等你。', style: AppText.body),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.s14, AppSpacing.s12, AppSpacing.s14, AppSpacing.s12),
+      decoration: BoxDecoration(
+        color: AppColors.sunsetCoral.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: AppColors.sunsetCoral.withValues(alpha: .22),
+        ),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(
+          Icons.wifi_off_rounded,
+          size: 18,
+          color: AppColors.sunsetCoral.withValues(alpha: .94),
+        ),
+        const SizedBox(width: AppSpacing.s9),
+        Expanded(
+          child: Text(
+            text,
+            style: AppText.bodyMuted.copyWith(height: 1.4),
+          ),
+        ),
+      ]),
     );
   }
 }
 
-class _NotFoundState extends StatelessWidget {
+class _EmptyCandidatesCard extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nightMode = ref.watch(nightModeProvider);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.s18),
+      decoration: _glassDecoration(nightMode: nightMode),
+      child: Text('还没有另一束旧光可以连接。先去捕下一束光，线会在这里等你。',
+          style: AppText.onNight(AppText.body, nightMode)),
+    );
+  }
+}
+
+class _NotFoundState extends ConsumerWidget {
   const _NotFoundState({required this.onBack});
 
   final VoidCallback onBack;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nightMode = ref.watch(nightModeProvider);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('没有找到这束光。', style: AppText.titleMedium),
-          const SizedBox(height: 14),
+          Text('没有找到这束光。',
+              style: AppText.onNight(AppText.titleMedium, nightMode)),
+          const SizedBox(height: AppSpacing.s14),
           OutlinedButton.icon(
             onPressed: onBack,
             icon: const Icon(Icons.chevron_left_rounded),
@@ -866,11 +923,10 @@ class _LightSketchPainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
-BoxDecoration _glassDecoration() {
-  return BoxDecoration(
+BoxDecoration _glassDecoration({bool nightMode = false}) {
+  if (nightMode) return nightDecoration(radius: AppRadius.md);
+  return softDecoration(AppColors.white, radius: AppRadius.md).copyWith(
     color: AppColors.white.withValues(alpha: .68),
-    borderRadius: BorderRadius.circular(AppRadius.lg),
-    border: Border.all(color: Colors.white.withValues(alpha: .72)),
-    boxShadow: softShadow,
+    border: Border.all(color: AppColors.white.withValues(alpha: .72)),
   );
 }

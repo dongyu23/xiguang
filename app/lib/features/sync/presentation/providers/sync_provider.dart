@@ -7,7 +7,8 @@ import '../../domain/oplog.dart';
 import '../../domain/sync_config.dart';
 
 /// 记录一次捕光操作的 OpLog 并入队。
-void enqueueFragmentOp(WidgetRef ref, {
+void enqueueFragmentOp(
+  WidgetRef ref, {
   required String opType,
   required String publicId,
   required Map<String, dynamic> payload,

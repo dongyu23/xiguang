@@ -55,14 +55,25 @@ class OceanPainter extends CustomPainter {
   final double phase;
   final int layers;
 
+  // Reuse Paint objects per layer to avoid per-frame allocations
+  static final _paints = [
+    Paint()
+      ..color = AppColors.teaGreen.withValues(alpha: .06)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0,
+    Paint()
+      ..color = AppColors.teaGreen.withValues(alpha: .10)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.3,
+    Paint()
+      ..color = AppColors.teaGreen.withValues(alpha: .14)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6,
+  ];
+
   @override
   void paint(Canvas canvas, Size size) {
     for (var layer = 0; layer < layers; layer++) {
-      final paint = Paint()
-        ..color = AppColors.teaGreen.withValues(alpha: .06 + layer * .04)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0 + layer * .3;
-
       final path = Path();
       path.moveTo(0, size.height * (.3 + layer * .2));
 
@@ -72,7 +83,7 @@ class OceanPainter extends CustomPainter {
         final yOffset = sin(x / frequency + phase + layer * .6) * amplitude;
         path.lineTo(x, size.height * (.3 + layer * .2) + yOffset);
       }
-      canvas.drawPath(path, paint);
+      canvas.drawPath(path, _paints[layer]);
     }
   }
 

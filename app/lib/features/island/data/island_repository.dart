@@ -56,6 +56,31 @@ class IslandRepository {
       }
     }
     final fragments = cachedFragments ?? await _fragments.listFragments();
+    return computeIslandsFromFragments(fragments);
+  }
+
+  /// 仅尝试远端 /islands，失败/无 token 返回 null。供本地优先 provider 后台刷新。
+  Future<List<IslandModel>?> tryListRemoteIslands() async {
+    if (_auth.currentSession == null) {
+      await _auth.restoreSession();
+    }
+    if (!_api.hasToken) return null;
+    try {
+      final body = await _api.get('/islands');
+      final items = body['islands'] as List<dynamic>? ?? const [];
+      return items
+          .map((item) => IslandModel.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      developer.log('tryListRemoteIslands failed', error: e);
+      return null;
+    }
+  }
+
+  /// 从本地光片按标签出现次数推导主题岛。无网或新装时首屏就有内容可显示。
+  List<IslandModel> computeIslandsFromFragments(
+    List<LightFragmentModel> fragments,
+  ) {
     final counts = <String, int>{};
     for (final fragment in fragments) {
       for (final tag in fragment.tags) {
@@ -140,7 +165,8 @@ class IslandRepository {
                 LightFragmentModel.fromJson(item as Map<String, dynamic>))
             .toList();
       } catch (e) {
-        developer.log('listIslandFragments remote failed, using local tags', error: e);
+        developer.log('listIslandFragments remote failed, using local tags',
+            error: e);
       }
     }
     final fragments = await _fragments.listFragments();

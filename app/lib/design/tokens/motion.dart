@@ -1,21 +1,64 @@
 import 'package:flutter/material.dart';
 
 /// 隙光动效体系 — 呼吸感、不急促、不打扰
+///
+/// 所有业务 Widget 的动效时长和曲线必须从这里取，不允许写裸 Duration / Curves。
+///
+/// 豁免范围（详见 CLAUDE.md §9.14 "动效令牌强约束"）：
+///   1. lib/ui/spaces/ 下所有沉浸式空间自绘文件；
+///   2. 任意业务文件，只要在顶部首行（package 导入之后）声明
+///      `// MOTION_EXEMPT: self-painted` 标记，并紧接 2-5 行说明豁免理由。
+/// 没有标记的文件，本约束依然适用。
+///
+/// 网络超时、Timer.periodic、Future.delayed 的非动效用法（重试退避、连接超时、
+/// 录音计数器等）不在本约束范围内——本文件只管"视觉变化的节奏"。
 class AppMotion {
   AppMotion._();
 
-  // 时长
+  // 时长 — 从快到慢，按使用场景分档
+  /// 极快状态切换（chip 选中、AnimatedContainer 状态翻转）
+  static const Duration quick = Duration(milliseconds: 180);
+
+  /// 快速 UI 反馈（按钮按下、轻量 opacity）
   static const Duration fast = Duration(milliseconds: 200);
+
+  /// 常规过渡（页面元素切换、AnimatedSwitcher）
   static const Duration normal = Duration(milliseconds: 260);
+
+  /// 路由级过渡（导航 pill、tab 平移）
+  static const Duration pageSwap = Duration(milliseconds: 320);
+
+  /// 慢速过渡（强调动作、滚动定位）
   static const Duration slow = Duration(milliseconds: 400);
-  static const Duration breath = Duration(milliseconds: 3000); // 呼吸周期
+
+  /// 水波点击反馈
   static const Duration ripple = Duration(milliseconds: 600);
 
-  // 曲线
-  static const Curve easeOut = Curves.easeOutCubic;
-  static const Curve microMovement = Curves.easeInOutCubic;
-  static const Curve sine = Curves.easeInOutSine; // 需 flutter ≥ 3.22
+  /// 开屏/Hero 入场
+  static const Duration linger = Duration(milliseconds: 1500);
 
-  // 页面切换动画时长
+  /// shimmer 高光扫过周期
+  static const Duration shimmer = Duration(milliseconds: 1800);
+
+  /// SnackBar/Toast 停留时长
+  static const Duration snackbar = Duration(milliseconds: 2000);
+
+  /// 呼吸感周期（按钮呼吸、星点闪烁、慢速 ambient）
+  static const Duration breath = Duration(milliseconds: 3000);
+
+  /// 页面切换动画（GoRoute 过渡）
   static const Duration pageTransition = Duration(milliseconds: 260);
+
+  // 曲线
+  /// 进入加速（开屏退场、抽屉收起）
+  static const Curve easeIn = Curves.easeInCubic;
+
+  /// 默认过渡（绝大多数 UI 状态切换、滚动定位）
+  static const Curve easeOut = Curves.easeOutCubic;
+
+  /// 平滑往返（路由 pill、AnimatedPositioned）
+  static const Curve microMovement = Curves.easeInOutCubic;
+
+  /// 呼吸/波动专用（正弦缓动）
+  static const Curve sine = Curves.easeInOutSine;
 }

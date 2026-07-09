@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
 import '../../../../app/providers.dart';
+import '../../../../ui/composites/settings_widgets.dart';
+import '../../../../ui/primitives/night_background.dart';
+import '../../../../ui/primitives/page_back_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../domain/sync_config.dart';
 import '../../domain/sync_status.dart';
@@ -45,131 +51,104 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       }
     });
 
-    return Stack(children: [
-      const Positioned.fill(child: AtmosphereBackground()),
-      Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
+    final overlayStyle =
+        nightMode ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Stack(children: [
+        const Positioned.fill(child: NightBackgroundPlaceholder()),
+        const Positioned.fill(child: AtmosphereBackground()),
+        Scaffold(
           backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: Tooltip(
-            message: '返回',
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => Navigator.of(context).pop(),
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: nightMode
-                        ? AppColors.white.withValues(alpha: .10)
-                        : AppColors.white.withValues(alpha: .76),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: nightMode
-                          ? AppColors.white.withValues(alpha: .12)
-                          : AppColors.line,
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.arrow_back_rounded,
-                    color: nightMode ? AppText.nightInk : AppColors.ink,
-                  ),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(22, 12, 22,
+                  64 + 10 + MediaQuery.paddingOf(context).bottom + 30),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SyncHeader(nightMode: nightMode),
+                        const SizedBox(height: AppSpacing.s18),
+                        _ConnectionCard(
+                          status: status,
+                          nightMode: nightMode,
+                          testing: _testing,
+                          syncing: _syncing,
+                          onTestConnection: () => _testConnection(),
+                          onSyncNow: () => _syncNow(),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        _SectionLabel('连接参数', nightMode: nightMode),
+                        const SizedBox(height: AppSpacing.sm),
+                        _ServerUrlCard(
+                          baseUrl: baseUrl,
+                          controller: _urlController,
+                          nightMode: nightMode,
+                          saving: _savingUrl,
+                          errorText: _urlError,
+                          onChanged: (_) {
+                            if (_urlError != null) {
+                              setState(() => _urlError = null);
+                            }
+                          },
+                          onSave: _saveBaseUrl,
+                          onReset: _resetBaseUrl,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        _SectionLabel('同步时机', nightMode: nightMode),
+                        const SizedBox(height: AppSpacing.sm),
+                        _Card(nightMode: nightMode, children: [
+                          for (final freq in SyncFrequency.values)
+                            _FrequencyTile(
+                              frequency: freq,
+                              selected: config.frequency == freq,
+                              nightMode: nightMode,
+                              onTap: () => _updateConfig(
+                                  config.copyWith(frequency: freq)),
+                            ),
+                        ]),
+                        const SizedBox(height: AppSpacing.md),
+                        _SectionLabel('网络限制', nightMode: nightMode),
+                        const SizedBox(height: AppSpacing.sm),
+                        _Card(nightMode: nightMode, children: [
+                          SettingsSwitchRow(
+                            label: '仅在 Wi-Fi 下同步',
+                            subtitle: '开启后，使用移动数据时不自动同步。',
+                            value: config.wifiOnly,
+                            nightMode: nightMode,
+                            onChanged: (v) =>
+                                _updateConfig(config.copyWith(wifiOnly: v)),
+                          ),
+                        ]),
+                        const SizedBox(height: AppSpacing.md),
+                        _SectionLabel('同步开关', nightMode: nightMode),
+                        const SizedBox(height: AppSpacing.sm),
+                        _Card(nightMode: nightMode, children: [
+                          SettingsSwitchRow(
+                            label: '启用云同步',
+                            subtitle: '关闭后，光片仅保存在本地，不会推送到服务器。',
+                            value: config.enabled,
+                            nightMode: nightMode,
+                            onChanged: (v) =>
+                                _updateConfig(config.copyWith(enabled: v)),
+                          ),
+                        ]),
+                      ]),
                 ),
               ),
             ),
           ),
-          title: Text('云同步',
-              style: AppText.onNight(AppText.titleMedium, nightMode)),
         ),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(22, 10, 22, 104),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _SectionLabel('服务器地址', nightMode: nightMode),
-                      const SizedBox(height: 8),
-                      _ServerUrlCard(
-                        baseUrl: baseUrl,
-                        controller: _urlController,
-                        nightMode: nightMode,
-                        saving: _savingUrl,
-                        errorText: _urlError,
-                        onChanged: (_) {
-                          if (_urlError != null) {
-                            setState(() => _urlError = null);
-                          }
-                        },
-                        onSave: _saveBaseUrl,
-                        onReset: _resetBaseUrl,
-                      ),
-                      const SizedBox(height: 16),
-                      _ConnectionCard(
-                        status: status,
-                        nightMode: nightMode,
-                        testing: _testing,
-                        syncing: _syncing,
-                        onTestConnection: () => _testConnection(),
-                        onSyncNow: () => _syncNow(),
-                      ),
-                      const SizedBox(height: 16),
-                      _SectionLabel('同步时机', nightMode: nightMode),
-                      const SizedBox(height: 8),
-                      _Card(nightMode: nightMode, children: [
-                        for (final freq in SyncFrequency.values)
-                          _FrequencyTile(
-                            frequency: freq,
-                            selected: config.frequency == freq,
-                            nightMode: nightMode,
-                            onTap: () =>
-                                _updateConfig(config.copyWith(frequency: freq)),
-                          ),
-                      ]),
-                      const SizedBox(height: 16),
-                      _SectionLabel('网络限制', nightMode: nightMode),
-                      const SizedBox(height: 8),
-                      _Card(nightMode: nightMode, children: [
-                        _SwitchTile(
-                          label: '仅在 Wi-Fi 下同步',
-                          subtitle: '开启后，使用移动数据时不自动同步。',
-                          value: config.wifiOnly,
-                          nightMode: nightMode,
-                          onChanged: (v) =>
-                              _updateConfig(config.copyWith(wifiOnly: v)),
-                        ),
-                      ]),
-                      const SizedBox(height: 16),
-                      _SectionLabel('同步开关', nightMode: nightMode),
-                      const SizedBox(height: 8),
-                      _Card(nightMode: nightMode, children: [
-                        _SwitchTile(
-                          label: '启用云同步',
-                          subtitle: '关闭后，光片仅保存在本地，不会推送到服务器。',
-                          value: config.enabled,
-                          nightMode: nightMode,
-                          onChanged: (v) =>
-                              _updateConfig(config.copyWith(enabled: v)),
-                        ),
-                      ]),
-                    ]),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ]);
+      ]),
+    );
   }
 
   void _updateConfig(SyncConfig config) {
-    ref.read(syncConfigProvider.notifier).state = config;
+    ref.read(syncConfigProvider.notifier).update(config);
     ref.read(syncEngineProvider).updateConfig(config);
   }
 
@@ -189,20 +168,24 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _markConnectionUntested();
       ref.invalidate(syncConnectionProvider);
       if (!mounted) return;
-      showOverlaySnackBar(context, const SnackBar(
-        content: Text('后端地址已保存。'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      showOverlaySnackBar(
+          context,
+          const SnackBar(
+            content: Text('后端地址已保存。'),
+            behavior: SnackBarBehavior.floating,
+          ));
     } on ArgumentError catch (error) {
       if (mounted) {
         setState(() => _urlError = error.message.toString());
       }
     } catch (_) {
       if (!mounted) return;
-      showOverlaySnackBar(context, const SnackBar(
-        content: Text('保存失败，请稍后再试。'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      showOverlaySnackBar(
+          context,
+          const SnackBar(
+            content: Text('保存失败，请稍后再试。'),
+            behavior: SnackBarBehavior.floating,
+          ));
     } finally {
       if (mounted) setState(() => _savingUrl = false);
     }
@@ -218,16 +201,20 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       _markConnectionUntested();
       ref.invalidate(syncConnectionProvider);
       if (!mounted) return;
-      showOverlaySnackBar(context, const SnackBar(
-        content: Text('已恢复默认后端地址。'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      showOverlaySnackBar(
+          context,
+          const SnackBar(
+            content: Text('已恢复默认后端地址。'),
+            behavior: SnackBarBehavior.floating,
+          ));
     } catch (_) {
       if (!mounted) return;
-      showOverlaySnackBar(context, const SnackBar(
-        content: Text('恢复默认地址失败，请稍后再试。'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      showOverlaySnackBar(
+          context,
+          const SnackBar(
+            content: Text('恢复默认地址失败，请稍后再试。'),
+            behavior: SnackBarBehavior.floating,
+          ));
     } finally {
       if (mounted) setState(() => _savingUrl = false);
     }
@@ -240,24 +227,30 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       pendingCount: status.pendingCount,
       lastSyncAt: status.lastSyncAt,
       isSyncing: status.isSyncing,
+      connected: false,
     );
   }
 
   Future<void> _testConnection() async {
     setState(() => _testing = true);
     try {
+      ref.invalidate(syncConnectionProvider);
       final ok = await ref.read(syncConnectionProvider.future);
       if (!mounted) return;
-      showOverlaySnackBar(context, SnackBar(
-        content: Text(ok ? '服务器连接正常。' : '无法连接到服务器，请检查网络和后端状态。'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      showOverlaySnackBar(
+          context,
+          SnackBar(
+            content: Text(ok ? '服务器连接正常。' : '无法连接到服务器，请检查网络和后端状态。'),
+            behavior: SnackBarBehavior.floating,
+          ));
     } catch (_) {
       if (!mounted) return;
-      showOverlaySnackBar(context, const SnackBar(
-        content: Text('连接测试失败，请检查网络和后端状态。'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      showOverlaySnackBar(
+          context,
+          const SnackBar(
+            content: Text('连接测试失败，请检查网络和后端状态。'),
+            behavior: SnackBarBehavior.floating,
+          ));
     } finally {
       if (mounted) setState(() => _testing = false);
     }
@@ -271,20 +264,21 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
       ref.read(syncStatusProvider.notifier).state = status;
       if (!mounted) return;
       final pending = status.pendingCount;
-      final msg = pending == 0
-          ? '同步完成，没有待推送的变更。'
-          : '同步完成，仍有 $pending 条待推送。';
-      showOverlaySnackBar(context, SnackBar(
-        content: Text(msg),
-        behavior: SnackBarBehavior.floating,
-      ));
-    } catch (e) {
+      final msg = pending == 0 ? '同步完成，没有待推送的变更。' : '同步完成，仍有 $pending 条待推送。';
+      showOverlaySnackBar(
+          context,
+          SnackBar(
+            content: Text(msg),
+            behavior: SnackBarBehavior.floating,
+          ));
+    } catch (_) {
       if (!mounted) return;
-      showOverlaySnackBar(context, SnackBar(
-        content: Text('同步失败：$e'),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 5),
-      ));
+      showOverlaySnackBar(
+          context,
+          const SnackBar(
+            content: Text('同步失败，请检查网络和后端状态。'),
+            behavior: SnackBarBehavior.floating,
+          ));
     } finally {
       if (mounted) setState(() => _syncing = false);
     }
@@ -310,6 +304,17 @@ class _ConnectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasError = status.error != null && status.error!.isNotEmpty;
+    final statusTitle = status.connected
+        ? '已连接'
+        : hasError
+            ? '后端暂时没有回应'
+            : '等待连接确认';
+    final statusHint = status.connected
+        ? '本地修改会按下面的策略同步。'
+        : hasError
+            ? '请确认服务器地址、网络和后端服务状态。'
+            : '点一下测试连接，确认当前服务器是否可用。';
     return _Card(nightMode: nightMode, children: [
       Row(children: [
         Container(
@@ -319,30 +324,28 @@ class _ConnectionCard extends StatelessWidget {
             shape: BoxShape.circle,
             color: status.connected
                 ? AppColors.teaGreen
-                : (status.error != null
-                    ? AppColors.sunsetCoral
-                    : AppColors.inkMuted),
+                : (hasError ? AppColors.sunsetCoral : AppColors.inkMuted),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppSpacing.s10),
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(
-              status.connected ? '已连接' : '未连接',
-              style: AppText.onNight(AppText.titleMedium, nightMode),
+              statusTitle,
+              style: AppText.onNight(AppText.titleSmall, nightMode),
             ),
-            if (status.error != null) ...[
-              const SizedBox(height: 4),
-              Text(status.error!,
-                  style: AppText.onNight(AppText.caption, nightMode),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis),
-            ],
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              statusHint,
+              style: AppText.onNight(AppText.caption, nightMode),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ]),
         ),
       ]),
-      const SizedBox(height: 12),
+      const SizedBox(height: AppSpacing.s12),
       _InfoRow(
           label: '服务端版本',
           value: 'Rev ${status.lastServerRev}',
@@ -357,7 +360,7 @@ class _ConnectionCard extends StatelessWidget {
               ? '${status.lastSyncAt!.hour.toString().padLeft(2, '0')}:${status.lastSyncAt!.minute.toString().padLeft(2, '0')}:${status.lastSyncAt!.second.toString().padLeft(2, '0')}'
               : '尚未同步',
           nightMode: nightMode),
-      const SizedBox(height: 12),
+      const SizedBox(height: AppSpacing.s12),
       Row(children: [
         Expanded(
           child: OutlinedButton.icon(
@@ -370,14 +373,9 @@ class _ConnectionCard extends StatelessWidget {
                   )
                 : const Icon(Icons.wifi_find_outlined, size: 17),
             label: Text(testing ? '测试中...' : '测试连接'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppSpacing.s10),
         Expanded(
           child: FilledButton.icon(
             onPressed: syncing || !status.connected ? null : onSyncNow,
@@ -393,14 +391,42 @@ class _ConnectionCard extends StatelessWidget {
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.teaGreen,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
             ),
           ),
         ),
       ]),
     ]);
+  }
+}
+
+class _SyncHeader extends StatelessWidget {
+  const _SyncHeader({required this.nightMode});
+
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        PageBackButton(
+          onTap: () => Navigator.of(context).maybePop(),
+          nightMode: nightMode,
+          iconColor: nightMode ? AppText.nightInk : AppColors.ink,
+        ),
+        const SizedBox(width: AppSpacing.s12),
+        Expanded(
+          child: Text(
+            '云同步',
+            style: AppText.onNight(
+              AppText.titleLarge,
+              nightMode,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -450,40 +476,35 @@ class _ServerUrlCard extends StatelessWidget {
           filled: true,
           fillColor: inputFill,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             borderSide: BorderSide(color: borderColor),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             borderSide: BorderSide(color: borderColor),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             borderSide: const BorderSide(color: AppColors.teaGreen),
           ),
         ),
       ),
       if (baseUrl.hasError) ...[
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         Text('读取地址失败，将使用默认地址。',
             style: AppText.onNight(AppText.caption, nightMode)
                 .copyWith(color: AppColors.sunsetCoral)),
       ],
-      const SizedBox(height: 12),
+      const SizedBox(height: AppSpacing.s12),
       Row(children: [
         Expanded(
           child: OutlinedButton.icon(
             onPressed: loading ? null : onReset,
             icon: const Icon(Icons.restart_alt_rounded, size: 17),
             label: const Text('恢复默认'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppSpacing.s10),
         Expanded(
           child: FilledButton.icon(
             onPressed: loading ? null : onSave,
@@ -496,13 +517,6 @@ class _ServerUrlCard extends StatelessWidget {
                   )
                 : const Icon(Icons.save_outlined, size: 17),
             label: Text(saving ? '保存中...' : '保存地址'),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.teaGreen,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
           ),
         ),
       ]),
@@ -526,14 +540,15 @@ class _FrequencyTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        padding: const EdgeInsets.symmetric(
+            vertical: AppSpacing.s12, horizontal: AppSpacing.xs),
         child: Row(children: [
           Expanded(
             child: Text(frequency.label,
-                style: AppText.onNight(AppText.body, nightMode)),
+                style: AppText.onNight(AppText.titleSmall, nightMode)),
           ),
           Icon(
             selected ? Icons.radio_button_checked : Icons.radio_button_off,
@@ -548,35 +563,7 @@ class _FrequencyTile extends StatelessWidget {
   }
 }
 
-class _SwitchTile extends StatelessWidget {
-  const _SwitchTile({
-    required this.label,
-    required this.subtitle,
-    required this.value,
-    required this.nightMode,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String subtitle;
-  final bool value;
-  final bool nightMode;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(children: [
-      Expanded(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: AppText.onNight(AppText.titleMedium, nightMode)),
-          const SizedBox(height: 4),
-          Text(subtitle, style: AppText.onNight(AppText.caption, nightMode)),
-        ]),
-      ),
-      Switch.adaptive(value: value, onChanged: onChanged),
-    ]);
-  }
-}
+// _SwitchTile 已删除，统一用 ui/composites/settings_widgets.dart 的 SettingsSwitchRow。
 
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.label, {required this.nightMode});
@@ -584,7 +571,7 @@ class _SectionLabel extends StatelessWidget {
   final bool nightMode;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(left: 2),
+        padding: const EdgeInsets.only(left: AppSpacing.s2),
         child: Text(label, style: AppText.onNight(AppText.eyebrow, nightMode)),
       );
 }
@@ -596,8 +583,9 @@ class _Card extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: nightMode ? _nightCard() : softDecoration(AppColors.white),
+        padding: const EdgeInsets.all(AppSpacing.s18),
+        decoration:
+            nightMode ? nightDecoration() : softDecoration(AppColors.white),
         child: Column(
             crossAxisAlignment: CrossAxisAlignment.start, children: children),
       );
@@ -610,7 +598,7 @@ class _InfoRow extends StatelessWidget {
   final bool nightMode;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.only(top: AppSpacing.s10),
         child: Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
@@ -626,14 +614,4 @@ class _InfoRow extends StatelessWidget {
       );
 }
 
-BoxDecoration _nightCard() => BoxDecoration(
-      color: const Color(0xFF213433).withValues(alpha: .78),
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: AppColors.white.withValues(alpha: .13)),
-      boxShadow: [
-        BoxShadow(
-            color: Colors.black.withValues(alpha: .16),
-            blurRadius: 24,
-            offset: const Offset(0, 14))
-      ],
-    );
+// nightDecoration() 已移除，使用 shadows.dart 中的 nightDecoration()

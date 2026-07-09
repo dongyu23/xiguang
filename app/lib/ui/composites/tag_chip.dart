@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../design/tokens/colors.dart';
 import '../../design/tokens/radius.dart';
+import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
 
 /// 标签芯片
@@ -26,7 +27,9 @@ class TagChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.widgetPadding,
+            vertical: AppSpacing.tagPadding),
         decoration: BoxDecoration(
           color: nightMode
               ? (filled
@@ -50,11 +53,11 @@ class TagChip extends StatelessWidget {
               style: AppText.chip.copyWith(
                 color: nightMode
                     ? (filled ? AppColors.ink : AppText.nightInkMuted)
-                    : (filled ? Colors.white : AppColors.inkMuted),
+                    : (filled ? AppColors.white : AppColors.inkMuted),
               ),
             ),
             if (onDeleted != null) ...[
-              const SizedBox(width: 4),
+              const SizedBox(width: AppSpacing.xs),
               GestureDetector(
                 onTap: onDeleted,
                 child: Icon(Icons.close,
@@ -63,7 +66,9 @@ class TagChip extends StatelessWidget {
                         ? (filled
                             ? AppColors.ink.withValues(alpha: .72)
                             : AppText.nightInkMuted)
-                        : (filled ? Colors.white70 : AppColors.inkMuted)),
+                        : (filled
+                            ? AppColors.white.withValues(alpha: .7)
+                            : AppColors.inkMuted)),
               ),
             ],
           ],
@@ -92,8 +97,8 @@ class MiniTag extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: compact ? 7 : 8,
-        vertical: compact ? 3 : 5,
+        horizontal: compact ? AppSpacing.s7 : AppSpacing.sm,
+        vertical: compact ? AppSpacing.s3 : AppSpacing.s5,
       ),
       decoration: BoxDecoration(
         color: nightMode
@@ -109,12 +114,10 @@ class MiniTag extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: AppText.caption.copyWith(
-          fontSize: compact ? 10 : null,
-          fontWeight: compact ? FontWeight.w600 : null,
+        style: AppText.chip.copyWith(
           color: nightMode
               ? (filled ? AppColors.ink : AppText.nightInkMuted)
-              : (filled ? Colors.white : AppColors.inkMuted),
+              : (filled ? AppColors.white : AppColors.inkMuted),
         ),
       ),
     );

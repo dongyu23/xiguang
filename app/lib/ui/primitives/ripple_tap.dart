@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../design/tokens/colors.dart';
 import '../../design/tokens/motion.dart';
 
 /// 水波纹点击反馈 — 从触摸点向外扩散的涟漪
@@ -10,7 +11,7 @@ class RippleTap extends StatefulWidget {
     super.key,
     required this.child,
     this.onTap,
-    this.rippleColor = const Color(0xFF72A58F),
+    this.rippleColor = AppColors.teaGreen,
     this.rippleOpacity = .16,
   });
 
@@ -35,6 +36,12 @@ class _RippleTapState extends State<RippleTap>
       vsync: this,
       duration: AppMotion.ripple,
     );
+    // L10: Remove ripple overlay after animation completes
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(() => _tapPosition = null);
+      }
+    });
   }
 
   @override

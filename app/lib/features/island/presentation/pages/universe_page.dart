@@ -6,12 +6,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/motion.dart';
+import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
 import '../../data/island_repository.dart';
-import '../../../../ui/composites/night_mode_button.dart';
+import '../../../../ui/composites/settings_widgets.dart';
 import '../../../../ui/primitives/scroll_to_top.dart';
-import '../../../../ui/spaces/space_canvas.dart';
 
 /// 小宇宙页 — 主题岛、星点、柔光整理入口
 class UniversePage extends ConsumerWidget {
@@ -22,56 +24,79 @@ class UniversePage extends ConsumerWidget {
     final islands = ref.watch(islandsProvider);
     final nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
-      const Positioned.fill(child: AtmosphereBackground()),
+      // C2: Background now provided by _AppShell in router.dart
       SafeArea(
         child: ScrollToTop(
           builder: (context, controller) => SingleChildScrollView(
             controller: controller,
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(22, 18, 22, 104),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _Header(nightMode: nightMode),
-                    const SizedBox(height: 20),
-                    islands.when(
-                      data: (items) => _UniverseSkyBanner(islands: items),
-                      loading: () => const _UniverseSkyBanner(),
-                      error: (_, __) => const _UniverseSkyBanner(),
-                    ),
-                    const SizedBox(height: 20),
-                    _RelationLedgerPanel(nightMode: nightMode),
-                    const SizedBox(height: 12),
-                    _CreateIslandPanel(nightMode: nightMode),
-                    const SizedBox(height: 18),
-                    _SectionTitle(
-                      title: '我的小岛',
-                      nightMode: nightMode,
-                    ),
-                    const SizedBox(height: 12),
-                    islands.when(
-                      data: (items) => _TopicIslandGrid(
-                        items: items,
+            padding: EdgeInsets.fromLTRB(22, 18, 22,
+                64 + 10 + MediaQuery.paddingOf(context).bottom + 30),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _Header(nightMode: nightMode),
+                      const SizedBox(height: AppSpacing.s20),
+                      islands.when(
+                        data: (items) => _UniverseOverview(
+                          islands: items,
+                          nightMode: nightMode,
+                        ),
+                        loading: () => _UniverseOverviewSkeleton(
+                          nightMode: nightMode,
+                        ),
+                        error: (_, __) => _UniverseOverviewSkeleton(
+                          nightMode: nightMode,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.s18),
+                      _SectionTitle(
+                        title: '我的小岛',
                         nightMode: nightMode,
                       ),
-                      loading: () => _TopicIslandGrid(
-                        items: const [],
-                        nightMode: nightMode,
+                      const SizedBox(height: AppSpacing.s12),
+                      islands.when(
+                        data: (items) => _TopicIslandGrid(
+                          items: items,
+                          nightMode: nightMode,
+                        ),
+                        loading: () => _TopicIslandGridSkeleton(
+                          nightMode: nightMode,
+                        ),
+                        error: (_, __) => _TopicIslandGridSkeleton(
+                          nightMode: nightMode,
+                        ),
                       ),
-                      error: (_, __) => _TopicIslandGrid(
-                        items: const [],
-                        nightMode: nightMode,
-                      ),
-                    ),
-                  ]),
+                    ]),
+              ),
             ),
           ),
         ),
-          ),
       ),
+    ]);
+  }
+}
+
+class _UniverseOverview extends StatelessWidget {
+  const _UniverseOverview({
+    required this.islands,
+    required this.nightMode,
+  });
+
+  final List<IslandModel> islands;
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      _UniverseSkyBanner(islands: islands),
+      const SizedBox(height: AppSpacing.s12),
+      _IslandSnapshotPanel(islands: islands, nightMode: nightMode),
+      const SizedBox(height: AppSpacing.s12),
+      _IslandToolsRow(nightMode: nightMode),
     ]);
   }
 }
@@ -85,14 +110,9 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('PRIVATE SKY', style: AppText.onNight(AppText.eyebrow, nightMode)),
-      const SizedBox(height: 8),
-      Row(children: [
-        Expanded(
-          child: Text('屿', style: AppText.onNight(AppText.hero, nightMode)),
-        ),
-        const NightModeButton(),
-      ]),
-      const SizedBox(height: 8),
+      const SizedBox(height: AppSpacing.sm),
+      Text('屿', style: AppText.onNight(AppText.hero, nightMode)),
+      const SizedBox(height: AppSpacing.sm),
       Text(
         '标签、情绪和旧光慢慢连成一张只属于你的星图。',
         style: AppText.onNight(AppText.body, nightMode),
@@ -119,8 +139,12 @@ class _UniverseSkyBannerState extends State<_UniverseSkyBanner>
     super.initState();
     _breathe = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat();
+      duration: AppMotion.breath,
+    );
+    // 延迟一帧启动动画，避免首帧卡顿
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _breathe.repeat();
+    });
   }
 
   @override
@@ -134,7 +158,7 @@ class _UniverseSkyBannerState extends State<_UniverseSkyBanner>
     final items = widget.islands;
 
     return Container(
-      height: 276,
+      height: 218,
       decoration: softDecoration(AppColors.ink)
           .copyWith(gradient: AppColors.gradientNight),
       child: Stack(children: [
@@ -142,12 +166,14 @@ class _UniverseSkyBannerState extends State<_UniverseSkyBanner>
         Positioned.fill(
           child: AnimatedBuilder(
             animation: _breathe,
-            builder: (_, __) => CustomPaint(
-              painter: _UniversePainter(
-                islands: items,
-                breathe: _breathe.value,
+            builder: (_, __) => RepaintBoundary(
+              child: CustomPaint(
+                painter: _UniversePainter(
+                  islands: items,
+                  breathe: _breathe.value,
+                ),
+                child: const SizedBox.expand(),
               ),
-              child: const SizedBox.expand(),
             ),
           ),
         ),
@@ -165,19 +191,38 @@ class _UniverseSkyBannerState extends State<_UniverseSkyBanner>
         // Bottom actions
         Positioned(
             left: 20,
-            bottom: 20,
+            bottom: 18,
             right: 20,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (items.isEmpty)
-                  Text('第一座小岛会在这里亮起。', style: AppText.inverseBody)
-                else
-                  Text(
-                    '每一座小岛，都先安静地发着自己的光。',
-                    style: AppText.inverseBody,
+                Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  Expanded(
+                    child: Text(
+                      items.isEmpty ? '第一座小岛会在这里亮起。' : '每一座小岛，都先安静地发着自己的光。',
+                      style: AppText.inverseBody,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                const SizedBox(height: 12),
+                  const SizedBox(width: AppSpacing.s12),
+                  OutlinedButton.icon(
+                    onPressed: () => context.push('/glow-organize'),
+                    icon: const Icon(Icons.auto_awesome_outlined, size: 15),
+                    label: const Text('柔光整理'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.white,
+                      side: BorderSide(
+                          color: AppColors.white.withValues(alpha: .28)),
+                      backgroundColor:
+                          AppColors.white.withValues(alpha: .10),
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.s11),
+                      textStyle: AppText.captionStrong,
+                    ),
+                  ),
+                ]),
               ],
             )),
       ]),
@@ -185,36 +230,184 @@ class _UniverseSkyBannerState extends State<_UniverseSkyBanner>
   }
 }
 
+// _SkyActionButton 已弃用，调用方现已直接使用 OutlinedButton.icon。
+
+
+class _IslandSnapshotPanel extends StatelessWidget {
+  const _IslandSnapshotPanel({
+    required this.islands,
+    required this.nightMode,
+  });
+
+  final List<IslandModel> islands;
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalFragments =
+        islands.fold<int>(0, (sum, island) => sum + island.fragmentCount);
+    final formedCount =
+        islands.where((island) => island.status == 'formed').length;
+    final growingCount =
+        islands.where((island) => island.status == 'growing').length;
+    final leadingIsland = islands.isEmpty
+        ? null
+        : ([...islands]
+              ..sort((a, b) => b.fragmentCount.compareTo(a.fragmentCount)))
+            .first;
+    final foreground = nightMode ? AppText.nightInk : AppColors.ink;
+    final muted = nightMode ? AppText.nightInkMuted : AppColors.inkMuted;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.s14, AppSpacing.s12, AppSpacing.s14, AppSpacing.s12),
+      decoration:
+          nightMode ? nightDecoration() : softDecoration(AppColors.white),
+      child: Row(children: [
+        Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.teaGreen.withValues(alpha: nightMode ? .20 : .14),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          child: Icon(
+            Icons.auto_stories_outlined,
+            size: 19,
+            color: nightMode ? AppText.nightAccent : AppColors.teaGreen,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.s12),
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              islands.isEmpty
+                  ? '小岛还在等第一束光'
+                  : '${islands.length} 座小岛 · $totalFragments 束光',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.titleSmall.copyWith(color: foreground),
+            ),
+            const SizedBox(height: AppSpacing.s3),
+            Text(
+              leadingIsland == null
+                  ? '捕光时加上标签，小岛会自然浮现。'
+                  : '最亮：#${leadingIsland.name} · 已成岛 $formedCount · 生长中 $growingCount',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.caption.copyWith(color: muted),
+            ),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+class _IslandToolsRow extends StatelessWidget {
+  const _IslandToolsRow({required this.nightMode});
+
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      const gap = 10.0;
+      final columns = constraints.maxWidth >= 460 ? 3 : 2;
+      final itemWidth = (constraints.maxWidth - gap * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: [
+          SizedBox(
+            width: itemWidth,
+            child: SettingsNavRow(
+              icon: Icons.account_tree_outlined,
+              iconColor: AppColors.teaGreen,
+              label: '已织线',
+              subtitle: '关系账本',
+              nightMode: nightMode,
+              compact: true,
+              onTap: () => context.push('/relations/ledger'),
+            ),
+          ),
+          SizedBox(
+            width: itemWidth,
+            child: SettingsNavRow(
+              icon: Icons.blur_circular_rounded,
+              iconColor: AppColors.mistBlue,
+              label: '星图',
+              subtitle: '关系可视化',
+              nightMode: nightMode,
+              compact: true,
+              onTap: () => context.push('/starmap'),
+            ),
+          ),
+          SizedBox(
+            width: itemWidth,
+            child: SettingsNavRow(
+              icon: Icons.add_location_alt_outlined,
+              iconColor: AppColors.sunsetCoral,
+              label: '新小岛',
+              subtitle: '手动安放',
+              nightMode: nightMode,
+              compact: true,
+              onTap: () => context.push('/islands/create'),
+            ),
+          ),
+        ],
+      );
+    });
+  }
+}
+
+// _IslandToolButton 已删除，统一用 SettingsNavRow（ui/composites/settings_widgets.dart）。
+// _SkyActionButton 已删除，统一用 OutlinedButton.icon。
+
 /// Data-driven star map painter — each island is a glowing star.
+const double _skyBottomSafeZone = 104;
+const double _skyTopSafeZone = 42;
+
 class _UniversePainter extends CustomPainter {
   _UniversePainter({required this.islands, required this.breathe});
 
   final List<IslandModel> islands;
   final double breathe;
 
+  // 复用 Random 实例和 Paint 对象，避免每帧分配
+  static final _rng = Random(17);
+  static final _dustPaint = Paint();
+  static final _linePaint = Paint()..strokeWidth = 0.7;
+  static final _haloPaint = Paint();
+  static final _corePaint = Paint();
+  static final _brightPaint = Paint();
+  static final _emptyGlowPaint = Paint();
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
 
     // Background star dust
-    final dustPaint = Paint()
-      ..color = AppColors.white.withValues(alpha: .08 + breathe * .04);
-    final rng = Random(17);
+    _dustPaint.color = AppColors.white.withValues(alpha: .08 + breathe * .04);
+    // 重置随机种子以保证确定性输出
+    final rng = _rng;
     for (var i = 0; i < 40; i++) {
       final x = (rng.nextDouble() * 0.9 + 0.05) * size.width;
       final y = (rng.nextDouble() * 0.85 + 0.05) * size.height;
       final r = (rng.nextDouble() * 1.4 + 0.4) * (1 + breathe * 0.3);
-      canvas.drawCircle(Offset(x, y), r, dustPaint);
+      canvas.drawCircle(Offset(x, y), r, _dustPaint);
     }
 
     if (islands.isEmpty) {
-      // Empty state: single soft glow at center
-      final emptyGlow = Paint()
-        ..shader = RadialGradient(colors: [
-          AppColors.white.withValues(alpha: .12 + breathe * .04),
-          Colors.transparent,
-        ]).createShader(Rect.fromCircle(center: center, radius: 80));
-      canvas.drawCircle(center, 80, emptyGlow);
+      // Empty state: single soft glow at center — reuse cached paint
+      _emptyGlowPaint.shader = RadialGradient(colors: [
+        AppColors.white.withValues(alpha: .12 + breathe * .04),
+        Colors.transparent,
+      ]).createShader(Rect.fromCircle(center: center, radius: 80));
+      canvas.drawCircle(center, 80, _emptyGlowPaint);
       return;
     }
 
@@ -225,9 +418,10 @@ class _UniversePainter extends CustomPainter {
       final dist = 50.0 + i * 38.0;
       final x = center.dx + cos(angle) * dist;
       final y = center.dy + sin(angle) * dist;
+      final maxStarY = max(_skyTopSafeZone, size.height - _skyBottomSafeZone);
       points.add(_IslandPoint(
         x: x.clamp(30, size.width - 30),
-        y: y.clamp(30, size.height - 50),
+        y: y.clamp(_skyTopSafeZone, maxStarY),
         radius: 7.0 + islands[i].fragmentCount.clamp(0, 8) * 1.2,
         color: AppColors.emotionColor(islands[i].name),
         name: islands[i].name,
@@ -237,57 +431,104 @@ class _UniversePainter extends CustomPainter {
     }
 
     // Draw subtle connecting lines between nearby islands
-    final linePaint = Paint()
-      ..color = AppColors.white.withValues(alpha: .10)
-      ..strokeWidth = 0.7;
-    for (var i = 0; i < points.length; i++) {
-      for (var j = i + 1; j < points.length; j++) {
-        final dx = points[i].x - points[j].x;
-        final dy = points[i].y - points[j].y;
-        final dist = sqrt(dx * dx + dy * dy);
-        if (dist < 160) {
-          final alpha = (1 - dist / 160) * 0.16;
-          linePaint.color = AppColors.white.withValues(alpha: alpha);
-          canvas.drawLine(
-            Offset(points[i].x, points[i].y),
-            Offset(points[j].x, points[j].y),
-            linePaint,
-          );
-        }
-      }
+    // 缓存连线对：只在岛屿列表变化时重算，不在每帧做 O(n²)
+    final pairs = _cachedLinePairs(points, islands, size);
+    for (final pair in pairs) {
+      _linePaint.color = AppColors.white.withValues(alpha: pair.alpha);
+      canvas.drawLine(
+        Offset(pair.x1, pair.y1),
+        Offset(pair.x2, pair.y2),
+        _linePaint,
+      );
     }
 
-    // Draw each star
+    // Draw each star — 复用静态 Paint 对象
+    final glowAlpha = 0.14 + breathe * 0.06;
+    final haloAlpha = .18 + breathe * .08;
+    final brightAlpha = .72 + breathe * .12;
+
+    // H2: Reuse a single Paint object for glow across all islands
+    final glowPaint = Paint();
     for (final pt in points) {
-      final glowAlpha = 0.14 + breathe * 0.06;
-      final glowPaint = Paint()
-        ..shader = RadialGradient(colors: [
-          pt.color.withValues(alpha: glowAlpha * 2),
-          pt.color.withValues(alpha: glowAlpha),
-          Colors.transparent,
-        ]).createShader(Rect.fromCircle(
-            center: Offset(pt.x, pt.y), radius: pt.radius * 3.0));
+      // Glow — reuse Paint, only update shader per island
+      glowPaint.shader = RadialGradient(colors: [
+        pt.color.withValues(alpha: glowAlpha * 2),
+        pt.color.withValues(alpha: glowAlpha),
+        Colors.transparent,
+      ]).createShader(
+          Rect.fromCircle(center: Offset(pt.x, pt.y), radius: pt.radius * 3.0));
       canvas.drawCircle(Offset(pt.x, pt.y), pt.radius * 3.0, glowPaint);
 
-      // Outer halo
-      final haloPaint = Paint()
-        ..color = AppColors.white.withValues(alpha: .18 + breathe * .08);
-      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius + 2.6, haloPaint);
+      // Outer halo — 复用 Paint
+      _haloPaint.color = AppColors.white.withValues(alpha: haloAlpha);
+      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius + 2.6, _haloPaint);
 
-      // Core
-      final corePaint = Paint()..color = pt.color.withValues(alpha: .9);
-      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius, corePaint);
+      // Core — 复用 Paint
+      _corePaint.color = pt.color.withValues(alpha: .9);
+      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius, _corePaint);
 
-      // Bright center
-      final brightPaint = Paint()
-        ..color = AppColors.white.withValues(alpha: .72 + breathe * .12);
-      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius * 0.35, brightPaint);
+      // Bright center — 复用 Paint
+      _brightPaint.color = AppColors.white.withValues(alpha: brightAlpha);
+      canvas.drawCircle(Offset(pt.x, pt.y), pt.radius * 0.35, _brightPaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _UniversePainter old) =>
       old.breathe != breathe || old.islands != islands;
+
+  // ─── 连线缓存 ─────────────────────────────────────────────────
+  // O(n²) 距离计算只在岛屿列表变化时执行，不在每帧重复。
+  static List<_LinePair>? _lastPairs;
+  static int _lastIslandsHash = 0;
+  static Size _lastCanvasSize = Size.zero;
+
+  static List<_LinePair> _cachedLinePairs(
+      List<_IslandPoint> points, List<IslandModel> islands, Size canvasSize) {
+    // M13: Use Object.hashAll instead of XOR (collision-prone), include canvas size
+    final hash = Object.hashAll([
+      canvasSize.width,
+      canvasSize.height,
+      ...islands.map((i) => Object.hash(i.name, i.fragmentCount)),
+    ]);
+    if (hash == _lastIslandsHash &&
+        _lastPairs != null &&
+        _lastCanvasSize == canvasSize) {
+      return _lastPairs!;
+    }
+    _lastIslandsHash = hash;
+    _lastCanvasSize = canvasSize;
+
+    final pairs = <_LinePair>[];
+    for (var i = 0; i < points.length; i++) {
+      for (var j = i + 1; j < points.length; j++) {
+        final dx = points[i].x - points[j].x;
+        final dy = points[i].y - points[j].y;
+        final dist = sqrt(dx * dx + dy * dy);
+        if (dist < 160) {
+          pairs.add(_LinePair(
+            x1: points[i].x,
+            y1: points[i].y,
+            x2: points[j].x,
+            y2: points[j].y,
+            alpha: (1 - dist / 160) * 0.16,
+          ));
+        }
+      }
+    }
+    _lastPairs = pairs;
+    return pairs;
+  }
+}
+
+class _LinePair {
+  final double x1, y1, x2, y2, alpha;
+  const _LinePair(
+      {required this.x1,
+      required this.y1,
+      required this.x2,
+      required this.y2,
+      required this.alpha});
 }
 
 class _IslandPoint {
@@ -316,158 +557,46 @@ class _IslandLabels extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final center = Offset(
-      (size.width - 40) / 2,
-      (size.height - 50) / 2,
-    );
-    return Stack(
-      children: List.generate(islands.length, (i) {
-        final angle = i * 2.4 + 0.5;
-        final dist = 50.0 + i * 38.0;
-        final x = center.dx + cos(angle) * dist - 40;
-        final y = center.dy + sin(angle) * dist + 18;
-        return Positioned(
-          left: x.clamp(0, size.width - 100),
-          top: y.clamp(0, size.height - 30),
-          child: GestureDetector(
-            onTap: () => context.push(_islandDetailPath(islands[i])),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 80),
-              child: Text(
-                islands[i].name,
-                style: AppText.inverseBody.copyWith(
-                  fontSize: 10,
-                  color: AppColors.white.withValues(alpha: .68),
-                  fontWeight: FontWeight.w500,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        final center = Offset(size.width / 2, size.height / 2);
+        return Stack(
+          children: List.generate(islands.length, (i) {
+            final angle = i * 2.4 + 0.5;
+            final dist = 50.0 + i * 38.0;
+            final x = center.dx + cos(angle) * dist - 40;
+            final y = center.dy + sin(angle) * dist + 18;
+            final maxLabelY = max(_skyTopSafeZone, size.height - 112);
+            return Positioned(
+              left: x.clamp(0, size.width - 84),
+              top: y.clamp(_skyTopSafeZone, maxLabelY),
+              child: GestureDetector(
+                onTap: () => context.push(_islandDetailPath(islands[i])),
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 80),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s6, vertical: AppSpacing.s3),
+                  decoration: BoxDecoration(
+                    color: AppColors.ink.withValues(alpha: .18),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: Text(
+                    islands[i].name,
+                    style: AppText.microLabel.copyWith(
+                      color: AppColors.white.withValues(alpha: .78),
+                      height: 1.1,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
               ),
-            ),
-          ),
+            );
+          }),
         );
-      }),
-    );
-  }
-}
-
-class _CreateIslandPanel extends StatelessWidget {
-  const _CreateIslandPanel({required this.nightMode});
-
-  final bool nightMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => context.push('/islands/create'),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-        decoration: nightMode
-            ? _nightPanelDecoration()
-            : softDecoration(AppColors.white),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.sunsetCoral
-                  .withValues(alpha: nightMode ? .24 : .16),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: nightMode
-                    ? AppColors.white.withValues(alpha: .12)
-                    : AppColors.sunsetCoral.withValues(alpha: .24),
-              ),
-            ),
-            child: Icon(
-              Icons.add_location_alt_outlined,
-              color: nightMode ? AppText.nightInk : AppColors.ink,
-              size: 19,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('创建小岛',
-                  style: AppText.onNight(AppText.titleMedium, nightMode)),
-              const SizedBox(height: 3),
-              Text(
-                '以一方小岛，安放细碎情绪。',
-                style: AppText.onNight(AppText.bodyMuted, nightMode),
-              ),
-            ]),
-          ),
-          const SizedBox(width: 10),
-          Icon(
-            Icons.chevron_right_rounded,
-            color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted,
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-class _RelationLedgerPanel extends StatelessWidget {
-  const _RelationLedgerPanel({required this.nightMode});
-
-  final bool nightMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => context.push('/relations/ledger'),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-        decoration: nightMode
-            ? _nightPanelDecoration()
-            : softDecoration(AppColors.white),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.teaGreen.withValues(alpha: nightMode ? .24 : .14),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: nightMode
-                    ? AppColors.white.withValues(alpha: .12)
-                    : AppColors.teaGreen.withValues(alpha: .24),
-              ),
-            ),
-            child: Icon(
-              Icons.account_tree_outlined,
-              color: nightMode ? AppText.nightInk : AppColors.ink,
-              size: 19,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('查看已织线',
-                  style: AppText.onNight(AppText.titleMedium, nightMode)),
-              const SizedBox(height: 3),
-              Text(
-                '回看已经确认过的光与光之间的关系。',
-                style: AppText.onNight(AppText.bodyMuted, nightMode),
-              ),
-            ]),
-          ),
-          const SizedBox(width: 10),
-          Icon(
-            Icons.chevron_right_rounded,
-            color: nightMode ? AppText.nightInkMuted : AppColors.inkMuted,
-          ),
-        ]),
-      ),
+      },
     );
   }
 }
@@ -490,14 +619,13 @@ class _TopicIsland extends StatelessWidget {
     final count = island.fragmentCount.clamp(1, 8);
     final statusLabel = _islandStatusLabel(island);
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: onTap,
       child: Container(
           width: width,
-          padding: const EdgeInsets.all(14),
-          decoration: nightMode
-              ? _nightPanelDecoration()
-              : softDecoration(AppColors.white),
+          padding: const EdgeInsets.all(AppSpacing.s14),
+          decoration:
+              nightMode ? nightDecoration() : softDecoration(AppColors.white),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -513,14 +641,14 @@ class _TopicIsland extends StatelessWidget {
                       ? AppText.nightInkMuted.withValues(alpha: .72)
                       : AppColors.inkMuted.withValues(alpha: .72)),
             ]),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.s12),
             Text('#${island.name}',
                 style: AppText.onNight(AppText.titleSmall, nightMode),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 7),
+            const SizedBox(height: AppSpacing.s7),
             _TopicStatusPill(status: island.status, nightMode: nightMode),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Text(
               statusLabel,
               style: AppText.onNight(AppText.caption, nightMode),
@@ -672,10 +800,9 @@ class _TopicIslandGrid extends StatelessWidget {
     if (items.isEmpty) {
       return Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: nightMode
-            ? _nightPanelDecoration()
-            : softDecoration(AppColors.white),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration:
+            nightMode ? nightDecoration() : softDecoration(AppColors.white),
         child: Text(
           '留下第一束光后，真实的小岛会在这里出现。',
           style: AppText.onNight(AppText.bodyMuted, nightMode),
@@ -732,7 +859,8 @@ class _TopicStatusPill extends StatelessWidget {
       icon = Icons.motion_photos_on_outlined;
     }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm, vertical: AppSpacing.s5),
       decoration: BoxDecoration(
         color: nightMode
             ? (active
@@ -741,7 +869,7 @@ class _TopicStatusPill extends StatelessWidget {
             : (active
                 ? AppColors.teaGreen.withValues(alpha: .14)
                 : AppColors.paper.withValues(alpha: .88)),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
           color: nightMode
               ? (active
@@ -760,12 +888,11 @@ class _TopicStatusPill extends StatelessWidget {
               ? (nightMode ? AppText.nightAccent : AppColors.teaGreen)
               : (nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
         ),
-        const SizedBox(width: 5),
+        const SizedBox(width: AppSpacing.s5),
         Text(
           label,
-          style: AppText.caption.copyWith(
+          style: AppText.captionStrong.copyWith(
             height: 1,
-            fontWeight: FontWeight.w700,
             color: active
                 ? (nightMode ? AppText.nightAccent : AppColors.teaGreen)
                 : (nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
@@ -788,17 +915,74 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-BoxDecoration _nightPanelDecoration() {
-  return BoxDecoration(
-    color: const Color(0xFF213433).withValues(alpha: .78),
-    borderRadius: BorderRadius.circular(8),
-    border: Border.all(color: AppColors.white.withValues(alpha: .13)),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: .16),
-        blurRadius: 24,
-        offset: const Offset(0, 14),
+/// 中性占位 — 数据未到达时显示，避免直接渲染"空岛"文案造成首屏文本突变。
+class _UniverseOverviewSkeleton extends StatelessWidget {
+  const _UniverseOverviewSkeleton({required this.nightMode});
+
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      Container(
+        height: 218,
+        decoration: softDecoration(AppColors.ink)
+            .copyWith(gradient: AppColors.gradientNight),
       ),
-    ],
-  );
+      const SizedBox(height: AppSpacing.s12),
+      Container(
+        height: 62,
+        decoration:
+            nightMode ? nightDecoration() : softDecoration(AppColors.white),
+      ),
+      const SizedBox(height: AppSpacing.s12),
+      LayoutBuilder(builder: (context, constraints) {
+        const gap = 10.0;
+        final columns = constraints.maxWidth >= 460 ? 3 : 2;
+        final itemWidth =
+            (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: List.generate(
+            3,
+            (_) => SizedBox(
+              width: itemWidth,
+              height: 76,
+              child: DecoratedBox(
+                decoration: nightMode
+                    ? nightDecoration()
+                    : softDecoration(AppColors.white),
+              ),
+            ),
+          ),
+        );
+      }),
+    ]);
+  }
+}
+
+class _TopicIslandGridSkeleton extends StatelessWidget {
+  const _TopicIslandGridSkeleton({required this.nightMode});
+
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: List.generate(
+        4,
+        (_) => SizedBox(
+          width: (MediaQuery.sizeOf(context).width - 22 * 2 - 10) / 2,
+          height: 118,
+          child: DecoratedBox(
+            decoration:
+                nightMode ? nightDecoration() : softDecoration(AppColors.white),
+          ),
+        ),
+      ),
+    );
+  }
 }

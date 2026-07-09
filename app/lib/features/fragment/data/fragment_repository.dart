@@ -7,6 +7,24 @@ import '../../../design/tokens/colors.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../relation/domain/relation.dart';
 import '../../shared/data/api_client.dart';
+import '../../shared/data/local/app_database.dart' hide Fragment;
+import '../domain/create_params.dart';
+import '../domain/fragment.dart';
+import '../domain/fragment_repository.dart';
+import 'local/fragment_local_ds.dart';
+
+/// 游标分页结果
+class CursorPage<T> {
+  const CursorPage({
+    required this.items,
+    this.nextCursor,
+    this.hasMore = false,
+  });
+
+  final List<T> items;
+  final String? nextCursor;
+  final bool hasMore;
+}
 
 class LocalDraftException implements Exception {
   const LocalDraftException(this.fragment);
@@ -69,20 +87,27 @@ class LightFragmentModel {
   }
 }
 
-class FragmentRepository {
-  FragmentRepository(this._api, this._auth);
+/// H7: Active repository now implements the domain contract.
+/// This makes FragmentRepositoryImpl (fragment_repository_impl.dart) redundant.
+class FragmentRepository implements FragmentRepositoryContract {
+  FragmentRepository(this._api, this._auth, {AppDatabase? db}) {
+    _localDs = FragmentLocalDataSource(db ?? AppDatabase());
+  }
 
   final ApiClient _api;
   final AuthRepository _auth;
-  final List<LightFragmentModel> _local = List.of(seedFragments);
-  int _localID = 100;
+  late final FragmentLocalDataSource _localDs;
 
   /// 每次本地 fragment 变更（create/update/delete）后调用，供 SyncEngine 入队 OpLog
-  void Function(String entityType, String opType, int fragmentId, Map<String, dynamic> payload)? onFragmentChanged;
+  void Function(String entityType, String opType, int fragmentId,
+      Map<String, dynamic> payload)? onFragmentChanged;
 
   Future<List<LightFragmentModel>> listFragments() async {
-    await _auth.ensureSession();
-    if (!_api.hasToken) return List.unmodifiable(_local);
+    final authSession = _auth.currentSession;
+    if (authSession == null) {
+      await _auth.restoreSession();
+    }
+    if (!_api.hasToken) return _localDs.getAll();
     try {
       final body = await _api.get('/fragments', query: {'limit': 100});
       final items = body['value'] is List
@@ -92,10 +117,70 @@ class FragmentRepository {
           .map((item) =>
               LightFragmentModel.fromJson(item as Map<String, dynamic>))
           .toList();
-      return remote.isEmpty ? List.unmodifiable(_local) : remote;
+      return remote.isEmpty ? await _localDs.getAll() : remote;
     } catch (e) {
       developer.log('listFragments remote failed, using local', error: e);
-      return List.unmodifiable(_local);
+      return _localDs.getAll();
+    }
+  }
+
+  /// 只读取本地缓存，不联网。供本地优先的 provider 在 build 阶段立即拿数据。
+  Future<List<LightFragmentModel>> listLocalFragments() => _localDs.getAll();
+
+  /// 只尝试远端，不做本地兜底。失败/无 token 时返回 null，供后台刷新使用。
+  Future<List<LightFragmentModel>?> tryListRemoteFragments() async {
+    final authSession = _auth.currentSession;
+    if (authSession == null) {
+      await _auth.restoreSession();
+    }
+    if (!_api.hasToken) return null;
+    try {
+      final body = await _api.get('/fragments', query: {'limit': 100});
+      final items = body['value'] is List
+          ? body['value'] as List<dynamic>
+          : body['items'] as List<dynamic>? ?? const [];
+      return items
+          .map((item) =>
+              LightFragmentModel.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      developer.log('tryListRemoteFragments failed', error: e);
+      return null;
+    }
+  }
+
+  /// 游标分页加载光片 — 支持增量加载
+  Future<CursorPage<LightFragmentModel>> listFragmentsPaged({
+    String? cursor,
+    int limit = 20,
+  }) async {
+    final authSession = _auth.currentSession;
+    if (authSession == null) {
+      await _auth.restoreSession();
+    }
+    if (!_api.hasToken) {
+      final all = await _localDs.getAll();
+      return CursorPage(items: all, hasMore: false);
+    }
+    try {
+      final query = <String, dynamic>{'limit': limit};
+      if (cursor != null && cursor.isNotEmpty) {
+        query['cursor'] = cursor;
+      }
+      final body = await _api.get('/fragments', query: query);
+      final items = (body['items'] as List<dynamic>? ?? const [])
+          .map((item) =>
+              LightFragmentModel.fromJson(item as Map<String, dynamic>))
+          .toList();
+      return CursorPage(
+        items: items,
+        nextCursor: body['next_cursor'] as String?,
+        hasMore: body['has_more'] as bool? ?? false,
+      );
+    } catch (e) {
+      developer.log('listFragmentsPaged failed', error: e);
+      final all = await _localDs.getAll();
+      return CursorPage(items: all, hasMore: false);
     }
   }
 
@@ -107,7 +192,7 @@ class FragmentRepository {
   }) async {
     await _auth.ensureSession();
     if (mediaUrls.isNotEmpty && mediaUrls.any(_isLocalOnlyMedia)) {
-      final local = _createLocalFragment(
+      final local = await _createLocalFragment(
         text: text,
         emotion: emotion,
         tags: tags,
@@ -127,7 +212,7 @@ class FragmentRepository {
       return LightFragmentModel.fromJson(body);
     }
     // 离线创建：入队 OpLog，联网后通过 sync push 到服务端
-    final local = _createLocalFragment(
+    final local = await _createLocalFragment(
       text: text,
       emotion: emotion,
       tags: tags,
@@ -142,23 +227,32 @@ class FragmentRepository {
     return local;
   }
 
-  LightFragmentModel _createLocalFragment({
+  Future<LightFragmentModel> _createLocalFragment({
     required String text,
     required String emotion,
     required List<String> tags,
     required List<String> mediaUrls,
-  }) {
-    final local = LightFragmentModel(
-      id: _localID++,
+  }) async {
+    final now = DateTime.now();
+    final model = LightFragmentModel(
+      id: 0, // DB will assign
       contentText: text,
       emotion: emotion,
       tags: tags,
       mediaUrls: mediaUrls,
-      createdAt: DateTime.now(),
+      createdAt: now,
       status: tags.length >= 3 ? 'island_core' : 'twilight',
     );
-    _local.insert(0, local);
-    return local;
+    final dbId = await _localDs.insert(model);
+    return LightFragmentModel(
+      id: dbId,
+      contentText: text,
+      emotion: emotion,
+      tags: tags,
+      mediaUrls: mediaUrls,
+      createdAt: now,
+      status: tags.length >= 3 ? 'island_core' : 'twilight',
+    );
   }
 
   bool _isLocalOnlyMedia(String value) {
@@ -172,7 +266,7 @@ class FragmentRepository {
   }
 
   Future<LightFragmentModel?> getFragment(int id) async {
-    final local = _local.where((item) => item.id == id).firstOrNull;
+    final local = await _localDs.getById(id);
     await _auth.ensureSession();
     if (_api.hasToken) {
       try {
@@ -193,7 +287,7 @@ class FragmentRepository {
     List<String>? mediaUrls,
   }) async {
     await _auth.ensureSession();
-    final localIndex = _local.indexWhere((item) => item.id == id);
+    final local = await _localDs.getById(id);
     if (_api.hasToken) {
       final payload = {
         'content_text': newText,
@@ -203,23 +297,20 @@ class FragmentRepository {
       };
       final body = await _api.put('/fragments/$id', payload);
       final updated = LightFragmentModel.fromJson(body);
-      if (localIndex != -1) {
-        _local[localIndex] = updated;
-      }
+      await _localDs.update(updated);
       onFragmentChanged?.call('fragment', 'UPDATE', id, payload);
       return;
     }
-    if (localIndex != -1) {
-      final current = _local[localIndex];
-      _local[localIndex] = LightFragmentModel(
-        id: current.id,
+    if (local != null) {
+      await _localDs.update(LightFragmentModel(
+        id: local.id,
         contentText: newText,
         emotion: emotion,
         tags: tags,
-        createdAt: current.createdAt,
-        status: current.status,
-        mediaUrls: mediaUrls ?? current.mediaUrls,
-      );
+        createdAt: local.createdAt,
+        status: local.status,
+        mediaUrls: mediaUrls ?? local.mediaUrls,
+      ));
     }
   }
 
@@ -233,7 +324,7 @@ class FragmentRepository {
         // Local fallback keeps the app operable while the backend is offline.
       }
     }
-    _local.removeWhere((item) => item.id == id);
+    await _localDs.delete(id);
   }
 
   Future<Relation?> weave({
@@ -266,31 +357,66 @@ class FragmentRepository {
       return null;
     }
   }
-}
 
-final seedFragments = [
-  LightFragmentModel(
-    id: 1,
-    contentText: '雨声把窗台变得很近\n本来只是想睡前看一眼窗外，结果突然觉得今天没有那么糟。',
-    emotion: '平静',
-    tags: ['雨天', '失眠', '微光'],
-    createdAt: DateTime.now().subtract(const Duration(minutes: 32)),
-    status: 'twilight',
-  ),
-  LightFragmentModel(
-    id: 2,
-    contentText: '一杯青提茶\n冰块、杯壁上的水珠、路边很亮的橱窗。好像被小小地接住了一下。',
-    emotion: '开心',
-    tags: ['通勤', '奶茶', '小小救命'],
-    createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-    status: 'seed',
-  ),
-  LightFragmentModel(
-    id: 3,
-    contentText: '凌晨突然想到的片名\n如果把这段时间剪成一支短片，名字也许叫：慢慢亮起来的房间。',
-    emotion: '被击中',
-    tags: ['灵感', '电影', '种子'],
-    createdAt: DateTime.now().subtract(const Duration(days: 1, hours: 1)),
-    status: 'stardust',
-  ),
-];
+  // ── H7: FragmentRepositoryContract interface adapters ──
+
+  @override
+  Future<List<Fragment>> list() async {
+    final models = await listFragments();
+    return models.map(_toFragment).toList();
+  }
+
+  @override
+  Future<Fragment?> getById(int id) async {
+    final model = await getFragment(id);
+    return model != null ? _toFragment(model) : null;
+  }
+
+  @override
+  Future<Fragment> create(CreateFragmentParams params) async {
+    final model = await createFragment(
+      text: params.contentText,
+      emotion: params.emotion,
+      tags: params.tagNames,
+    );
+    return _toFragment(model);
+  }
+
+  @override
+  Future<Fragment> update(Fragment fragment) async {
+    await updateFragmentText(
+      fragment.id,
+      fragment.contentText,
+      emotion: fragment.emotion ?? '说不清',
+      tags: fragment.tags,
+    );
+    return fragment;
+  }
+
+  @override
+  Future<void> delete(int id) => deleteFragment(id);
+
+  Fragment _toFragment(LightFragmentModel m) => Fragment(
+        id: m.id,
+        publicId: '',
+        userId: 0,
+        contentText: m.contentText,
+        emotion: m.emotion,
+        status: _statusFromText(m.status),
+        mediaUrls: m.mediaUrls,
+        tags: m.tags,
+        createdAt: m.createdAt,
+        updatedAt: m.createdAt,
+      );
+
+  static FragmentStatus _statusFromText(String value) {
+    return switch (value) {
+      'stardust' => FragmentStatus.stardust,
+      'echo' => FragmentStatus.echo,
+      'seed' => FragmentStatus.seed,
+      'tide' => FragmentStatus.tide,
+      'island_core' => FragmentStatus.islandCore,
+      _ => FragmentStatus.twilight,
+    };
+  }
+}

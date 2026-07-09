@@ -2,19 +2,24 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
+import 'package:drift/drift.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../shared/data/local/app_database.dart' hide OpLog;
 import '../data/sync_api.dart';
 import '../domain/oplog.dart';
 import '../domain/sync_config.dart';
 import '../domain/sync_status.dart';
 
 class SyncEngine {
-  SyncEngine({required SyncApi api, required SyncConfig config})
+  SyncEngine(
+      {required SyncApi api, required SyncConfig config, AppDatabase? db})
       : _api = api,
-        _config = config;
+        _config = config,
+        _db = db ?? AppDatabase();
 
   final SyncApi _api;
+  final AppDatabase _db;
   SyncConfig _config;
   final List<OpLog> _pendingOps = [];
   int _seq = 0;
@@ -24,6 +29,7 @@ class SyncEngine {
     pendingCount: 0,
     lastSyncAt: null,
     isSyncing: false,
+    connected: false,
   );
 
   SyncStatus get status => _status;
@@ -31,6 +37,7 @@ class SyncEngine {
   bool get hasPending => _pendingOps.isNotEmpty;
 
   void Function()? onStatusChanged;
+
   /// Pull 完成后调用（有新数据时），供上层刷新本地缓存
   void Function()? onRemoteChangesApplied;
 
@@ -43,8 +50,25 @@ class SyncEngine {
   }
 
   /// 记录一次本地写操作，入队待推送。
+  /// C9: Compaction — merge multiple UPDATE ops for the same entity into the latest one.
   void enqueue(OpLog op) {
-    developer.log('SYNC: enqueue ${op.opType} ${op.entityType}#${op.entityPublicId} (pending=${_pendingOps.length + 1})');
+    // Compaction: if there's already an UPDATE for this entity, replace it
+    if (op.opType == 'UPDATE' || op.opType == 'update') {
+      final existingIdx = _pendingOps.indexWhere((e) =>
+          e.entityType == op.entityType &&
+          e.entityPublicId == op.entityPublicId &&
+          (e.opType == 'UPDATE' || e.opType == 'update'));
+      if (existingIdx != -1) {
+        _pendingOps[existingIdx] = op;
+        developer.log(
+            'SYNC: compacted UPDATE ${op.entityType}#${op.entityPublicId}');
+        _notifyStatus();
+        _persistPendingOps();
+        return;
+      }
+    }
+    developer.log(
+        'SYNC: enqueue ${op.opType} ${op.entityType}#${op.entityPublicId} (pending=${_pendingOps.length + 1})');
     _pendingOps.add(op);
     _status = SyncStatus(
       lastServerRev: _status.lastServerRev,
@@ -61,22 +85,29 @@ class SyncEngine {
   /// 应用启动时调用，从本地存储恢复未推送的 OpLog 和 lastServerRev。
   Future<void> restorePendingOps() async {
     await _restoreSyncMeta();
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_pendingOpsKey);
-    if (raw == null || raw.isEmpty) return;
+    // C3/H11: Read from drift OpLogs table instead of SharedPreferences
     try {
-      final list = jsonDecode(raw) as List<dynamic>;
-      for (final entry in list) {
-        if (entry is Map<String, dynamic>) {
-          _pendingOps.add(OpLog.fromJson(entry));
-        }
+      final rows = await _db.getPendingOps();
+      for (final row in rows) {
+        _pendingOps.add(OpLog(
+          clientOpId: row.clientOpId,
+          entityType: row.entityType,
+          opType: row.opType,
+          entityPublicId: row.entityPublicId,
+          payload: jsonDecode(row.payload) as Map<String, dynamic>,
+          clientSeq: row.clientSeq,
+          baseServerVersion: row.baseServerVersion,
+        ));
       }
       if (_pendingOps.isNotEmpty) {
+        _seq = _pendingOps
+            .map((op) => op.clientSeq)
+            .reduce((a, b) => a > b ? a : b);
         _status = _status.copyWith(pendingCount: _pendingOps.length);
         _notifyStatus();
       }
-    } catch (_) {
-      await prefs.remove(_pendingOpsKey);
+    } catch (e) {
+      developer.log('SYNC: restorePendingOps failed — $e');
     }
   }
 
@@ -96,15 +127,18 @@ class SyncEngine {
       // 1. Push 本地待推送的 OpLog
       if (_pendingOps.isNotEmpty) {
         final ops = _pendingOps.toList();
-        developer.log('SYNC: pushing ${ops.length} ops, first op: ${ops.first.clientOpId}');
+        developer.log(
+            'SYNC: pushing ${ops.length} ops, first op: ${ops.first.clientOpId}');
         final body = <String, dynamic>{
           'device_id': 'flutter-${DateTime.now().millisecondsSinceEpoch}',
           'operations': ops.map((op) => op.toJson()).toList(),
         };
         final result = await _api.push(body);
         final results = result['results'] as List<dynamic>? ?? [];
-        final newRev = (result['new_server_rev'] as num?)?.toInt() ?? _status.lastServerRev;
-        developer.log('SYNC: push response — ${results.length} results, newRev=$newRev');
+        final newRev = (result['new_server_rev'] as num?)?.toInt() ??
+            _status.lastServerRev;
+        developer.log(
+            'SYNC: push response — ${results.length} results, newRev=$newRev');
 
         // 清除已接受的 op
         final acceptedIds = results
@@ -113,9 +147,13 @@ class SyncEngine {
             .map((r) => r['client_op_id'] as String)
             .toSet();
         final failedCount = results.length - acceptedIds.length;
-        developer.log('SYNC: accepted=${acceptedIds.length}, failed=$failedCount');
+        developer
+            .log('SYNC: accepted=${acceptedIds.length}, failed=$failedCount');
         _pendingOps.removeWhere((op) => acceptedIds.contains(op.clientOpId));
-        _persistPendingOps();
+        // C3: Delete accepted ops from drift individually (not full clear+reinsert)
+        for (final id in acceptedIds) {
+          await _db.deleteOpLog(id);
+        }
         developer.log('SYNC: after push, pendingCount=${_pendingOps.length}');
 
         _status = _status.copyWith(lastServerRev: newRev);
@@ -126,8 +164,10 @@ class SyncEngine {
       // 2. Pull 远端增量
       final pullResult = await _api.pull(sinceRev: _status.lastServerRev);
       final operations = pullResult['operations'] as List<dynamic>? ?? [];
-      final nextRev = (pullResult['next_since_rev'] as num?)?.toInt() ?? _status.lastServerRev;
-      hasRemoteChanges = operations.isNotEmpty || nextRev > _status.lastServerRev;
+      final nextRev = (pullResult['next_since_rev'] as num?)?.toInt() ??
+          _status.lastServerRev;
+      hasRemoteChanges =
+          operations.isNotEmpty || nextRev > _status.lastServerRev;
 
       if (hasRemoteChanges) {
         _status = _status.copyWith(lastServerRev: nextRev);
@@ -168,10 +208,10 @@ class SyncEngine {
       if (rev > _status.lastServerRev) {
         _status = _status.copyWith(lastServerRev: rev);
       }
-      _status = _status.copyWith(connected: true);
+      _status = _status.copyWith(connected: true, error: null);
       return true;
     } catch (_) {
-      _status = _status.copyWith(connected: false);
+      _status = _status.copyWith(connected: false, error: 'connection_failed');
       return false;
     }
   }
@@ -179,35 +219,40 @@ class SyncEngine {
   /// 生成下一个 client_op_id。
   String nextOpId(String entityType, String opType) {
     _seq++;
-    return '${entityType}-${opType.toLowerCase()}-$_seq-${DateTime.now().millisecondsSinceEpoch}';
+    return '$entityType-${opType.toLowerCase()}-$_seq-${DateTime.now().millisecondsSinceEpoch}';
   }
 
   /// 返回当前 server_rev（用于 OpLog 的 base_server_version）。
   int get currentServerRev => _status.lastServerRev;
 
-  // ── OpLog 持久化 ──
+  // ── C3/H11: OpLog 持久化 — drift table instead of SharedPreferences ──
 
-  static const _pendingOpsKey = 'xiguang.sync.pending_ops';
   static const _lastServerRevKey = 'xiguang.sync.last_server_rev';
   static const _lastSyncAtKey = 'xiguang.sync.last_sync_at';
 
   Future<void> _persistPendingOps() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (_pendingOps.isEmpty) {
-      await prefs.remove(_pendingOpsKey);
-      return;
+    // C3: Write to drift instead of SharedPreferences (no more JSON serialization per enqueue)
+    // Clear all existing ops and re-insert the current list
+    await _db.clearOpLogs();
+    for (final op in _pendingOps) {
+      await _db.insertOpLog(OpLogsCompanion.insert(
+        clientOpId: op.clientOpId,
+        entityType: op.entityType,
+        opType: op.opType,
+        entityPublicId: op.entityPublicId,
+        payload: Value(jsonEncode(op.payload)),
+        clientSeq: Value(op.clientSeq),
+        baseServerVersion: Value(op.baseServerVersion),
+      ));
     }
-    await prefs.setString(
-      _pendingOpsKey,
-      jsonEncode(_pendingOps.map((op) => op.toJson()).toList()),
-    );
   }
 
   Future<void> _persistSyncMeta() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_lastServerRevKey, _status.lastServerRev);
     if (_status.lastSyncAt != null) {
-      await prefs.setString(_lastSyncAtKey, _status.lastSyncAt!.toIso8601String());
+      await prefs.setString(
+          _lastSyncAtKey, _status.lastSyncAt!.toIso8601String());
     }
   }
 
@@ -225,20 +270,4 @@ class SyncEngine {
   }
 }
 
-extension _StatusCopy on SyncStatus {
-  SyncStatus copyWith({
-    int? lastServerRev,
-    int? pendingCount,
-    DateTime? lastSyncAt,
-    bool? connected,
-  }) {
-    return SyncStatus(
-      lastServerRev: lastServerRev ?? this.lastServerRev,
-      pendingCount: pendingCount ?? this.pendingCount,
-      lastSyncAt: lastSyncAt ?? this.lastSyncAt,
-      isSyncing: isSyncing,
-      connected: connected ?? this.connected,
-      error: error,
-    );
-  }
-}
+// SyncStatus.copyWith is now generated by freezed.

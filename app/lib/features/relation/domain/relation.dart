@@ -1,20 +1,21 @@
-/// Relation 实体 — "织线"
-class Relation {
-  const Relation(
-      {required this.id,
-      required this.publicId,
-      required this.userId,
-      required this.sourceFragmentId,
-      required this.targetFragmentId,
-      required this.relationType,
-      this.note});
+import 'package:freezed_annotation/freezed_annotation.dart';
 
-  final int id;
-  final String publicId;
-  final int userId;
-  final int sourceFragmentId;
-  final int targetFragmentId;
-  final String
-      relationType; // cause/inspiration/emotion_continue/same_phase/reminds_me/custom
-  final String? note;
+part 'relation.freezed.dart';
+part 'relation.g.dart';
+
+/// Relation 实体 — "织线"
+@freezed
+class Relation with _$Relation {
+  const factory Relation({
+    required int id,
+    @Default('') String publicId,
+    @Default(0) int userId,
+    required int sourceFragmentId,
+    required int targetFragmentId,
+    @Default('reminds_me') String relationType,
+    String? note,
+  }) = _Relation;
+
+  factory Relation.fromJson(Map<String, dynamic> json) =>
+      _$RelationFromJson(json);
 }

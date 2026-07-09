@@ -15,11 +15,21 @@ import (
 )
 
 type Handler struct {
-	service *service.Service
+	service      *service.Service
+	metaProvider MetaProvider
 }
+
+// MetaProvider 允许其他模块（如 app_release）往 /users/me 等响应里
+// piggyback 一段 meta，避免引入循环依赖。
+type MetaProvider func(r *http.Request) any
 
 func New(service *service.Service) *Handler {
 	return &Handler{service: service}
+}
+
+// SetMetaProvider 注入 meta 提供器。传 nil 表示不附加 meta。
+func (h *Handler) SetMetaProvider(p MetaProvider) {
+	h.metaProvider = p
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -27,6 +37,10 @@ func (h *Handler) Routes() http.Handler {
 	r.Post("/register", h.register)
 	r.Post("/login", h.login)
 	r.Post("/refresh", h.refresh)
+	r.Group(func(r chi.Router) {
+		r.Use(h.Middleware)
+		r.Put("/password", h.changePassword)
+	})
 	return r
 }
 
@@ -100,7 +114,7 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, http.StatusNotFound, "not_found", "没有找到这个账号。")
 		return
 	}
-	shared.WriteJSON(w, http.StatusOK, user)
+	shared.WriteJSONWithMeta(w, http.StatusOK, user, h.meta(r))
 }
 
 func (h *Handler) updateMe(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +162,44 @@ func (h *Handler) refresh(w http.ResponseWriter, r *http.Request) {
 	shared.WriteJSON(w, http.StatusOK, tokens)
 }
 
+func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
+	id, _ := authmw.UserID(r.Context())
+	var req struct {
+		OldPassword string `json:"old_password"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := shared.DecodeJSON(r, &req); err != nil {
+		shared.WriteError(w, http.StatusBadRequest, "bad_request", "请求格式不正确。")
+		return
+	}
+	if req.OldPassword == "" || req.NewPassword == "" {
+		shared.WriteError(w, http.StatusBadRequest, "missing_field", "当前密码和新密码不能为空。")
+		return
+	}
+	err := h.service.ChangePassword(r.Context(), id, req.OldPassword, req.NewPassword)
+	if errors.Is(err, service.ErrWrongPassword) {
+		shared.WriteError(w, http.StatusBadRequest, "wrong_password", "当前密码不正确。")
+		return
+	}
+	if errors.Is(err, service.ErrPasswordTooShort) {
+		shared.WriteError(w, http.StatusBadRequest, "password_too_short", "新密码至少需要 6 个字符。")
+		return
+	}
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "change_password_failed", "暂时无法修改密码，请稍后再试。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, map[string]string{"message": "密码已修改。"})
+}
+
 func isPGUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+func (h *Handler) meta(r *http.Request) any {
+	if h.metaProvider == nil {
+		return nil
+	}
+	return h.metaProvider(r)
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../design/tokens/colors.dart';
 import '../../design/tokens/radius.dart';
 import '../../design/tokens/shadows.dart';
+import '../../design/tokens/spacing.dart';
 
 /// 莫兰迪风格卡片基类 — 圆角+低饱和底色+柔和投影+毛玻璃可选
 ///
@@ -29,15 +30,25 @@ class MorandiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isNight = Theme.of(context).brightness == Brightness.dark;
+    // M10: Use cached decoration for the common case (white + border)
+    final effectiveColor = (color == AppColors.white && isNight)
+        ? AppColors.nightSurfaceHigh
+        : color;
+    final decoration = isNight
+        ? nightDecoration(radius: radius)
+        : (effectiveColor == AppColors.white && withBorder)
+            ? softDecoration(effectiveColor, radius: radius)
+            : BoxDecoration(
+                color: effectiveColor.withValues(alpha: .92),
+                borderRadius: BorderRadius.circular(radius),
+                border: withBorder ? Border.all(color: AppColors.line) : null,
+                boxShadow: softShadow,
+              );
     final card = Container(
       margin: margin,
-      padding: padding ?? const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .92),
-        borderRadius: BorderRadius.circular(radius),
-        border: withBorder ? Border.all(color: AppColors.line) : null,
-        boxShadow: softShadow,
-      ),
+      padding: padding ?? const EdgeInsets.all(AppSpacing.md),
+      decoration: decoration,
       child: child,
     );
 

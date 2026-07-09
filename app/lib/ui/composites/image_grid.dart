@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../design/tokens/colors.dart';
+import '../../design/tokens/radius.dart';
+import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
 import 'media_image.dart';
 
@@ -63,7 +65,7 @@ class _PreviewImage extends StatelessWidget {
   }
 
   Widget get _fallback => Container(
-        color: const Color(0xFFE9E1D5),
+        color: AppColors.cardBorder,
         alignment: Alignment.center,
         child: const Icon(Icons.image_not_supported_outlined),
       );
@@ -80,12 +82,12 @@ class _AudioPreview extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: AppColors.teaGreen.withValues(alpha: .14),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: AppColors.teaGreen.withValues(alpha: .24)),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Icon(Icons.graphic_eq_rounded, color: AppColors.teaGreen),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppSpacing.s6),
         Text(_label, style: AppText.caption),
       ]),
     );

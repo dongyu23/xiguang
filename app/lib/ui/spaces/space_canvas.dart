@@ -26,9 +26,13 @@ class SpaceCanvas extends StatelessWidget {
 }
 
 /// 氛围背景 — 莫兰迪渐变 + 低透明度横向线条
+///
+/// [animated] 为 false 时渲染静态版本，适用于登录页等不需要持续动画的场景。
 class AtmosphereBackground extends ConsumerStatefulWidget {
-  const AtmosphereBackground({super.key, this.lineCount = 6});
+  const AtmosphereBackground(
+      {super.key, this.lineCount = 6, this.animated = true});
   final int lineCount;
+  final bool animated;
 
   @override
   ConsumerState<AtmosphereBackground> createState() =>
@@ -46,14 +50,18 @@ class _AtmosphereBackgroundState extends ConsumerState<AtmosphereBackground>
       vsync: this,
       duration: const Duration(milliseconds: 11000),
     );
-    if (!_isRunningWidgetTest) {
-      _controller.repeat();
+    if (widget.animated && !_isRunningWidgetTest) {
+      // 延迟一帧启动动画，避免页面切换时首帧卡顿
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _controller.repeat();
+      });
       WidgetsBinding.instance.addObserver(this);
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!widget.animated) return;
     if (state == AppLifecycleState.resumed && !_controller.isAnimating) {
       _controller.repeat();
     } else if (state == AppLifecycleState.paused && _controller.isAnimating) {
@@ -63,7 +71,9 @@ class _AtmosphereBackgroundState extends ConsumerState<AtmosphereBackground>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    if (widget.animated) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
     _controller.dispose();
     super.dispose();
   }
@@ -71,6 +81,17 @@ class _AtmosphereBackgroundState extends ConsumerState<AtmosphereBackground>
   @override
   Widget build(BuildContext context) {
     final nightMode = ref.watch(nightModeProvider);
+    if (!widget.animated) {
+      // 静态模式：只渲染一次，不驱动动画
+      return CustomPaint(
+        painter: _AtmoPainter(
+          lineCount: widget.lineCount,
+          nightMode: nightMode,
+          phase: 0,
+        ),
+        child: const SizedBox.expand(),
+      );
+    }
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) => CustomPaint(
@@ -110,9 +131,9 @@ class _AtmoPainter extends CustomPainter {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Color(0xFF142322),
-                    Color(0xFF243D3A),
-                    Color(0xFF4E6054),
+                    AppColors.nightBackground,
+                    AppColors.nightGradientMid,
+                    AppColors.nightGradientEnd,
                   ],
                 )
               : AppColors.gradientAtmosphere)

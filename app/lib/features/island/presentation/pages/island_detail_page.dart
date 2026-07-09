@@ -1,15 +1,19 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:dio/dio.dart';
+import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/shadows.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
 import '../../../../features/fragment/data/fragment_repository.dart';
 import '../../../../ui/composites/light_card.dart';
+import '../../../../ui/primitives/night_background.dart';
+import '../../../../ui/primitives/page_back_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../data/island_repository.dart';
 import '../widgets/fragment_picker_sheet.dart';
@@ -24,6 +28,7 @@ class IslandDetailPage extends ConsumerStatefulWidget {
 }
 
 class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
+  bool _nightMode = false;
   late String _idOrName;
   late Future<_IslandDetailData> _detail;
 
@@ -46,56 +51,36 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
   @override
   Widget build(BuildContext context) {
     final repository = ref.watch(islandRepositoryProvider);
+    _nightMode = ref.watch(nightModeProvider);
     return Stack(children: [
+      const Positioned.fill(child: NightBackgroundPlaceholder()),
       const Positioned.fill(child: AtmosphereBackground()),
       Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: const Text('小岛详情'),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-        ),
-        floatingActionButton: FutureBuilder<_IslandDetailData>(
-          future: _detail,
-          builder: (context, snapshot) {
-            final canAdd = snapshot.data?.island.manual ?? false;
-            return FloatingActionButton.extended(
-              onPressed: () => _showFragmentPicker(context, repository),
-              icon: Icon(canAdd ? Icons.add_rounded : Icons.auto_awesome),
-              label: Text(canAdd ? '添加光片' : '自动小岛'),
-              backgroundColor: canAdd ? AppColors.teaGreen : AppColors.inkMuted,
-              foregroundColor: Colors.white,
-            );
-          },
-        ),
         body: SafeArea(
-          top: false,
           child: FutureBuilder<_IslandDetailData>(
             future: _detail,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
-                return const Center(child: CircularProgressIndicator());
+                return _IslandPageShell(
+                  nightMode: _nightMode,
+                  child: const Padding(
+                    padding: EdgeInsets.all(AppSpacing.xl),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                );
               }
               if (snapshot.hasError) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Text('暂时无法打开这座小岛',
-                          style: AppText.body,
-                          textAlign: TextAlign.center),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _detail = _load(
-                                ref.read(islandRepositoryProvider), _idOrName);
-                          });
-                        },
-                        icon: const Icon(Icons.refresh_rounded, size: 18),
-                        label: const Text('重新加载'),
-                      ),
-                    ]),
+                return _IslandPageShell(
+                  nightMode: _nightMode,
+                  child: _IslandErrorCard(
+                    nightMode: _nightMode,
+                    onRetry: () {
+                      setState(() {
+                        _detail = _load(
+                            ref.read(islandRepositoryProvider), _idOrName);
+                      });
+                    },
                   ),
                 );
               }
@@ -110,51 +95,71 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
                     ),
                     fragments: const [],
                   );
-              return SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(22, 12, 22, 104),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(18),
-                          decoration: softDecoration(AppColors.white),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('ISLAND', style: AppText.eyebrow),
-                              const SizedBox(height: 8),
-                              Text(data.island.name,
-                                  style: AppText.titleMedium),
-                              const SizedBox(height: 8),
-                              Text(data.island.description,
-                                  style: AppText.body),
-                              const SizedBox(height: 10),
-                              Text(
-                                '${data.fragments.length} 束光 · ${_statusLabel(data.island.status)}',
-                                style: AppText.caption,
-                              ),
-                            ],
+              return _IslandPageShell(
+                nightMode: _nightMode,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppSpacing.s18),
+                      decoration: softDecoration(AppColors.white,
+                          nightMode: _nightMode),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('ISLAND',
+                              style:
+                                  AppText.onNight(AppText.eyebrow, _nightMode)),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(data.island.name,
+                              style: AppText.onNight(
+                                  AppText.titleMedium, _nightMode)),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(data.island.description,
+                              style: AppText.onNight(AppText.body, _nightMode)),
+                          const SizedBox(height: AppSpacing.s10),
+                          Text(
+                            '${data.fragments.length} 束光 · ${_statusLabel(data.island.status)}',
+                            style: AppText.onNight(AppText.caption, _nightMode),
                           ),
-                        ),
-                        const SizedBox(height: 14),
-                        if (data.fragments.isEmpty)
-                          Text('这座小岛还没有可回看的光片。\n点右下角按钮添加第一束光。',
-                              style: AppText.body)
-                        else
-                          ...data.fragments.map((fragment) => LightFragmentCard(
-                                fragment: fragment.toLightFragment(),
-                                dense: true,
-                                showAttachmentBadge: true,
-                                showTitle: false,
-                                onTap: () =>
-                                    context.push('/fragments/${fragment.id}'),
-                              )),
-                      ],
+                          const SizedBox(height: AppSpacing.s14),
+                          if (data.island.manual)
+                            FilledButton.icon(
+                              onPressed: () =>
+                                  _showFragmentPicker(context, repository),
+                              icon: const Icon(Icons.add_rounded, size: 18),
+                              label: const Text('添加光片'),
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(0, 40),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.s14),
+                                textStyle: AppText.chip,
+                              ),
+                            )
+                          else
+                            const _AutoIslandPill(),
+                        ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.s14),
+                    if (data.fragments.isEmpty)
+                      Text(
+                        data.island.manual
+                            ? '这座小岛还没有可回看的光片。可以先添加第一束光。'
+                            : '这座小岛还在等更多同主题的光靠近。',
+                        style: AppText.onNight(AppText.bodyMuted, _nightMode),
+                      )
+                    else
+                      ...data.fragments.map((fragment) => LightFragmentCard(
+                            fragment: fragment.toLightFragment(),
+                            dense: true,
+                            showAttachmentBadge: true,
+                            showTitle: false,
+                            onTap: () =>
+                                context.push('/fragments/${fragment.id}'),
+                          )),
+                  ],
                 ),
               );
             },
@@ -173,20 +178,23 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
       current = await _detail;
     } catch (_) {
       if (!context.mounted) return;
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(content: Text('小岛还没有加载完成，稍后再试。')),
       );
       return;
     }
     if (!context.mounted) return;
     if (!current.island.manual) {
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(content: Text('这座自动生长的小岛不能手动添加光片。')),
       );
       return;
     }
     showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => FragmentPickerSheet(
@@ -198,7 +206,8 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
           final islandId = data.island.islandId;
           if (islandId <= 0) {
             if (!context.mounted) return false;
-            showOverlaySnackBar(context, 
+            showOverlaySnackBar(
+              context,
               const SnackBar(content: Text('这座自动生长的小岛暂时不能手动添加光片。')),
             );
             return false;
@@ -209,7 +218,8 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
           } on DioException catch (error) {
             if (_apiErrorCode(error) == 'island_not_manual') {
               if (!context.mounted) return false;
-              showOverlaySnackBar(context, 
+              showOverlaySnackBar(
+                context,
                 const SnackBar(content: Text('这座自动生长的小岛不能手动添加光片。')),
               );
               return false;
@@ -258,6 +268,163 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
       'relit' => '重新亮起',
       _ => '主题星点',
     };
+  }
+}
+
+class _IslandPageShell extends StatelessWidget {
+  const _IslandPageShell({required this.child, required this.nightMode});
+
+  final Widget child;
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+          22, 12, 22, 64 + 10 + MediaQuery.paddingOf(context).bottom + 30),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _IslandPageHeader(title: '小岛详情', nightMode: nightMode),
+              const SizedBox(height: AppSpacing.s18),
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IslandPageHeader extends StatelessWidget {
+  const _IslandPageHeader({required this.title, required this.nightMode});
+
+  final String title;
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        PageBackButton(
+          onTap: () => context.pop(),
+          nightMode: nightMode,
+        ),
+        const SizedBox(width: AppSpacing.s12),
+        Expanded(
+          child: Text(
+            title,
+            style: AppText.onNight(AppText.titleLarge, nightMode),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _IslandErrorCard extends StatelessWidget {
+  const _IslandErrorCard({required this.onRetry, required this.nightMode});
+
+  final VoidCallback onRetry;
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.s18),
+      decoration: softDecoration(AppColors.white, nightMode: nightMode),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.sunsetCoral.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(
+                color: AppColors.sunsetCoral.withValues(alpha: .22),
+              ),
+            ),
+            child: Icon(
+              Icons.wifi_off_rounded,
+              color: AppColors.sunsetCoral.withValues(alpha: .92),
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('暂时无法打开这座小岛',
+                    style: AppText.onNight(AppText.titleSmall, nightMode)),
+                const SizedBox(height: AppSpacing.s7),
+                Text(
+                  '后端暂时没有回应，小岛内容不会丢失。',
+                  style: AppText.onNight(AppText.bodyMuted, nightMode),
+                ),
+              ],
+            ),
+          ),
+        ]),
+        const SizedBox(height: AppSpacing.s14),
+        OutlinedButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('重新加载'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 38),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s12),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            side: const BorderSide(color: AppColors.line),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// _InlineActionButton 已删除，统一使用 FilledButton.icon（§10.2 默认色，§10.6 不再保留装饰白名单）。
+
+
+class _AutoIslandPill extends StatelessWidget {
+  const _AutoIslandPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s12, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.teaGreen.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.teaGreen.withValues(alpha: .26)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.auto_awesome_rounded,
+            size: 16,
+            color: AppColors.teaGreen.withValues(alpha: .92),
+          ),
+          const SizedBox(width: AppSpacing.s6),
+          Text(
+            '自动生长',
+            style: AppText.chip.copyWith(color: AppColors.teaGreen),
+          ),
+        ],
+      ),
+    );
   }
 }
 

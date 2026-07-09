@@ -5,16 +5,19 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers.dart';
 import '../../../../design/tokens/colors.dart';
+import '../../../../design/tokens/motion.dart';
+import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
 import '../../../../features/ai/data/ai_api.dart';
 import '../../../../features/fragment/data/fragment_repository.dart';
+import '../../../../features/fragment/domain/fragment.dart';
 import '../../../../features/relation/domain/relation.dart';
 import '../../../../features/timeline/domain/date_group.dart';
 import '../../../../features/timeline/presentation/providers/timeline_provider.dart';
 import '../../../../ui/composites/light_card.dart';
-import '../../../../ui/composites/night_mode_button.dart';
 import '../../../../ui/primitives/scroll_to_top.dart';
-import '../../../../ui/spaces/space_canvas.dart';
+import '../widgets/timeline_month_picker.dart';
 
 /// 时间河流页 — 按时间自然铺展的光片流
 ///
@@ -35,141 +38,209 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
   bool get _selectionMode => _selectedIds.isNotEmpty;
   bool get _busy => _deleting || _polishing;
 
+  // 缓存上一次的 items，避免同一帧内重复 expand+map 计算
+  List<LightFragmentModel>? _cachedItems;
+  AsyncValue? _cachedTimeline;
+  AsyncValue? _cachedRelations;
+  Map<int, String>? _cachedRelationMap;
+  // C1: Cache flattened sliver items for virtualized list
+  List<Object>? _cachedSliverItems;
+  List<LightFragmentModel>? _cachedFilteredItems;
+  DateTime? _cachedSelectedMonth;
+
+  List<LightFragmentModel> _buildItems(
+      AsyncValue timeline, Map<int, String> relationByFragment) {
+    if (_cachedItems != null &&
+        identical(_cachedTimeline, timeline) &&
+        identical(_cachedRelations, ref.read(relationsProvider))) {
+      return _cachedItems!;
+    }
+    _cachedTimeline = timeline;
+    _cachedRelations = ref.read(relationsProvider);
+    _cachedItems = timeline.when(
+      data: (groups) => (groups as List<DateGroup>)
+          .expand((group) => group.fragments)
+          .map(_fromDomainFragment)
+          .map((f) => _withRelation(f, relationByFragment[f.id]))
+          .toList(),
+      loading: () => const <LightFragmentModel>[],
+      error: (_, __) => const <LightFragmentModel>[],
+    );
+    return _cachedItems!;
+  }
+
+  Map<int, String> _buildRelationMap(AsyncValue relations) {
+    if (_cachedRelationMap != null && identical(_cachedRelations, relations)) {
+      return _cachedRelationMap!;
+    }
+    final result = <int, String>{};
+    for (final relation in relations.valueOrNull ?? const <Relation>[]) {
+      result[relation.sourceFragmentId] ??= relation.relationType;
+      result[relation.targetFragmentId] ??= relation.relationType;
+    }
+    _cachedRelationMap = result;
+    return result;
+  }
+
+  /// C1: Flatten grouped items into a list for SliverList.builder.
+  /// Each entry is either a _DateRailItem (header) or LightFragmentModel (card).
+  List<Object> _buildSliverItems(List<LightFragmentModel> allItems) {
+    if (_cachedSliverItems != null &&
+        identical(_cachedFilteredItems, allItems) &&
+        _cachedSelectedMonth == _selectedMonth) {
+      return _cachedSliverItems!;
+    }
+    _cachedFilteredItems = allItems;
+    _cachedSelectedMonth = _selectedMonth;
+    final filtered = allItems.where(_passesFilters).toList();
+    final visibleGroups = _groupVisibleItems(filtered);
+    final items = <Object>[];
+    for (final group in visibleGroups) {
+      items.add(_DateRailItem(
+        label: group.label,
+        count: group.items.length,
+      ));
+      items.addAll(group.items);
+    }
+    _cachedSliverItems = items;
+    return items;
+  }
+
   @override
   Widget build(BuildContext context) {
     final fragments = ref.watch(fragmentsProvider);
     final timeline = ref.watch(timelineGroupsProvider);
     final nightMode = ref.watch(nightModeProvider);
     final polishEnabled = ref.watch(aiPolishEnabledProvider);
-    final relationByFragment =
-        _relationByFragment(ref.watch(relationsProvider));
+    final relations = ref.watch(relationsProvider);
+    final relationByFragment = _buildRelationMap(relations);
+    // 统一计算一次 items，timeline 和 fallback 共用
+    final allItems = timeline.when(
+      data: (_) => _buildItems(timeline, relationByFragment),
+      loading: () => fragments.when(
+        data: (items) => items
+            .map((f) => _withRelation(f, relationByFragment[f.id]))
+            .toList(),
+        loading: () => const <LightFragmentModel>[],
+        error: (_, __) => const <LightFragmentModel>[],
+      ),
+      error: (_, __) => fragments.when(
+        data: (items) => items
+            .map((f) => _withRelation(f, relationByFragment[f.id]))
+            .toList(),
+        loading: () => const <LightFragmentModel>[],
+        error: (_, __) => const <LightFragmentModel>[],
+      ),
+    );
     return Stack(children: [
-      const Positioned.fill(child: AtmosphereBackground()),
+      // C2: Background now provided by _AppShell in router.dart
+      // C1: Use CustomScrollView + SliverList.builder for virtualized rendering
       SafeArea(
         child: ScrollToTop(
-          builder: (context, controller) => SingleChildScrollView(
-            controller: controller,
-            physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(22, 18, 22, _selectionMode ? 156 : 104),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _Header(nightMode: nightMode),
-                    const SizedBox(height: 10),
-                    timeline.when(
-                      data: (groups) {
-                        final items = groups
-                            .expand((group) => group.fragments)
-                            .map(_fromDomainFragment)
-                            .map((fragment) => _withRelation(
-                                  fragment,
-                                  relationByFragment[fragment.id],
-                                ))
-                            .toList();
-                        final months = _availableMonths(items);
-                        return _DateNavigationBar(
-                          selectedMonth: _selectedMonth,
-                          availableMonths: months,
-                          nightMode: nightMode,
-                          onSelected: (month) =>
-                              setState(() => _selectedMonth = month),
-                          onOpenPicker: () =>
-                              _showMonthPicker(items, nightMode),
-                        );
-                      },
-                      loading: () => const SizedBox(height: 32),
-                      error: (_, __) => fragments.when(
-                        data: (items) => _DateNavigationBar(
-                          selectedMonth: _selectedMonth,
-                          availableMonths: _availableMonths(items),
-                          nightMode: nightMode,
-                          onSelected: (month) =>
-                              setState(() => _selectedMonth = month),
-                          onOpenPicker: () =>
-                              _showMonthPicker(items, nightMode),
-                        ),
-                        loading: () => const SizedBox(height: 32),
-                        error: (_, __) => const SizedBox.shrink(),
+          builder: (context, controller) {
+            final sliverItems = _buildSliverItems(allItems);
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: CustomScrollView(
+                  controller: controller,
+                  physics: const BouncingScrollPhysics(),
+                  slivers: [
+                    // Header
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.s22, AppSpacing.s18, AppSpacing.s22, 0),
+                      sliver: SliverToBoxAdapter(
+                        child: _Header(nightMode: nightMode),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    timeline.when(
-                      data: (groups) {
-                        final visibleGroups = _groupVisibleItems(groups
-                            .expand((group) => group.fragments)
-                            .map(_fromDomainFragment)
-                            .map((fragment) => _withRelation(
-                                  fragment,
-                                  relationByFragment[fragment.id],
-                                ))
-                            .where(_passesFilters)
-                            .toList());
-                        if (visibleGroups.isEmpty) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 24),
-                            child: Text(
-                              '还没有这样的旧光。',
-                              style: AppText.onNight(AppText.body, nightMode),
-                            ),
-                          );
-                        }
-                        return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              for (final group in visibleGroups) ...[
-                                _DateRail(
-                                    label: group.label,
-                                    count: '${group.items.length} 束光',
-                                    nightMode: nightMode),
-                                ...group.items.map((f) => LightFragmentCard(
-                                      tapKey: ValueKey('timeline-card-${f.id}'),
-                                      fragment: f.toLightFragment(),
-                                      dense: true,
-                                      showAttachmentBadge: true,
-                                      showTitle: false,
-                                      selectionMode: _selectionMode,
-                                      showSelectionControl: true,
-                                      selected: _selectedIds.contains(f.id),
-                                      onSelectionTap: () =>
-                                          _toggleSelection(f.id),
-                                      onTap: () => _selectionMode
-                                          ? _toggleSelection(f.id)
-                                          : context.push('/fragments/${f.id}'),
-                                      onLongPress: () => _startSelection(f.id),
-                                    )),
-                                const SizedBox(height: 8),
-                              ],
-                            ]);
-                      },
-                      loading: () => const Center(
-                          child: Padding(
-                              padding: EdgeInsets.all(32),
-                              child: CircularProgressIndicator())),
-                      error: (error, _) => fragments.when(
-                        data: (items) => _FallbackTimeline(
-                          items: items,
-                          relationByFragment: relationByFragment,
-                          selectedMonth: _selectedMonth,
-                          nightMode: nightMode,
-                          selectionMode: _selectionMode,
-                          selectedIds: _selectedIds,
-                          onToggleSelection: _toggleSelection,
-                          onStartSelection: _startSelection,
-                        ),
-                        loading: () => Text('时间河暂时变浅了：$error',
-                            style: AppText.onNight(AppText.body, nightMode)),
-                        error: (_, __) => Text('时间河暂时变浅了：$error',
-                            style: AppText.onNight(AppText.body, nightMode)),
+                    // Controls
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.s22, AppSpacing.s10, AppSpacing.s22, 0),
+                      sliver: SliverToBoxAdapter(
+                        child: allItems.isNotEmpty
+                            ? _TimelineControls(
+                                items: allItems,
+                                selectedMonth: _selectedMonth,
+                                availableMonths: _availableMonths(allItems),
+                                nightMode: nightMode,
+                                onSelected: (month) =>
+                                    setState(() => _selectedMonth = month),
+                                onOpenPicker: () =>
+                                    _showMonthPicker(allItems, nightMode),
+                              )
+                            : const SizedBox(height: AppSpacing.xl),
                       ),
                     ),
-                  ]),
-            ),
-          ),
+                    // Fragment list (virtualized) or loading/empty state
+                    if (allItems.isEmpty)
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.s22, AppSpacing.md, AppSpacing.s22, 0),
+                        sliver: SliverToBoxAdapter(
+                          child: _TimelineLoadingState(nightMode: nightMode),
+                        ),
+                      )
+                    else if (sliverItems.isEmpty)
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.s22, AppSpacing.lg, AppSpacing.s22, 0),
+                        sliver: SliverToBoxAdapter(
+                          child: Text(
+                            '还没有这样的旧光。',
+                            style: AppText.onNight(AppText.body, nightMode),
+                          ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                            22,
+                            16,
+                            22,
+                            _selectionMode
+                                ? 156
+                                : (64 +
+                                    10 +
+                                    MediaQuery.paddingOf(context).bottom +
+                                    30)),
+                        sliver: SliverList.builder(
+                          itemCount: sliverItems.length,
+                          itemBuilder: (context, index) {
+                            final item = sliverItems[index];
+                            if (item is _DateRailItem) {
+                              return _DateRail(
+                                label: item.label,
+                                count: '${item.count} 束光',
+                                nightMode: nightMode,
+                              );
+                            }
+                            final f = item as LightFragmentModel;
+                            return LightFragmentCard(
+                              tapKey: ValueKey('timeline-card-${f.id}'),
+                              fragment: f.toLightFragment(),
+                              dense: true,
+                              showAttachmentBadge: true,
+                              showTitle: false,
+                              selectionMode: _selectionMode,
+                              showSelectionControl: _selectionMode,
+                              selected: _selectedIds.contains(f.id),
+                              onSelectionTap: () => _toggleSelection(f.id),
+                              onTap: () => _selectionMode
+                                  ? _toggleSelection(f.id)
+                                  : context.push('/fragments/${f.id}'),
+                              onLongPress: () => _startSelection(f.id),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
-          ),
       ),
       if (_selectionMode)
         _SelectionActionBar(
@@ -183,15 +254,6 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
           onDelete: _busy ? null : _deleteSelected,
         ),
     ]);
-  }
-
-  Map<int, String> _relationByFragment(AsyncValue<List<Relation>> relations) {
-    final result = <int, String>{};
-    for (final relation in relations.valueOrNull ?? const <Relation>[]) {
-      result[relation.sourceFragmentId] ??= relation.relationType;
-      result[relation.targetFragmentId] ??= relation.relationType;
-    }
-    return result;
   }
 
   void _startSelection(int id) {
@@ -222,7 +284,8 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
         _selectedIds.removeAll(ids);
         _deleting = false;
       });
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         SnackBar(
           content: Text('已删除 ${ids.length} 束光。'),
           behavior: SnackBarBehavior.floating,
@@ -231,7 +294,8 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _deleting = false);
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('删除失败，请稍后再试。'),
           behavior: SnackBarBehavior.floating,
@@ -247,7 +311,8 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     if (_busy || _selectedIds.isEmpty) return;
     final selected = _selectedFragments(timeline, fragments);
     if (selected.isEmpty) {
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         const SnackBar(
           content: Text('没有找到可润色的光。'),
           behavior: SnackBarBehavior.floating,
@@ -260,26 +325,35 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     var failed = 0;
     final api = AIApi(ref.read(apiClientProvider));
     final repository = ref.read(fragmentRepositoryProvider);
-    for (final fragment in selected) {
-      if (fragment.contentText.trim().isEmpty) continue;
-      try {
-        final result =
-            await api.polishFragment(fragment.contentText, fragment.emotion);
-        if (result['status'] == 'error') {
-          failed++;
-          continue;
+    // 并发润色，最多 3 个同时进行
+    const concurrency = 3;
+    final validSelected =
+        selected.where((f) => f.contentText.trim().isNotEmpty).toList();
+    for (var i = 0; i < validSelected.length; i += concurrency) {
+      final batch = validSelected.skip(i).take(concurrency);
+      final results = await Future.wait(batch.map((fragment) async {
+        try {
+          final result =
+              await api.polishFragment(fragment.contentText, fragment.emotion);
+          if (result['status'] == 'error') return false;
+          final polished = (result['polished_text'] as String? ?? '').trim();
+          if (polished.isEmpty) return false;
+          await repository.updateFragmentText(
+            fragment.id,
+            polished,
+            emotion: fragment.emotion,
+            tags: fragment.tags,
+          );
+          return true;
+        } catch (_) {
+          return false;
         }
-        final polished = (result['polished_text'] as String? ?? '').trim();
-        if (polished.isEmpty) continue;
-        await repository.updateFragmentText(
-          fragment.id,
-          polished,
-          emotion: fragment.emotion,
-          tags: fragment.tags,
-        );
-        success++;
-      } catch (_) {
-        failed++;
+      }));
+      for (final r in results) {
+        if (r)
+          success++;
+        else
+          failed++;
       }
     }
     ref.invalidate(fragmentsProvider);
@@ -296,7 +370,8 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
       msg.write('$failed 束润色失败');
     }
     if (msg.isEmpty) msg.write('没有生成新的润色内容。');
-    showOverlaySnackBar(context, 
+    showOverlaySnackBar(
+      context,
       SnackBar(
         content: Text(msg.toString()),
         behavior: SnackBarBehavior.floating,
@@ -360,11 +435,12 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
       List<LightFragmentModel> items, bool nightMode) async {
     final months = _availableMonths(items);
     final initial = _selectedMonth ?? (months.isNotEmpty ? months.first : null);
-    final picked = await showModalBottomSheet<_MonthPickerResult>(
+    final picked = await showModalBottomSheet<MonthPickerResult>(
       context: context,
+      useRootNavigator: true,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => _MonthPickerSheet(
+      builder: (context) => MonthPickerSheet(
         months: months,
         selectedMonth: initial,
         nightMode: nightMode,
@@ -379,7 +455,8 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
             month.month == _selectedMonth!.month;
     if (sameSelection) return;
     if (month != null && !months.any((item) => _sameMonth(item, month))) {
-      showOverlaySnackBar(context, 
+      showOverlaySnackBar(
+        context,
         SnackBar(
           content: Text('${month.year}年${month.month}月还没有光片。'),
           behavior: SnackBarBehavior.floating,
@@ -389,12 +466,6 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     }
     setState(() => _selectedMonth = month);
   }
-}
-
-class _MonthPickerResult {
-  const _MonthPickerResult(this.month);
-
-  final DateTime? month;
 }
 
 String _fullDateLabel(DateTime value) {
@@ -416,14 +487,9 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('TIME RIVER', style: AppText.onNight(AppText.eyebrow, nightMode)),
-      const SizedBox(height: 8),
-      Row(children: [
-        Expanded(
-          child: Text('线', style: AppText.onNight(AppText.hero, nightMode)),
-        ),
-        const NightModeButton(),
-      ]),
-      const SizedBox(height: 12),
+      const SizedBox(height: AppSpacing.sm),
+      Text('线', style: AppText.onNight(AppText.hero, nightMode)),
+      const SizedBox(height: AppSpacing.s12),
       Text('人心绪随时间自流。', style: AppText.onNight(AppText.body, nightMode)),
     ]);
   }
@@ -445,27 +511,27 @@ extension _LightFragmentAdapter on LightFragmentModel {
   }
 }
 
-LightFragmentModel _fromDomainFragment(dynamic fragment) {
-  int safeId(dynamic v) => v is int ? v : (v is num ? v.toInt() : 0);
-  String safeStr(dynamic v) => v is String ? v : (v?.toString() ?? '');
-  List<String> safeStrList(dynamic v) {
-    if (v is List) return v.map((e) => e.toString()).toList();
-    return const [];
-  }
-  DateTime safeDateTime(dynamic v) {
-    if (v is DateTime) return v;
-    if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
-    return DateTime.now();
-  }
+LightFragmentModel _fromDomainFragment(Fragment fragment) {
   return LightFragmentModel(
-    id: safeId(fragment.id),
-    contentText: safeStr(fragment.contentText),
-    emotion: safeStr(fragment.emotion).isEmpty ? '说不清' : safeStr(fragment.emotion),
-    tags: safeStrList(fragment.tags),
-    mediaUrls: safeStrList(fragment.mediaUrls),
-    createdAt: safeDateTime(fragment.createdAt),
-    status: safeStr(fragment.status).isEmpty ? 'twilight' : safeStr(fragment.status),
+    id: fragment.id,
+    contentText: fragment.contentText,
+    emotion: (fragment.emotion ?? '').isEmpty ? '说不清' : fragment.emotion!,
+    tags: fragment.tags,
+    mediaUrls: fragment.mediaUrls,
+    createdAt: fragment.createdAt,
+    status: _statusToApi(fragment.status),
   );
+}
+
+String _statusToApi(FragmentStatus status) {
+  return switch (status) {
+    FragmentStatus.twilight => 'twilight',
+    FragmentStatus.stardust => 'stardust',
+    FragmentStatus.echo => 'echo',
+    FragmentStatus.seed => 'seed',
+    FragmentStatus.tide => 'tide',
+    FragmentStatus.islandCore => 'island_core',
+  };
 }
 
 LightFragmentModel _withRelation(
@@ -512,42 +578,162 @@ class _FallbackTimeline extends StatelessWidget {
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     if (visible.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.only(top: 24),
+        padding: const EdgeInsets.only(top: AppSpacing.lg),
         child:
             Text('还没有这样的旧光。', style: AppText.onNight(AppText.body, nightMode)),
       );
     }
-    final labels =
-        visible.map((item) => _fullDateLabel(item.createdAt)).toSet().toList();
+    // 预分组：O(n) 替代 O(n²) 的 where 过滤
+    final grouped = <String, List<LightFragmentModel>>{};
+    for (final item in visible) {
+      grouped.putIfAbsent(_fullDateLabel(item.createdAt), () => []).add(item);
+    }
+    final labels = grouped.keys.toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       for (final label in labels) ...[
         _DateRail(
           label: label,
-          count:
-              '${visible.where((f) => _fullDateLabel(f.createdAt) == label).length} 束光',
+          count: '${grouped[label]!.length} 束光',
           nightMode: nightMode,
         ),
-        ...visible.where((f) => _fullDateLabel(f.createdAt) == label).map(
-              (f) => LightFragmentCard(
-                tapKey: ValueKey('timeline-card-${f.id}'),
-                fragment: _withRelation(f, relationByFragment[f.id])
-                    .toLightFragment(),
-                dense: true,
-                showAttachmentBadge: true,
-                showTitle: false,
-                selectionMode: selectionMode,
-                showSelectionControl: true,
-                selected: selectedIds.contains(f.id),
-                onSelectionTap: () => onToggleSelection(f.id),
-                onTap: () => selectionMode
-                    ? onToggleSelection(f.id)
-                    : context.push('/fragments/${f.id}'),
-                onLongPress: () => onStartSelection(f.id),
-              ),
-            ),
-        const SizedBox(height: 8),
+        ...grouped[label]!.map(
+          (f) => LightFragmentCard(
+            tapKey: ValueKey('timeline-card-${f.id}'),
+            fragment:
+                _withRelation(f, relationByFragment[f.id]).toLightFragment(),
+            dense: true,
+            showAttachmentBadge: true,
+            showTitle: false,
+            selectionMode: selectionMode,
+            showSelectionControl: selectionMode,
+            selected: selectedIds.contains(f.id),
+            onSelectionTap: () => onToggleSelection(f.id),
+            onTap: () => selectionMode
+                ? onToggleSelection(f.id)
+                : context.push('/fragments/${f.id}'),
+            onLongPress: () => onStartSelection(f.id),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
       ],
     ]);
+  }
+}
+
+class _TimelineLoadingState extends StatelessWidget {
+  const _TimelineLoadingState({required this.nightMode});
+
+  final bool nightMode;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = nightMode
+        ? AppColors.white.withValues(alpha: .07)
+        : AppColors.white.withValues(alpha: .72);
+    final border = nightMode
+        ? AppColors.white.withValues(alpha: .12)
+        : AppColors.line.withValues(alpha: .88);
+    final shimmer = nightMode
+        ? AppColors.white.withValues(alpha: .12)
+        : AppColors.teaGreen.withValues(alpha: .10);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.s18),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md, AppSpacing.s15, AppSpacing.md, AppSpacing.s15),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: border),
+          ),
+          child: Row(children: [
+            SizedBox(
+              width: 30,
+              height: 30,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: AppColors.teaGreen,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '正在捞取旧光',
+                    style: AppText.onNight(AppText.titleSmall, nightMode),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '如果河面暂时安静，会先保留本地已经落下的光。',
+                    style: AppText.onNight(AppText.caption, nightMode),
+                  ),
+                ],
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: AppSpacing.s12),
+        for (var i = 0; i < 2; i++) ...[
+          Container(
+            height: 74,
+            margin: const EdgeInsets.only(bottom: AppSpacing.s9),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: border),
+            ),
+            padding: const EdgeInsets.all(AppSpacing.s14),
+            child: Row(children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: shimmer,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _LoadingBar(widthFactor: i == 0 ? .76 : .62),
+                    const SizedBox(height: AppSpacing.s9),
+                    _LoadingBar(widthFactor: i == 0 ? .46 : .54),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+}
+
+class _LoadingBar extends StatelessWidget {
+  const _LoadingBar({required this.widthFactor});
+
+  final double widthFactor;
+
+  @override
+  Widget build(BuildContext context) {
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: 10,
+        decoration: BoxDecoration(
+          color: AppColors.teaGreen.withValues(alpha: .10),
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+      ),
+    );
   }
 }
 
@@ -574,17 +760,18 @@ class _SelectionActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final background = nightMode ? const Color(0xFF203437) : AppColors.white;
+    final background = nightMode ? AppColors.nightWave : AppColors.white;
     final foreground = nightMode ? AppText.nightInk : AppColors.ink;
     final muted = nightMode ? AppText.nightInkMuted : AppColors.inkMuted;
     final border = nightMode
-        ? Colors.white.withValues(alpha: .14)
+        ? AppColors.white.withValues(alpha: .14)
         : AppColors.line.withValues(alpha: .95);
 
     return Positioned(
       left: 18,
       right: 18,
-      bottom: 18,
+      // 抬到浮岛导航上方，避免与底部功能岛重叠（§9.4 pageBottomNav）
+      bottom: AppSpacing.pageBottomNav,
       child: SafeArea(
         top: false,
         child: Center(
@@ -593,10 +780,11 @@ class _SelectionActionBar extends StatelessWidget {
             child: Material(
               color: Colors.transparent,
               child: Container(
-                padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+                padding: const EdgeInsets.fromLTRB(AppSpacing.s14,
+                    AppSpacing.s12, AppSpacing.s12, AppSpacing.s12),
                 decoration: BoxDecoration(
                   color: background.withValues(alpha: nightMode ? .96 : .98),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   border: Border.all(color: border),
                   boxShadow: [
                     BoxShadow(
@@ -617,7 +805,7 @@ class _SelectionActionBar extends StatelessWidget {
                       color: AppColors.teaGreen.withValues(
                         alpha: nightMode ? .18 : .14,
                       ),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                     child: Icon(
                       Icons.checklist_rounded,
@@ -625,7 +813,7 @@ class _SelectionActionBar extends StatelessWidget {
                       color: nightMode ? AppColors.teaGreen : AppColors.ink,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: AppSpacing.s10),
                   Expanded(
                     child: Text(
                       '已选 $count 束光',
@@ -641,7 +829,7 @@ class _SelectionActionBar extends StatelessWidget {
                       style: AppText.chip.copyWith(color: muted),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: AppSpacing.s6),
                   if (polishEnabled) ...[
                     OutlinedButton.icon(
                       onPressed: onPolish,
@@ -664,11 +852,11 @@ class _SelectionActionBar extends StatelessWidget {
                           color: AppColors.teaGreen.withValues(alpha: .58),
                         ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: AppSpacing.s6),
                   ],
                   FilledButton.icon(
                     onPressed: onDelete,
@@ -678,7 +866,7 @@ class _SelectionActionBar extends StatelessWidget {
                             height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: AppColors.ink.withValues(alpha: .78),
+                              color: AppColors.white.withValues(alpha: .78),
                             ),
                           )
                         : const Icon(Icons.delete_outline_rounded, size: 18),
@@ -686,10 +874,7 @@ class _SelectionActionBar extends StatelessWidget {
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(86, 40),
                       backgroundColor: AppColors.sunsetCoral,
-                      foregroundColor: AppColors.ink,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                      foregroundColor: AppColors.white,
                     ),
                   ),
                 ]),
@@ -698,6 +883,35 @@ class _SelectionActionBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _TimelineControls extends StatelessWidget {
+  const _TimelineControls({
+    required this.items,
+    required this.selectedMonth,
+    required this.availableMonths,
+    required this.nightMode,
+    required this.onSelected,
+    required this.onOpenPicker,
+  });
+
+  final List<LightFragmentModel> items;
+  final DateTime? selectedMonth;
+  final List<DateTime> availableMonths;
+  final bool nightMode;
+  final ValueChanged<DateTime?> onSelected;
+  final VoidCallback onOpenPicker;
+
+  @override
+  Widget build(BuildContext context) {
+    return _DateNavigationBar(
+      selectedMonth: selectedMonth,
+      availableMonths: availableMonths,
+      nightMode: nightMode,
+      onSelected: onSelected,
+      onOpenPicker: onOpenPicker,
     );
   }
 }
@@ -721,41 +935,38 @@ class _DateNavigationBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final muted = nightMode ? AppText.nightInkMuted : AppColors.inkMuted;
     final border = nightMode
-        ? Colors.white.withValues(alpha: 0.12)
+        ? AppColors.white.withValues(alpha: 0.12)
         : AppColors.line.withValues(alpha: 0.92);
-    final visibleMonths = availableMonths.take(3).toList();
+    final monthLabel = selectedMonth == null
+        ? '全部旧光'
+        : '${selectedMonth!.year}年${selectedMonth!.month}月';
 
     return Container(
       height: 40,
       decoration: BoxDecoration(
         color: nightMode
-            ? Colors.white.withValues(alpha: .07)
+            ? AppColors.white.withValues(alpha: .07)
             : AppColors.white.withValues(alpha: .56),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: border),
       ),
       child: Row(children: [
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(children: [
-              _DateNavigationItem(
-                label: '全部',
-                selected: selectedMonth == null,
-                nightMode: nightMode,
-                onTap: () => onSelected(null),
-              ),
-              for (final month in visibleMonths)
-                _DateNavigationItem(
-                  label: '${month.month}月',
-                  selected: selectedMonth != null &&
-                      _sameMonth(month, selectedMonth!),
-                  nightMode: nightMode,
-                  onTap: () => onSelected(month),
-                ),
-            ]),
-          ),
+        _DateNavigationItem(
+          label: '全部',
+          selected: selectedMonth == null,
+          nightMode: nightMode,
+          onTap: () => onSelected(null),
         ),
+        if (selectedMonth != null) ...[
+          Container(width: 1, height: 22, color: border),
+          _DateNavigationItem(
+            label: monthLabel,
+            selected: true,
+            nightMode: nightMode,
+            onTap: onOpenPicker,
+          ),
+        ],
+        const Spacer(),
         Container(width: 1, height: 22, color: border),
         IconButton(
           tooltip: '选择月份',
@@ -788,270 +999,28 @@ class _DateNavigationItem extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(7),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+          duration: AppMotion.quick,
           height: 38,
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
           decoration: BoxDecoration(
             color: selected
                 ? (nightMode ? AppColors.teaGreen : AppColors.ink)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
           child: Text(
             label,
             style: AppText.chip.copyWith(
-              fontSize: 11,
               color: selected
-                  ? Colors.white
+                  ? AppColors.white
                   : (nightMode ? AppText.nightInkMuted : AppColors.inkMuted),
             ),
           ),
         ),
       ),
-    );
-  }
-}
-
-class _MonthPickerSheet extends StatefulWidget {
-  const _MonthPickerSheet({
-    required this.months,
-    required this.selectedMonth,
-    required this.nightMode,
-  });
-
-  final List<DateTime> months;
-  final DateTime? selectedMonth;
-  final bool nightMode;
-
-  @override
-  State<_MonthPickerSheet> createState() => _MonthPickerSheetState();
-}
-
-class _MonthPickerSheetState extends State<_MonthPickerSheet> {
-  late int _year;
-  late int _month;
-
-  @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now();
-    final initial = widget.selectedMonth ?? DateTime(now.year, now.month);
-    _year = initial.year;
-    _month = initial.month;
-  }
-
-  List<int> get _years {
-    final years = widget.months.map((month) => month.year).toList();
-    years.add(DateTime.now().year);
-    years.add(_year);
-    final minYear = years.reduce((a, b) => a < b ? a : b) - 2;
-    final maxYear = years.reduce((a, b) => a > b ? a : b) + 2;
-    return [for (var year = maxYear; year >= minYear; year--) year];
-  }
-
-  List<int> get _monthsForYear {
-    return const [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = widget.nightMode ? AppText.nightInk : AppColors.ink;
-    final muted = widget.nightMode ? AppText.nightInkMuted : AppColors.inkMuted;
-    final sheetColor =
-        widget.nightMode ? const Color(0xFF203437) : AppColors.white;
-    final lineColor = widget.nightMode
-        ? Colors.white.withValues(alpha: 0.12)
-        : AppColors.line;
-    final selected = DateTime(_year, _month);
-
-    final maxHeight = MediaQuery.sizeOf(context).height * .72;
-
-    return SafeArea(
-      top: false,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final pickerHeight =
-                (constraints.maxHeight - 154).clamp(76.0, 128.0);
-            return Container(
-              padding: const EdgeInsets.fromLTRB(22, 8, 22, 10),
-              decoration: BoxDecoration(
-                color: sheetColor,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 38,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: lineColor,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Expanded(
-                      child: Text(
-                        '按日期筛选',
-                        style: AppText.onNight(
-                            AppText.titleMedium, widget.nightMode),
-                      ),
-                    ),
-                    TextButton(
-                      style: TextButton.styleFrom(
-                        minimumSize: const Size(72, 32),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      onPressed: () => Navigator.of(context)
-                          .pop(const _MonthPickerResult(null)),
-                      child: Text(
-                        '全部日期',
-                        style: AppText.chip.copyWith(color: AppColors.teaGreen),
-                      ),
-                    ),
-                  ]),
-                  const SizedBox(height: 6),
-                  Divider(color: lineColor, height: 1),
-                  SizedBox(
-                    height: pickerHeight,
-                    child: Row(children: [
-                      Expanded(
-                        child: _PickerColumn(
-                          values: _years,
-                          selectedValue: _year,
-                          suffix: '年',
-                          foreground: foreground,
-                          muted: muted,
-                          nightMode: widget.nightMode,
-                          onSelected: (value) => setState(() => _year = value),
-                        ),
-                      ),
-                      Container(
-                          width: 1,
-                          height: (pickerHeight - 28).clamp(44.0, 82.0),
-                          color: lineColor),
-                      Expanded(
-                        child: _PickerColumn(
-                          values: _monthsForYear,
-                          selectedValue: _month,
-                          suffix: '月',
-                          foreground: foreground,
-                          muted: muted,
-                          nightMode: widget.nightMode,
-                          onSelected: (value) => setState(() => _month = value),
-                        ),
-                      ),
-                    ]),
-                  ),
-                  Divider(color: lineColor, height: 1),
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(36),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          side: BorderSide(color: lineColor),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: Text(
-                          '取消',
-                          style: AppText.chip.copyWith(color: muted),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(context)
-                            .pop(_MonthPickerResult(selected)),
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(36),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          backgroundColor: AppColors.teaGreen,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text('确定'),
-                      ),
-                    ),
-                  ]),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _PickerColumn extends StatelessWidget {
-  const _PickerColumn({
-    required this.values,
-    required this.selectedValue,
-    required this.suffix,
-    required this.foreground,
-    required this.muted,
-    required this.nightMode,
-    required this.onSelected,
-  });
-
-  final List<int> values;
-  final int selectedValue;
-  final String suffix;
-  final Color foreground;
-  final Color muted;
-  final bool nightMode;
-  final ValueChanged<int> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-      itemCount: values.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 4),
-      itemBuilder: (context, index) {
-        final value = values[index];
-        final selected = value == selectedValue;
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () => onSelected(value),
-            child: Container(
-              height: 32,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: selected
-                    ? AppColors.teaGreen
-                        .withValues(alpha: nightMode ? 0.18 : 0.14)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '$value$suffix',
-                style: AppText.titleSmall.copyWith(
-                  color: selected ? foreground : muted,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -1068,23 +1037,63 @@ class _DateRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8, top: 5),
+      padding:
+          const EdgeInsets.only(bottom: AppSpacing.s10, top: AppSpacing.sm),
       child: Row(children: [
         Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.teaGreen.withValues(alpha: nightMode ? .18 : .12),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color:
+                  AppColors.teaGreen.withValues(alpha: nightMode ? .28 : .22),
+            ),
+          ),
+          child: Container(
             width: 6,
             height: 6,
             decoration: const BoxDecoration(
-                color: AppColors.teaGreen, shape: BoxShape.circle)),
-        const SizedBox(width: 7),
-        Text(
-          label,
-          style: AppText.onNight(AppText.titleSmall, nightMode).copyWith(
-            fontSize: 13,
+              color: AppColors.teaGreen,
+              shape: BoxShape.circle,
+            ),
           ),
         ),
-        const SizedBox(width: 7),
-        Text(count, style: AppText.onNight(AppText.caption, nightMode)),
+        const SizedBox(width: AppSpacing.s9),
+        Text(
+          label,
+          style: AppText.onNight(
+            AppText.bodyStrong.copyWith(color: AppText.bodyMuted.color),
+            nightMode,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s7, vertical: AppSpacing.xs),
+          decoration: BoxDecoration(
+            color: nightMode
+                ? AppColors.white.withValues(alpha: .07)
+                : AppColors.white.withValues(alpha: .64),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          child: Text(
+            count,
+            style: AppText.onNight(AppText.caption, nightMode).copyWith(
+              height: 1,
+            ),
+          ),
+        ),
       ]),
     );
   }
+}
+
+/// C1: Lightweight data class for date rail headers in the virtualized list.
+class _DateRailItem {
+  const _DateRailItem({required this.label, required this.count});
+  final String label;
+  final int count;
 }

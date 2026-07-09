@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../design/tokens/colors.dart';
+import '../../design/tokens/motion.dart';
 import '../../design/tokens/radius.dart';
 import '../../design/tokens/shadows.dart';
 import '../../design/tokens/typography.dart';
+import '../../design/tokens/spacing.dart';
 import 'media_image.dart';
 import 'tag_chip.dart';
 
@@ -73,12 +75,17 @@ class LightFragmentCard extends ConsumerWidget {
       button: onTap != null,
       label: fragment.title,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         onTap: onTap,
         onLongPress: onLongPress,
         child: Container(
-          margin: EdgeInsets.only(bottom: compact ? 9 : (dense ? 8 : 12)),
-          padding: EdgeInsets.all(compact ? 10 : (dense ? 11 : 16)),
+          margin: EdgeInsets.only(bottom: compact ? 9 : (dense ? 9 : 12)),
+          padding: EdgeInsets.fromLTRB(
+            compact ? 10 : (dense ? 12 : 16),
+            compact ? 10 : (dense ? 12 : 16),
+            compact ? 10 : (dense ? 12 : 16),
+            compact ? 10 : (dense ? 11 : 16),
+          ),
           decoration: _cardDecoration(
             nightMode: nightMode,
             selected: selected,
@@ -92,13 +99,13 @@ class LightFragmentCard extends ConsumerWidget {
                   nightMode: nightMode,
                   onTap: onSelectionTap,
                 ),
-                SizedBox(width: compact ? 8 : 10),
+                SizedBox(width: compact ? AppSpacing.sm : AppSpacing.s10),
               ],
               // 左侧色块
               _MediaThumb(
                 urls: fragment.mediaUrls,
                 color: fragment.color,
-                size: compact ? 42 : (dense ? 44 : 58),
+                size: compact ? 42 : (dense ? 42 : 58),
                 circular: dense,
               ),
               SizedBox(width: compact ? 10 : (dense ? 10 : 14)),
@@ -114,23 +121,22 @@ class LightFragmentCard extends ConsumerWidget {
                           Expanded(
                             child: Text(
                               fragment.text,
-                              maxLines: dense ? 2 : 3,
+                              maxLines: dense ? 3 : 3,
                               overflow: TextOverflow.ellipsis,
                               style: AppText.onNight(
                                 dense
-                                    ? AppText.titleSmall.copyWith(
-                                        fontSize: 14,
-                                        height: 1.34,
+                                    ? AppText.bodyStrong.copyWith(
+                                        height: 1.42,
                                       )
                                     : AppText.body,
                                 nightMode,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: AppSpacing.s10),
                           if (showAttachmentBadge && hasImageAttachment) ...[
                             _AttachmentBadge(nightMode: nightMode),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: AppSpacing.s6),
                           ],
                           Text(
                             fragment.time,
@@ -150,10 +156,10 @@ class LightFragmentCard extends ConsumerWidget {
                                     AppText.titleSmall,
                                     nightMode,
                                   ))),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: AppSpacing.s10),
                           if (showAttachmentBadge && hasImageAttachment) ...[
                             _AttachmentBadge(nightMode: nightMode),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: AppSpacing.s6),
                           ],
                           Text(fragment.time,
                               maxLines: 1,
@@ -161,14 +167,14 @@ class LightFragmentCard extends ConsumerWidget {
                                   AppText.onNight(AppText.caption, nightMode)),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.sm),
                       Text(fragment.text,
                           style: AppText.onNight(AppText.body, nightMode),
                           maxLines: compact ? 1 : 3,
                           overflow: TextOverflow.ellipsis),
                     ],
                     if (!compact) ...[
-                      SizedBox(height: dense ? 6 : 10),
+                      SizedBox(height: dense ? AppSpacing.sm : AppSpacing.s10),
                       Wrap(
                         spacing: dense ? 5 : 6,
                         runSpacing: dense ? 5 : 6,
@@ -193,11 +199,11 @@ class LightFragmentCard extends ConsumerWidget {
                       ),
                     ],
                     if (compact) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.sm),
                       Row(children: [
                         const Icon(Icons.alt_route_rounded,
                             size: 15, color: AppColors.teaGreen),
-                        const SizedBox(width: 5),
+                        const SizedBox(width: AppSpacing.s5),
                         Text('点开织线',
                             style: AppText.onNight(AppText.caption, nightMode)),
                       ]),
@@ -249,8 +255,8 @@ class _RelationBadge extends StatelessWidget {
       message: '已织线：$label',
       child: Container(
         padding: EdgeInsets.symmetric(
-          horizontal: compact ? 7 : 8,
-          vertical: compact ? 3 : 5,
+          horizontal: compact ? AppSpacing.s7 : AppSpacing.sm,
+          vertical: compact ? AppSpacing.s3 : AppSpacing.s5,
         ),
         decoration: BoxDecoration(
           color: foreground.withValues(alpha: nightMode ? .16 : .12),
@@ -260,14 +266,11 @@ class _RelationBadge extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.blur_circular_rounded,
               size: compact ? 10 : 12, color: foreground),
-          const SizedBox(width: 4),
+          const SizedBox(width: AppSpacing.xs),
           Text(
             label,
-            style: AppText.caption.copyWith(
-              fontSize: compact ? 10 : null,
-              fontWeight: FontWeight.w700,
-              color: foreground,
-            ),
+            style: (compact ? AppText.microLabel : AppText.captionStrong)
+                .copyWith(color: foreground),
           ),
         ]),
       ),
@@ -318,7 +321,7 @@ class _AttachmentBadge extends StatelessWidget {
           color: nightMode
               ? AppColors.white.withValues(alpha: .08)
               : AppColors.ink.withValues(alpha: .06),
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(AppRadius.sm - 1),
         ),
         child: Icon(Icons.attach_file_rounded, size: 12, color: color),
       ),
@@ -330,8 +333,7 @@ BoxDecoration _cardDecoration({
   required bool nightMode,
   required bool selected,
 }) {
-  final base =
-      nightMode ? _nightCardDecoration() : softDecoration(AppColors.white);
+  final base = nightMode ? nightDecoration() : softDecoration(AppColors.white);
   if (!selected) return base;
   return base.copyWith(
     border: Border.all(
@@ -342,21 +344,6 @@ BoxDecoration _cardDecoration({
         color: AppColors.teaGreen.withValues(alpha: nightMode ? .18 : .14),
         blurRadius: 24,
         offset: const Offset(0, 10),
-      ),
-    ],
-  );
-}
-
-BoxDecoration _nightCardDecoration() {
-  return BoxDecoration(
-    color: const Color(0xFF213433).withValues(alpha: .78),
-    borderRadius: BorderRadius.circular(AppRadius.md),
-    border: Border.all(color: AppColors.white.withValues(alpha: .13)),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: .16),
-        blurRadius: 24,
-        offset: const Offset(0, 14),
       ),
     ],
   );
@@ -381,7 +368,7 @@ class _SelectionMark extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+          duration: AppMotion.quick,
           width: 24,
           height: 24,
           decoration: BoxDecoration(
@@ -390,7 +377,7 @@ class _SelectionMark extends StatelessWidget {
                 : (nightMode
                     ? AppColors.white.withValues(alpha: .08)
                     : AppColors.paper.withValues(alpha: .88)),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
               color: selected
                   ? AppColors.teaGreen
@@ -400,7 +387,8 @@ class _SelectionMark extends StatelessWidget {
             ),
           ),
           child: selected
-              ? const Icon(Icons.check_rounded, size: 16, color: AppColors.ink)
+              ? Icon(Icons.check_rounded,
+                  size: 16, color: nightMode ? AppColors.white : AppColors.ink)
               : null,
         ),
       ),
@@ -432,7 +420,7 @@ class _MediaThumb extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: circular ? BoxShape.circle : BoxShape.rectangle,
-        borderRadius: circular ? null : BorderRadius.circular(8),
+        borderRadius: circular ? null : BorderRadius.circular(AppRadius.md),
       ),
       child: hasAudio && (first == null || _isAudioMedia(first))
           ? _AudioThumb(color: color)
@@ -465,7 +453,7 @@ class _AudioThumb extends StatelessWidget {
       alignment: Alignment.center,
       child: CustomPaint(
         painter: _AudioThumbPainter(),
-        child: const SizedBox(width: 30, height: 24),
+        child: const SizedBox(width: 30, height: AppSpacing.lg),
       ),
     );
   }

@@ -4,11 +4,17 @@ import 'package:go_router/go_router.dart';
 
 import 'providers.dart';
 import '../design/tokens/colors.dart';
+import '../design/tokens/spacing.dart';
+import '../design/tokens/typography.dart';
 import '../design/themes/theme.dart';
 import '../design/themes/extensions/blur_theme.dart';
 import '../design/themes/extensions/glow_theme.dart';
+import '../design/themes/extensions/night_theme.dart';
 import '../design/themes/extensions/space_theme.dart';
+import '../ui/primitives/sentry_error_boundary.dart';
 import '../features/auth/data/auth_repository.dart';
+import '../features/app_update/presentation/providers/app_update_providers.dart';
+import '../features/sync/domain/sync_config.dart';
 import '../features/sync/presentation/providers/sync_provider.dart';
 import 'router.dart';
 import 'splash_gate.dart';
@@ -22,95 +28,49 @@ class XiguangApp extends ConsumerStatefulWidget {
 
 class _XiguangAppState extends ConsumerState<XiguangApp> {
   GoRouter? _router;
-  int? _routerSessionId;
+  late final _AppLifecycleObserver _lifecycleObserver;
+  late final ValueNotifier<int> _authNotifier;
+
+  // Theme 缓存 — 避免每次 build 重建 ThemeData + 4 个 extension
+  ThemeData? _cachedTheme;
+  bool? _cachedNightMode;
 
   @override
   void initState() {
     super.initState();
-    ref.listenManual<AsyncValue<AuthSession?>>(authRestoreProvider,
-        (previous, next) {
-      next.whenData((session) {
-        ref.read(authSessionProvider.notifier).state = session;
-        if (session != null) {
-          ref.read(aiPolishEnabledProvider.notifier).state = session.aiEnabled;
-        }
-      });
-    });
-    // 预初始化 SyncEngine，确保 onFragmentChanged 在首次捕光前就位
-    ref.read(syncEngineProvider);
-    // 启动自动同步（按 syncConfig.frequency）
-    startAutoSync(ref);
-    // App 生命周期监听：回到前台时触发一次同步
-    WidgetsBinding.instance.addObserver(_AppLifecycleObserver(ref));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final restore = ref.watch(authRestoreProvider);
-    final sessionId = ref.watch(authSessionProvider.select((s) => s?.id));
-    if (restore.isLoading && _router == null) {
-      return SplashGate(
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: '隙光',
-          theme: _theme,
-          builder: (context, child) =>
-              _errorBoundary(context, _fixedTextScaleBuilder(context, child)),
-          home: const Scaffold(
-            backgroundColor: Colors.transparent,
-            body: Center(child: CircularProgressIndicator()),
-          ),
-        ),
-      );
-    }
-    if (_router == null || _routerSessionId != sessionId) {
-      final oldRouter = _router;
-      _router = createRouter(ref);
-      _routerSessionId = sessionId;
-      if (oldRouter != null) {
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => oldRouter.dispose());
-      }
-    }
-    return SplashGate(
-      child: MaterialApp.router(
-        key: ValueKey('xiguang-app-${sessionId ?? 'guest'}'),
-        debugShowCheckedModeBanner: false,
-        title: '隙光',
-        theme: _theme,
-        routerConfig: _router,
-        builder: (context, child) =>
-            _errorBoundary(context, _fixedTextScaleBuilder(context, child)),
-      ),
-    );
-  }
-
-  Widget _errorBoundary(BuildContext context, Widget? child) {
+    _authNotifier = ValueNotifier(0);
+    _lifecycleObserver = _AppLifecycleObserver(ref);
+    WidgetsBinding.instance.addObserver(_lifecycleObserver);
+    // ErrorWidget.builder 只需设置一次，不应在 build() 中重复赋值
     ErrorWidget.builder = (details) {
+      final nightMode = ref.read(nightModeProvider);
       return Material(
         child: Container(
-          color: AppColors.paper,
+          color: nightMode ? AppColors.nightBackground : AppColors.paper,
           padding: const EdgeInsets.all(24),
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.wb_twilight, size: 48,
-                    color: Color(0xFF72A58F)),
-                const SizedBox(height: 16),
+                const Icon(Icons.wb_twilight,
+                    size: 48, color: AppColors.teaGreen),
+                const SizedBox(height: AppSpacing.md),
                 Text(
                   '一道微光闪烁了一下。',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: const Color(0xFF78827D),
-                      ),
+                  style: AppText.body.copyWith(
+                    color:
+                        nightMode ? AppText.nightInkMuted : AppColors.inkMuted,
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
                 Text(
                   '${details.exception}',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFFA0A8A5),
-                      ),
+                  style: AppText.caption.copyWith(
+                    color: nightMode
+                        ? AppText.nightInkMuted.withValues(alpha: .72)
+                        : AppColors.inkSubtle,
+                  ),
                 ),
               ],
             ),
@@ -118,29 +78,150 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
         ),
       );
     };
+    ref.listenManual<AsyncValue<AuthSession?>>(authRestoreProvider,
+        (previous, next) {
+      next.whenData((session) {
+        ref.read(authSessionProvider.notifier).state = session;
+        if (session != null) {
+          ref.read(aiPolishEnabledProvider.notifier).state = session.aiEnabled;
+          // 重启 app 时（authRestore 恢复会话）主动触发一次同步检查。
+          // syncEngineProvider 提前初始化时调过一次 checkConnection，但那时
+          // apiClient 可能还没 token，必然失败。authRestore 完成后再调一次。
+          final engine = ref.read(syncEngineProvider);
+          engine.checkConnection().then((connected) {
+            if (!ref.exists(syncStatusProvider)) return;
+            ref.read(syncStatusProvider.notifier).state = engine.status;
+            if (connected && ref.read(syncConfigProvider).enabled) {
+              engine.syncNow().then((status) {
+                if (!ref.exists(syncStatusProvider)) return;
+                ref.read(syncStatusProvider.notifier).state = status;
+              });
+            }
+          });
+        }
+      });
+    }, fireImmediately: true); // 冷启动时若 authRestore 已先于 listener 完成，
+    // 必须立即补触发一次，否则永远不会连后端（用户反馈：第二次进入不自动连接）。
+    // M3: Listen to auth changes in initState (not build) to avoid re-subscribing
+    ref.listenManual<AuthSession?>(authSessionProvider, (previous, next) {
+      if (previous?.id != next?.id) {
+        _authNotifier.value++;
+      }
+      // 登录成功（从无 session 变为有 session）后，立刻刷新一次同步连通状态。
+      // 之前的问题：syncEngineProvider 在登录前就初始化并调过一次 checkConnection，
+      // 此时 apiClient 还没 token，永远拿到离线状态；登录后没有任何地方再次触发，
+      // 导致用户进入应用后云同步一直显示离线，必须手动点测试连接才会更新。
+      if (previous?.id != next?.id && next != null) {
+        final engine = ref.read(syncEngineProvider);
+        engine.checkConnection().then((connected) {
+          if (!ref.exists(syncStatusProvider)) return;
+          ref.read(syncStatusProvider.notifier).state = engine.status;
+          if (connected && ref.read(syncConfigProvider).enabled) {
+            engine.syncNow().then((status) {
+              if (!ref.exists(syncStatusProvider)) return;
+              ref.read(syncStatusProvider.notifier).state = status;
+            });
+          }
+        });
+      }
+    });
+    // H8: Trigger nightMode initialization here (was previously in removed Consumer)
+    ref.listenManual<AsyncValue<bool>>(nightModeLoadedProvider, (_, __) {});
+    // 预初始化 SyncEngine，确保 onFragmentChanged 在首次捕光前就位
+    ref.read(syncEngineProvider);
+    ref.listenManual<SyncConfig>(syncConfigProvider, (previous, next) {
+      if (previous == null) return;
+      stopAutoSync();
+      startAutoSync(ref);
+    });
+    // 启动后台静默检查更新 — 30 秒后访问 /app/version，将红点状态写入 provider。
+    Future.delayed(const Duration(seconds: 30), () {
+      if (!mounted) return;
+      try {
+        ref.read(appUpdateStateProvider.notifier).checkForUpdate(silent: true);
+      } catch (_) {}
+    });
+    // 启动自动同步（按 syncConfig.frequency）
+    startAutoSync(ref);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(_lifecycleObserver);
+    _authNotifier.dispose();
+    _router?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final restore = ref.watch(authRestoreProvider);
+    final nightMode = ref.watch(nightModeProvider);
+
+    if (restore.isLoading && _router == null) {
+      return SentryErrorBoundary(
+        child: SplashGate(
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            title: '隙光',
+            theme: _themeFor(nightMode),
+            builder: (context, child) =>
+                _errorBoundary(context, _fixedTextScaleBuilder(context, child)),
+            home: const Scaffold(
+              backgroundColor: Colors.transparent,
+              body: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+        ),
+      );
+    }
+    // 只在首次创建路由，后续通过 refreshListenable 触发重定向
+    _router ??= createRouter(ref, _authNotifier);
+    return SentryErrorBoundary(
+      child: SplashGate(
+        child: MaterialApp.router(
+          debugShowCheckedModeBanner: false,
+          title: '隙光',
+          theme: _themeFor(nightMode),
+          routerConfig: _router,
+          builder: (context, child) =>
+              _errorBoundary(context, _fixedTextScaleBuilder(context, child)),
+        ),
+      ),
+    );
+  }
+
+  Widget _errorBoundary(BuildContext context, Widget? child) {
     return child ?? const SizedBox.shrink();
   }
 
-  ThemeData get _theme => xiguangTheme().copyWith(
-        extensions: [
-          BlurTheme.light(),
-          GlowTheme.default_(),
-          SpaceTheme.default_(),
-        ],
-      );
+  ThemeData _themeFor(bool nightMode) {
+    if (_cachedTheme != null && _cachedNightMode == nightMode) {
+      return _cachedTheme!;
+    }
+    _cachedNightMode = nightMode;
+    _cachedTheme = xiguangTheme(nightMode: nightMode).copyWith(
+      extensions: [
+        BlurTheme.light(),
+        GlowTheme.default_(),
+        SpaceTheme.default_(),
+        nightMode ? NightTheme.night() : NightTheme.day(),
+      ],
+    );
+    return _cachedTheme!;
+  }
 
+  // H8: Use nightMode from outer build instead of watching again inside Consumer
   Widget _fixedTextScaleBuilder(BuildContext context, Widget? child) {
+    final nightMode = ref.read(nightModeProvider);
     return MediaQuery.withNoTextScaling(
-      child: Consumer(
-        builder: (context, ref, _) {
-          final nightMode = ref.watch(nightModeProvider);
-          return SizedBox.expand(
-            child: ColoredBox(
-              color: nightMode ? const Color(0xFF142322) : AppColors.paper,
-              child: child ?? const SizedBox.shrink(),
-            ),
-          );
-        },
+      child: SizedBox.expand(
+        child: ColoredBox(
+          color: nightMode
+              ? NightTheme.night().background
+              : NightTheme.day().background,
+          child: child ?? const SizedBox.shrink(),
+        ),
       ),
     );
   }

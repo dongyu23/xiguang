@@ -10,12 +10,23 @@ class AppColors {
   static const ink = Color(0xFF233332);
   static const inkMuted = Color(0xFF78827D);
   static const line = Color(0xFFE4DDD0);
+  static const inkSubtle = Color(0xFFA0A8A5); // 次要文字
+  static const paperDark = Color(0xFFFBF7EF); // 深色纸张背景
+  static const cardBorder = Color(0xFFE9E1D5); // 卡片边框
+  static const shimmerBase = Color(0xFFE8E4DD); // 闪光基础色
+  static const shimmerHighlight = Color(0xFFF5F2EC); // 闪光高亮色
 
   // 主题色
   static const teaGreen = Color(0xFF72A58F); // 茶绿 — 平静、生长
   static const mistBlue = Color(0xFF9EBBCC); // 雾蓝 — 微光、失眠
   static const sunsetCoral = Color(0xFFE9A18B); // 珊瑚 — 被击中、期待
   static const lilac = Color(0xFFD9CCE8); // 淡紫 — 说不清、氛围
+
+  // 夜间文字/图标色 - 统一入口（AppText.nightInk 等保留向后兼容）
+  // 其余夜间表面色（nightBackground/nightSurface 等）见下方夜间色板
+  static const nightInk = Color(0xFFF4EFE4); // 夜间主文字/图标
+  static const nightInkMuted = Color(0xFFC9D0C8); // 夜间次要文字/图标
+  static const nightAccent = Color(0xFFA6CDBB); // 夜间强调色（对应日间 teaGreen）
 
   // 情绪色点（对应 emotion 枚举）
   static const emotionCalm = teaGreen;
@@ -27,18 +38,41 @@ class AppColors {
   static const emotionChaos = lilac;
   static const emotionUnclear = Color(0xFFB8C5B2);
 
-  /// 情绪名 → 颜色映射
+  /// 情绪名 → 颜色映射（缓存为 Map，O(1) 查表）
+  static const _emotionMap = <String, Color>{
+    '平静': emotionCalm,
+    '开心': emotionHappy,
+    '疲惫': emotionTired,
+    '焦虑': emotionAnxious,
+    '失落': emotionLost,
+    '被击中': emotionStruck,
+    '混乱': emotionChaos,
+  };
+
+  /// 自定义情绪的莫兰迪兜底色板（与默认 7 个区分）。
+  /// 用名字 hash 确定性映射，保证同名情绪每次同色。
+  static const _customEmotionPalette = <Color>[
+    Color(0xFFB8C5B2),
+    Color(0xFFC9B8D4),
+    Color(0xFFD4C5B8),
+    Color(0xFFB8C9D4),
+    Color(0xFFD4B8C0),
+    Color(0xFFC0D4B8),
+    Color(0xFFB8D4C9),
+    Color(0xFFD4CBB8),
+  ];
+
+  /// 情绪名 → 颜色。默认 7 个走静态 map；自定义情绪走 hash 兜底色板，
+  /// 保证 emotionColor() 同步可用（无需查 DB），且与情绪表里 autoColorForName 一致。
   static Color emotionColor(String emotion) {
-    return switch (emotion) {
-      '平静' => emotionCalm,
-      '开心' => emotionHappy,
-      '疲惫' => emotionTired,
-      '焦虑' => emotionAnxious,
-      '失落' => emotionLost,
-      '被击中' => emotionStruck,
-      '混乱' => emotionChaos,
-      _ => emotionUnclear,
-    };
+    final mapped = _emotionMap[emotion];
+    if (mapped != null) return mapped;
+    if (emotion.isEmpty) return emotionUnclear;
+    var hash = 0;
+    for (final c in emotion.codeUnits) {
+      hash = (hash * 31 + c) & 0x7FFFFFFF;
+    }
+    return _customEmotionPalette[hash % _customEmotionPalette.length];
   }
 
   // 渐变（用于 BreathingLightCard / UniverseSky 等）
@@ -59,4 +93,22 @@ class AppColors {
     end: Alignment.bottomRight,
     colors: [paper, Color(0xFFE8F1EC), Color(0xFFF8ECE1)],
   );
+
+  // 夜间模式色板
+  static const nightBackground = Color(0xFF142322);
+  static const nightSurface = Color(0xFF213433);
+  static const nightSurfaceHigh = Color(0xFF172625);
+  static const nightNav = Color(0xFF172625);
+  static const nightBorder = Color(0xFF2A3E3C);
+  static const nightButton = Color(0xFF233A38);
+  static const nightShadow = Color(0xFF23413F); // 夜间阴影色
+  static const nightGradientMid = Color(0xFF243D3A); // 夜间渐变中间色
+  static const nightGradientEnd = Color(0xFF4E6054); // 夜间渐变结束色
+  static const nightCard = Color(0xFF203231); // 夜间卡片背景
+  static const nightCardDark = Color(0xFF0F1D1B); // 夜间深色卡片
+  static const nightCardMid = Color(0xFF263936); // 夜间中等卡片
+  static const nightCardLight = Color(0xFF52615C); // 夜间浅色卡片
+  static const nightVinylDark = Color(0xFF162422); // 夜间黑胶深色
+  static const nightVinylMid = Color(0xFF31413D); // 夜间黑胶中等色
+  static const nightWave = Color(0xFF203437); // 夜间波浪色
 }

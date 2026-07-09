@@ -4,5 +4,5 @@ import '../../data/fragment_repository.dart';
 
 final fragmentListSnapshotProvider =
     StateProvider<List<LightFragmentModel>>((ref) {
-  return seedFragments;
+  return const [];
 });

@@ -2027,6 +2027,7 @@ type ConflictInfo struct {
 - 不在代码层做唯一性校验而不加数据库唯一约束——并发场景下代码判断存在竞态
 - 不做过度抽象——简单 CRUD 就写三层（handler → service → repository），不引入策略模式、工厂模式等，除非用户明确说需要可扩展的
 - 不硬编码配置——所有连接信息、超时时间、开关标志等必须走配置文件/环境变量
+- 不硬编码动画 Duration / Curves——任何 `AnimationController` / `Animated*` / `Future.delayed`（用于视觉节奏） / `SnackBar.duration` / `Curves.xxx` 必须引用 `AppMotion.*` 令牌，详见第 9.14 节。网络超时、Timer.periodic、重试退避等"非动效 Duration"不受此约束
 
 **二、主动做的事**
 
@@ -2372,7 +2373,517 @@ CLAUDE.md 不需要一开始就完美。一开始覆盖核心规范即可。后�
 
 ---
 
-## 九、监控与可观测性（MVP 最小组合）
+## 九、Flutter UI 强约束规范（铁律）
+
+> **本节是铁律级规范**。AI 在生成任何 Flutter UI 代码时必须严格遵守，违反即视为 bug。这一节解决的问题是："AI 凭感觉写按钮/字号/间距/颜色，导致每个页面长得都不一样"。
+
+### 9.1 基本原则
+
+**唯一信息来源**：
+
+- 颜色：`AppColors.*`（lib/design/tokens/colors.dart）
+- 字体：`AppText.*`（lib/design/tokens/typography.dart）
+- 间距：`AppSpacing.*`（lib/design/tokens/spacing.dart）
+- 圆角：`AppRadius.*`（lib/design/tokens/radius.dart）
+- 阴影/装饰：`softDecoration` / `nightDecoration` / `softShadow`（lib/design/tokens/shadows.dart）
+- 动效：`AppMotion.*`（lib/design/tokens/motion.dart）
+- 模糊：`AppBlur.*`（lib/design/tokens/blur.dart）
+
+**禁止事项**（任何 Flutter Widget 文件里出现以下情况，都是违规）：
+
+- ❌ 硬编码颜色：禁止写 `Color(0xFF...)`、`Colors.xxx`（除 `Colors.transparent` / `Colors.white` / `Colors.black` 三个语义清晰的中性色，且仅在 design tokens 内部使用）
+- ❌ 硬编码字号：禁止在业务 Widget 里写 `fontSize: 14` / `fontSize: 18`，必须用 `AppText.body` / `AppText.titleSmall` 等命名样式
+- ❌ 硬编码 fontWeight：禁止在业务 Widget 里写 `FontWeight.w600`，加粗信息已经在 `AppText.*` 里定义好
+- ❌ 硬编码间距：禁止写 `SizedBox(height: 16)`，必须写 `SizedBox(height: AppSpacing.md)`；padding/margin 同理
+- ❌ 硬编码圆角：禁止写 `BorderRadius.circular(12)`，必须用 `AppRadius.*`
+- ❌ 自绘卡片装饰：禁止在业务 Widget 里写 `BoxDecoration(color: ..., borderRadius: ..., boxShadow: ...)`，必须用 `softDecoration()` / `nightDecoration()`
+- ❌ 自绘按钮：禁止用 `Container + GestureDetector` 模拟按钮，必须用 `GlowButton` / `FilledButton` / `OutlinedButton` / `TextButton.icon` 四选一
+- ❌ 硬编码图标颜色：禁止 `Icon(icon, color: AppColors.ink/inkMuted/teaGreen)` 固定色，普通图标不传 color 走 iconTheme 自动跟随夜间，强调图标用 `nightMode ? AppColors.nightAccent : AppColors.teaGreen` 三元，详见 §9.10
+- ❌ 硬编码动画 Duration / Curves：禁止写 `duration: const Duration(milliseconds: 数字)` 或 `curve: Curves.xxx`，必须用 `AppMotion.fast/normal/slow/breath/...` 与 `AppMotion.easeIn/easeOut/microMovement/sine`，详见第 9.14 节
+
+**例外白名单**（这些场景可以硬编码，因为它们是"绘画"而不是"布局"）：
+
+- 沉浸式空间（`lib/ui/spaces/`）：星空、海洋、岛屿等 CustomPainter 自绘
+- 入场动画的 ShaderMask / 自定义 painter
+- 微光效果的渐变颜色（已经在 `AppColors.gradient*` 里定义的不算硬编码）
+- 业务文件顶部含 `// MOTION_EXEMPT: self-painted` 声明的自绘动画（如 `vinyl_widgets.dart`），详见 9.14 节
+
+### 9.2 按钮规范
+
+整个 App 只允许这四种按钮形态，**不要发明新按钮**：
+
+| 类型 | 用途 | 实现 | 高度 | 圆角 | 字号 |
+|---|---|---|---|---|---|
+| **主按钮（核心动作）** | 捕光 / 登录 / 立即更新 | `GlowButton` | **52**（ThemeData 强制） | `AppRadius.md` | 系统默认 |
+| **次按钮（确认 / 取消进阶动作）** | 保存 / 知道了 / 重新连接 | `FilledButton` | **52**（ThemeData 强制） | `AppRadius.md` | 系统默认 |
+| **轮廓按钮（次级动作）** | 恢复默认 / 退出登录 | `OutlinedButton` | **52**（ThemeData 强制，确保并排时与主/次按钮等高；行内单用想紧凑可在调用处显式 `minimumSize: Size(0, 38)` 覆盖） | `AppRadius.md` | 系统默认 |
+| **文本按钮（最低优先级）** | 跳过 / 创建账号 / 知道了（弹窗内） | `TextButton.icon` | 36+（不强制） | — | `caption` 或系统默认 |
+
+规则：
+
+- 主按钮一屏最多 1 个；如果出现 2 个并列动作，主+次（FilledButton）组合，不要并列 2 个 GlowButton
+- **并排按钮必须等高**（铁律）：ThemeData 已强制 `FilledButton`/`OutlinedButton` 默认 52。如果在 `styleFrom` 里手写 `padding` 或 `minimumSize` 覆盖默认值，并排时务必两个按钮用一样的覆盖值——这是最常见的"用对组件选错尺寸"违规
+- 危险动作（删除、登出）用 `OutlinedButton` + `foregroundColor: AppColors.sunsetCoral`
+- 不要给按钮加自定义阴影，FilledButton/GlowButton 自带的就够了
+- 按钮宽度：sheet 内部用 `width: double.infinity`，正文中用 `Wrap` 或 `Row + Expanded`，不要写固定宽度
+- **禁止用外层 `SizedBox(height: ..., child: FilledButton(...))` 来强行改按钮高度**——这会让按钮和 ThemeData 默认 52 不一致，破坏并排等高。要全宽就用 `Row + Expanded`，要全屏宽就用 `width: double.infinity`，高度交给 ThemeData
+
+### 9.3 排版规范
+
+所有文本必须从下表选样式，不允许写裸 `TextStyle(...)`：
+
+| 用途 | 样式 | 字号 |
+|---|---|---|
+| 页面顶部小标签（"BOUNDARY"、"PRIVATE SKY"） | `AppText.eyebrow` | 11 |
+| 强化品牌标签（登录/注册顶部） | `AppText.eyebrowLarge` | 13 |
+| 页面主标题（"屿"、"线"、"我的"） | `AppText.hero` | 34 |
+| 子页面/受限空间主标题 | `AppText.subHero` | 28 |
+| 子页面/弹窗主标题 | `AppText.titleLarge` | 20 |
+| 区块标题 | `AppText.titleMedium` | 18 |
+| 卡片标题、列表项标题 | `AppText.titleSmall` | 15 |
+| 正文 | `AppText.body` | 14 |
+| 加粗正文 | `AppText.bodyStrong` | 14 |
+| 次要正文 | `AppText.bodyMuted` | 13 |
+| 占位 / 提示文字 | `AppText.placeholder` | 14 |
+| 时间戳、副标题、辅助说明 | `AppText.caption` | 12 |
+| 加粗辅助说明 | `AppText.captionStrong` | 12 |
+| Chip / 标签内文字 | `AppText.chip` | 12 |
+| 极小角标 / 二级标签 | `AppText.microLabel` | 10 |
+| 底部导航 | `AppText.nav` | 11 |
+| 深色背景上的标题 | `AppText.inverseTitle` | 20 |
+| 深色背景上的正文 | `AppText.inverseBody` | 13 |
+
+**夜间模式**：所有文本必须经过 `AppText.onNight(style, nightMode)` 处理颜色，不要直接传 `style`。
+
+**禁止操作**：
+
+- ❌ `style: AppText.body.copyWith(fontSize: 16)` — 想要更大就用 `titleSmall`，不要 copyWith fontSize
+- ❌ `style: AppText.titleSmall.copyWith(fontWeight: FontWeight.w400)` — 想要不加粗就用 `body`，不要降权重
+- ✅ `style: AppText.body.copyWith(color: AppColors.sunsetCoral)` — 改颜色是允许的（有限场景：错误提示）
+
+**⚠️ 按语义选档（铁律级 — 比"是否引用 token"更重要）**
+
+引用了 `AppText.*` 但选错档位，依然算违规——它会让"同语义元素在不同页面看起来一大一小"，是设计一致性最大的隐藏债务。先识别**语义**，再决定档位：
+
+| 语义识别（你正在画的元素是什么？） | 钦定档位 | 反例：常见错档 |
+|----|----|----|
+| Bottom sheet / Dialog / 弹窗的主标题 | `titleLarge` (20) | ❌ 写成 `titleMedium`(18) — 弹窗标题应比卡片头更醒目 |
+| 用户身份卡 / Profile hero 主信息 | `titleMedium` (18) | — |
+| 区块大标题（"当前这束光"等引导用户操作的强标题，含 icon） | `titleSmall` (15) — 带 icon 装饰，视觉等同卡片头 | ❌ 写成 `titleMedium`(18) — 18 留给"用户身份卡" |
+| 区块前导小标签（"PRIVATE SKY" / "连接参数" / "全部线索" 等纯文字分组） | `eyebrow` (11) | ❌ 写成 `titleSmall`(15) 或 `titleMedium`(18) — 这层是分组装饰，不是内容标题 |
+| 内嵌卡片的标题（状态卡、信息卡） | `titleSmall` (15) | ❌ 写成 `titleMedium`(18) — 卡片头与列表项主行应同档 |
+| 列表项主行 label（switch tile、radio tile、入口 tile） | `titleSmall` (15) | ❌ 写成 `titleMedium`(18) — 同上 |
+| 列表项 subtitle（紧贴主行下方，描述当前项） | `caption` (12) | ❌ 写成 `bodyMuted`(13) — bodyMuted 是"次要正文"，留给段落 |
+| 卡片头标题下紧贴的辅助说明（subtitle 模式） | `caption` (12) | ❌ 同上 |
+| 段落文字（连续多行的完整内容，例如详情页描述） | `body` (14) 或 `bodyMuted` (13) | ❌ 当成 subtitle 用了 caption |
+| Chip / 标签内文字 | `chip` (12) | — |
+| 极小角标 | `microLabel` (10) | — |
+
+**自检流程**：写一行文字前，先问自己——
+
+1. 它是**主标题、列表项、subtitle、段落、还是装饰标签**？
+2. 它**紧贴**着什么元素？（紧贴 = 卡片头 → 同一卡片内的 subtitle / 跨卡片 = 独立段落）
+3. 同页面里**其他同语义元素**用了什么档位？
+
+只有这三问都答完，再去 §9.3 表里取档。
+
+### 9.4 间距规范
+
+所有 padding / margin / SizedBox / spacing 必须用 `AppSpacing.*`。spacing.dart 里有两套并存 token：
+
+**主节奏（4 倍数，新代码优先用这套，保持视觉统一）：**
+
+| 名字 | 值 | 用途 |
+|---|---|---|
+| `xs` | 4 | icon ↔ 文字 |
+| `sm` | 8 | 段内紧凑间距 |
+| `md` | 16 | 卡片间距、行间距 |
+| `lg` | 24 | 区块间距 |
+| `xl` | 32 | 大区块间距 |
+| `xxl` | 48 | Hero 区块间距 |
+
+**细粒度补充（`s2/s6/s10/s12/s14/s18/s20/s22/s28` 等，2px 步进）：** 只用于「把项目里已存在的魔法数字 token 化、避免裸数字」，**不是新设计的首选**。新写页面时优先从主节奏 6 个里选；只有当主节奏值确实不合适、且该间距是已有 UI 的精确还原时，才用细粒度 token。目标是逐步收敛到主节奏，而不是让 token 数量无限膨胀——超过 20 个间距 token 本身就是一致性的敌人。
+
+> ⚠️ 反模式：为了「消灭裸数字」而把每个 `18`、`22`、`28` 都登记成 `AppSpacing.s18/s22/s28`。这满足「不出现裸数字」但破坏「视觉节奏统一」。正确做法是评估这个 18 能不能就近用 `sm`(8) 或 `md`(16) 或 `lg`(24) 替代；能替代就改设计值，不能替代再用细粒度 token 并标注理由。
+
+**页面边距**：用 `AppSpacing.pageHorizontal(width)`，紧凑设备返回 22、宽屏返回 34。**禁止**写 `EdgeInsets.all(18)` / `padding: const EdgeInsets.fromLTRB(22, 28, 22, 32)` 这种数字组合，除非显式调用 token。
+
+底部安全留白统一用 `AppSpacing.pageBottomNav`（104）避开浮岛导航 + 系统手势条，不要再手写 `64 + 10 + MediaQuery.paddingOf(context).bottom` 这种组合。
+
+### 9.5 圆角规范
+
+| 用途 | 值 |
+|---|---|
+| Chip / 小标签 | `AppRadius.sm` (7) |
+| 卡片 / 按钮 / 输入框 / 弹窗 | `AppRadius.md` (8) |
+| 大卡片 | `AppRadius.lg` (12) / `AppRadius.xl` (16) |
+| 沉浸式横幅 | `AppRadius.xxl` (24) |
+| 胶囊（拖动条） | `AppRadius.pill` (999) |
+
+**禁止**写 `BorderRadius.circular(10)` / `BorderRadius.circular(14)` 这种自创数字。
+
+### 9.6 卡片 / 容器规范
+
+任何"卡片"必须用 `softDecoration()` 或 `nightDecoration()`，**不允许**自己拼 `BoxDecoration`：
+
+```dart
+// ✅ 正确
+Container(
+  padding: const EdgeInsets.all(AppSpacing.md),
+  decoration: nightMode ? nightDecoration() : softDecoration(AppColors.white),
+  child: ...,
+)
+
+// ❌ 错误（卡片级，应该用 softDecoration）
+Container(
+  decoration: BoxDecoration(
+    color: AppColors.white.withValues(alpha: .92),
+    borderRadius: BorderRadius.circular(12),
+    border: Border.all(color: AppColors.line),
+    boxShadow: [BoxShadow(...)],
+  ),
+)
+```
+
+**小组件**（Chip / Tag / Icon 背景 / 选中态 pill / Notice 提示条）可以直接使用 `BoxDecoration`，但必须满足：
+
+- 颜色全部来自 `AppColors.*`（允许 `.withValues(alpha: ...)`）
+- 圆角使用 `AppRadius.*` 或 `BoxShape.circle`
+- 不出现裸 hex / 裸数字 radius
+
+```dart
+// ✅ 允许（小组件、自定义颜色 tint）
+Container(
+  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+  decoration: BoxDecoration(
+    color: AppColors.sunsetCoral.withValues(alpha: .12),
+    borderRadius: BorderRadius.circular(AppRadius.md),
+    border: Border.all(color: AppColors.sunsetCoral.withValues(alpha: .28)),
+  ),
+)
+```
+
+**判断标准**：含 `boxShadow` 或者尺寸是页面区块大小 → 卡片级，必须 `softDecoration`；其他是小组件，允许直接写 BoxDecoration（颜色/圆角仍必须 token 化）。
+
+需要自定义底色时：`softDecoration(自定义底色).copyWith(...)`。
+
+### 9.7 BottomSheet 强约束（三件套）
+
+每个 `showModalBottomSheet` 必须同时满足：
+
+1. **`useRootNavigator: true`** — 否则被底部浮岛导航覆盖
+2. **顶层 `SafeArea(top: false)`** — 否则被系统手势条/三按键导航条覆盖
+3. **有键盘交互时，内部 padding 加 `MediaQuery.viewInsetsOf(context).bottom`** — 否则被键盘顶住
+
+最小模板：
+
+```dart
+showModalBottomSheet(
+  context: context,
+  useRootNavigator: true,
+  isScrollControlled: true, // 有键盘时必须 true
+  backgroundColor: Colors.transparent,
+  builder: (ctx) {
+    final bottomInset = MediaQuery.viewInsetsOf(ctx).bottom;
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(
+          AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.lg + bottomInset),
+        decoration: nightMode ? nightDecoration() : softDecoration(AppColors.white),
+        child: ...,
+      ),
+    );
+  },
+);
+```
+
+### 9.8 Dialog 强约束
+
+`showDialog` 使用 Flutter 默认 `AlertDialog`，主题里已经统一了 background/elevation/shape；不要写 `Dialog(child: Container(...))` 自定义实现。文案用 `AppText.*`。
+
+### 9.9 输入框规范
+
+只用 `TextField(decoration: InputDecoration(labelText: '...'))`，**不要**写 `prefixIcon`、`filled`、`fillColor` 等覆盖项——`ThemeData.inputDecorationTheme` 已经统一了样式。
+
+### 9.10 图标规范
+
+**风格**：
+
+- 用 `Icons.xxx_outlined`（线框图标）做导航、列表项、次级操作
+- 用 `Icons.xxx_rounded`（填充圆角）做主按钮、强调动作
+- **禁止**混用 outlined / filled / sharp 三种风格
+- 图标大小：列表内 `size: 18-20`，主按钮内 `size: 20`，标题前缀 `size: 16`
+
+**颜色（铁律 - 夜间一致性核心）**：
+
+ThemeData 已配 `iconTheme`：日间 `AppColors.ink`，夜间 `AppColors.nightInk`。业务代码里 `Icon` **不传 `color` 时自动跟随夜间切换**。
+
+| 场景 | 钦定做法 | 反例 |
+|---|---|---|
+| 普通图标（导航、列表项、次级操作） | **不传 `color`**，走 iconTheme 自动跟随 | ❌ `Icon(icon, color: AppColors.ink)` - 夜间不变，深色图标在深色背景不可见 |
+| 强调图标（品牌色信号灯、连接成功、织线） | `color: nightMode ? AppColors.nightAccent : AppColors.teaGreen` | ❌ `Icon(icon, color: AppColors.teaGreen)` 固定 - 夜间色调不协调 |
+| 危险图标（删除、退出） | `color: AppColors.sunsetCoral`（日夜间都用珊瑚红，危险色不随夜间变） | - |
+| 容器内的图标（带底色的圆形/方形容器） | 容器背景 + 图标颜色都要 nightMode 三元，不能只改一个 | ❌ 容器白底 + 图标 ink 固定 - 夜间白底突兀 |
+
+**禁止**：
+
+- ❌ `Icon(Icons.xxx, color: AppColors.ink)` 硬编码 ink - 夜间深色图标在深色背景不可见（历史违规：starmap、settings_widgets 已修）
+- ❌ `Icon(Icons.xxx, color: AppColors.inkMuted)` 硬编码 - 同上
+- ❌ `Icon(Icons.xxx, color: AppColors.teaGreen)` 硬编码 teaGreen - 夜间不切换 nightAccent，色调不统一
+- ❌ 给图标单独定颜色不走 token - 所有图标颜色必须来自 `AppColors.*` 或 iconTheme
+
+**判定基准**：写图标颜色前问自己--"这个图标夜间应该是什么色？" 如果答不出，就**不传 color** 让 iconTheme 决定。
+
+### 9.11 加载 / 空 / 错误三态
+
+任何异步内容必须区分这三态：
+
+- **loading**：用 `_XxxSkeleton` 占位（中性形状 + `nightDecoration()` 或 `softDecoration(AppColors.white)`），**不要**直接显示"还没有"这种空态文案
+- **empty**：用 `AppText.body` 显示一句温柔提示，**不要**用 `AppText.titleMedium` 占据视觉重心
+- **error**：用 `AppText.body`，颜色用 `AppColors.sunsetCoral`，提供"重试"动作（`OutlinedButton`）
+
+### 9.12 何时可以不用 token
+
+只有这两类场景允许"自由发挥"：
+
+- `lib/ui/spaces/`（沉浸式空间，自绘星空 / 海 / 岛）
+- `lib/ui/primitives/`（design tokens 的实现层，本身是规范的承载者）
+
+业务 Widget（`lib/features/*/presentation/`）一律不允许。
+
+### 9.13 AI 自检清单
+
+每次写完一个 Widget 文件，AI 必须自问：
+
+- [ ] 文件里有没有出现 `Color(0xFF...)` 或 `Colors.xxx`（除三个白名单）？
+- [ ] 有没有出现 `fontSize: 数字`？
+- [ ] 有没有出现 `fontWeight: FontWeight.w数字`？
+- [ ] 有没有出现 `BorderRadius.circular(数字)`？
+- [ ] 有没有 `EdgeInsets.all/symmetric/fromLTRB(数字)` 而不是 `AppSpacing.*`？
+- [ ] BottomSheet 三件套齐全吗？
+- [ ] 按钮是否四选一，不是 `Container + GestureDetector` 自造？
+- [ ] 卡片是否用了 `softDecoration` / `nightDecoration`？
+- [ ] 夜间模式文本是否都过了 `AppText.onNight(...)`？
+- [ ] **图标颜色有没有硬编码 `AppColors.ink/inkMuted/teaGreen`？普通图标应不传 color 走 iconTheme，强调图标用 nightMode 三元**（§9.10）
+- [ ] 动效是否引用 `AppMotion.*`，没有出现裸 `Duration(milliseconds: 数字)` 或 `Curves.xxx`？
+- [ ] 如果文件含自绘动画，是否在顶部声明了 `// MOTION_EXEMPT: self-painted` 标记？
+
+任何一条违反，必须当场修，**不允许**留 TODO。
+
+### 9.14 动效令牌强约束（铁律）
+
+**唯一信息来源**：`AppMotion.*`（[lib/design/tokens/motion.dart](app/lib/design/tokens/motion.dart)）。
+
+**合法时长令牌**（11 档，从快到慢）：
+
+| 令牌 | 值 | 用途 |
+|---|---|---|
+| `AppMotion.quick` | 180ms | 极快状态切换（chip 选中、`AnimatedContainer` 状态翻转） |
+| `AppMotion.fast` | 200ms | 快速 UI 反馈（按钮按下、轻量 opacity） |
+| `AppMotion.normal` | 260ms | 常规过渡（页面元素切换、`AnimatedSwitcher`） |
+| `AppMotion.pageSwap` | 320ms | 路由级过渡（导航 pill、tab 平移） |
+| `AppMotion.slow` | 400ms | 慢速过渡（强调动作、滚动定位） |
+| `AppMotion.ripple` | 600ms | 水波点击反馈 |
+| `AppMotion.linger` | 1500ms | 开屏 / Hero 入场 |
+| `AppMotion.shimmer` | 1800ms | shimmer 高光扫过周期 |
+| `AppMotion.snackbar` | 2000ms | SnackBar / Toast 停留 |
+| `AppMotion.breath` | 3000ms | 呼吸感周期（按钮呼吸、星点闪烁） |
+| `AppMotion.pageTransition` | 260ms | GoRoute 页面切换 |
+
+**合法曲线令牌**（4 条）：
+
+| 令牌 | 实际曲线 | 用途 |
+|---|---|---|
+| `AppMotion.easeIn` | `Curves.easeInCubic` | 进入加速（退场、抽屉收起） |
+| `AppMotion.easeOut` | `Curves.easeOutCubic` | 默认过渡（绝大多数 UI 状态切换、滚动定位） |
+| `AppMotion.microMovement` | `Curves.easeInOutCubic` | 平滑往返（路由 pill、`AnimatedPositioned`） |
+| `AppMotion.sine` | `Curves.easeInOutSine` | 呼吸 / 波动专用 |
+
+**禁止事项**（任何 Flutter Widget 文件出现以下情况都是违规）：
+
+- ❌ 硬编码 Duration：禁止 `duration: const Duration(milliseconds: 数字)` 或 `Duration(seconds: 数字)` 出现在 `AnimationController` / `AnimatedX` / `AnimatedSwitcher` / `Tween` / `Future.delayed`（用于视觉节奏） / `SnackBar.duration` / `animateTo()` 中。必须改用 `AppMotion.*`
+- ❌ 硬编码 Curves：禁止 `curve: Curves.xxx`，必须用 `AppMotion.easeIn/easeOut/microMovement/sine`
+- ❌ "事后改时长"：禁止 `AppMotion.fast` 后再 `* 2` 或拼接计算，需要更长就直接选 `normal/slow/...`
+- ❌ 为单一用例新增 token：发现现有 11 档都不合适时先停下来问用户，不要私自加 token——token 库膨胀本身就是一致性的敌人
+
+**例外白名单**（这些场景允许硬编码）：
+
+1. **`lib/ui/spaces/` 下所有文件**——沉浸式空间的星空粒子、海浪叠加波、岛屿轮廓，本身就是"绘画"，需要超长且互相非整齐的周期
+2. **任意业务文件，只要在顶部声明 `MOTION_EXEMPT` 标记**——文件首行（package 导入之后）必须有：
+   ```dart
+   // MOTION_EXEMPT: self-painted
+   // 此文件包含自绘动画——[动画清单 + 周期数值]
+   // 豁免理由：[2-5 行说明为什么不能对齐 AppMotion]
+   // 豁免规则参见 CLAUDE.md §9.14。
+   ```
+   例如 [vinyl_widgets.dart](app/lib/features/fragment/presentation/widgets/vinyl_widgets.dart)（黑胶旋转 4200ms / 声波 5600ms / 音乐轨迹 4800ms / 唱针 360ms）
+
+**不受本约束的 Duration 用法**（不是动效，不算违规）：
+
+- 网络超时：`connectTimeout` / `receiveTimeout` / `sendTimeout`
+- 重试退避算法：`api_client.dart` 中的 `Duration(milliseconds: 200 * (1 << attempts))`
+- 业务定时器：`Timer.periodic` 录音计数器、自动同步轮询
+- 用户手势窗口：双击退出的 2s 间隔判定（仅时间窗口判定，非动画）
+
+**判断标准一句话**：这个 Duration 控制"用户视觉上看到的变化节奏"吗？是 → 必须用 `AppMotion.*`；否 → 自由发挥。
+
+任何一条违反，必须当场修，**不允许**留 TODO。
+
+---
+
+## 十、整体组件设计规范（铁律 — 跨页面唯一基准）
+
+> **本节解决的问题**：每个开发者（包括 AI）都会"凭感觉"画一个按钮、一个返回键、一个 sheet。这会导致同一种交互元素在不同页面长得不一样——这是用户感受到"app 不专业"的最大根源。
+>
+> 本节是**强制约束**：所有列出的组件，**必须**使用 `lib/ui/primitives/` 或 `lib/ui/composites/` 下钦定的实现，**禁止**在业务代码里自造。违反等同于 §9 章铁律违反。
+
+### 10.1 返回键 / 关闭键
+
+| 场景 | 必须使用的组件 | 形状 | 位置 | 备注 |
+|---|---|---|---|---|
+| **子页面顶部返回**（所有非 tab 子页面） | `PageBackButton`（[lib/ui/primitives/page_back_button.dart](app/lib/ui/primitives/page_back_button.dart)） | 圆形 42×42 | 顶部 Row 左侧第一个位置 | 唯一允许的返回键 |
+| **Sheet/Dialog 顶部关闭** | `IconButton(Icons.close_rounded)` 默认 Material | 系统默认 | sheet 顶部 Row 右侧 | 未来可抽 `SheetCloseButton` 统一 |
+| **沉浸式空间退出**（starmap、space 等全屏画布页） | `PageBackButton`（nightMode: true） | 同上 | Positioned 顶部 | 与子页面同一组件 |
+
+**禁止**：
+- ❌ 用 `Material + InkWell + SizedBox(42×42) + Icon(arrow_back_ios_new_rounded)` 自造返回键（这是历史上的 6 处违规模式）
+- ❌ 用 `OutlinedButton.icon` 加文字"返回"作为页面返回键（保留给沉浸场景退出确认这种特殊语义）
+- ❌ 用 `BackButton()` Material 默认组件（不带视觉一致性）
+- ❌ 自定义形状（方形、胶囊形等）
+
+**Icon 统一**：使用 `Icons.arrow_back_rounded`，**不要**用 `arrow_back_ios_new_rounded`（iOS 小尖头）或 `chevron_left`。
+
+### 10.2 按钮颜色语义（铁律）
+
+整个 App 只允许 **4 种按钮颜色语义**，超出这 4 种必须征求用户同意：
+
+| 语义 | 用途 | 实现 |
+|---|---|---|
+| **默认（深色 ink）** | 几乎所有按钮的默认色 — 保存 / 确认 / 知道了 / 立即同步 / 创建 / 织好这条线 / 采纳润色 | `FilledButton(...)` 不传 `backgroundColor`（走 ThemeData 默认 `AppColors.ink`） |
+| **危险（sunsetCoral）** | 不可逆/破坏性动作 — 删除 / 退出登录 确认按钮 | `FilledButton.styleFrom(backgroundColor: AppColors.sunsetCoral, foregroundColor: AppColors.white)` |
+| **危险次级（sunsetCoral 文字）** | 触发危险动作前的入口按钮 — "退出登录" 入口（非确认） / 危险设置入口 | `OutlinedButton(...)` + `foregroundColor: AppColors.sunsetCoral` |
+| **AI 强调（lilac，仅 fragment_detail 润色按钮）** | 仅限 AI 润色按钮一处使用，配呼吸动画 | `FilledButton.icon` + lilac 呼吸渐变 + `AppColors.ink` foreground |
+
+**禁止**：
+- ❌ 保存按钮用 `AppColors.teaGreen` 做 `backgroundColor`（历史违规：fragment_detail 保存 / sync 保存地址 — 已修复）
+- ❌ 删除按钮 foregroundColor 用 `AppColors.ink`（应 `AppColors.white`，让白字配珊瑚红，符合"危险"视觉惯例）
+- ❌ 同一语义按钮在不同页面用不同颜色（"保存"在 A 页用 ink、B 页用 teaGreen — 直接违规）
+- ❌ "知道了"在弹窗里用 `OutlinedButton`（必须 `FilledButton`，与其他确认按钮统一）
+
+**判定基准**：写按钮颜色前问自己——"这是默认动作、危险动作、还是 AI 动作？" 三者之外没有第 4 种颜色。
+
+### 10.3 按钮文本和语气
+
+| 场景 | 钦定文案 | 反例 |
+|---|---|---|
+| 确认弹窗 - 主操作 | "确认" / "知道了" / "保存" / "继续" | ❌ "OK" / "好的" / "确定" |
+| 确认弹窗 - 取消 | "取消" | ❌ "返回" / "算了" |
+| 危险动作确认 | "退出" / "删除" / "确认删除" | 直接动词，不要修饰 |
+| 入口按钮 | 动词短语 — "立即同步" / "测试连接" / "捕光" / "织好这条线" | ❌ 名词 |
+| 重试 | "重新加载" / "重新连接" / "再试一次" | 同语义内部统一 |
+
+### 10.4 Sheet / Dialog 内部布局
+
+**通用 Sheet 顶部布局**（mine_page 现有标准）：
+```
+Row [
+  Expanded → Text(title, AppText.titleLarge)
+  IconButton(Icons.close_rounded, color: AppColors.inkMuted)
+]
+```
+
+**Sheet 内主操作按钮**：
+- 单按钮（"知道了" / "保存"）→ `SizedBox(width: double.infinity, child: FilledButton(...))`
+- 双按钮（主+次）→ `Row + Expanded` 包裹，**两个按钮等高 52**（ThemeData 自动）
+
+**禁止**：
+- ❌ "知道了"用 `OutlinedButton`（必须 `FilledButton`）
+- ❌ "取消"用 `OutlinedButton`（弹窗内取消必须 `TextButton`）
+
+### 10.5 Tile / 列表项
+
+| 组件 | 用途 | 实现 |
+|---|---|---|
+| `SettingsSwitchRow`（[lib/ui/composites/settings_widgets.dart](app/lib/ui/composites/settings_widgets.dart)） | 设置开关行（label + subtitle + Switch） | label `AppText.titleSmall`(15) / subtitle `AppText.caption`(12) |
+| `SettingsNavRow` | 设置导航行（icon + label + chevron） | 同上 |
+| `SettingsInfoRow` | 信息展示行（label + value） | 同上 |
+| `SettingsSectionLabel` | 设置分组小标签 | `AppText.eyebrow`(11) |
+
+业务页面里出现"开关行 / 导航行 / 信息行 / 分组标签"必须用上述 4 个组件，**禁止**用 `Material + InkWell + Row` 自造。
+
+### 10.6 装饰性入口组件白名单（当前为空）
+
+历史上曾允许 `_SkyActionButton` / `_IslandToolButton` / `_InlineActionButton` / `_QuickPromptChip` 等装饰性入口组件存在。**已全部下线并统一为标准组件**：
+
+| 历史组件（已删除/弃用） | 现在使用 |
+|---|---|
+| `universe_page._SkyActionButton` | `OutlinedButton.icon` 显式覆盖小尺寸 |
+| `universe_page._IslandToolButton` | `SettingsNavRow`（compact=true） |
+| `island_detail._InlineActionButton` | `FilledButton.icon` |
+| `glow_organize._QuickPromptChip` | Material `ActionChip` |
+| `fragment_detail._PolishButton` | 仍是 `FilledButton.icon` 包 `AnimatedBuilder`，是 §10.2 "AI 强调"语义的标准实例化（非装饰特例） |
+
+**当前白名单为空** — 任何"看起来不像普通按钮"的入口，**必须**先通过标准按钮（FilledButton / OutlinedButton / TextButton / GlowButton）+ `styleFrom` 覆盖参数（如更小的 `minimumSize`、特殊背景色）来实现。**禁止**用 `Material + InkWell + Container` 自造按钮型组件。
+
+**新增白名单的流程**（强烈不推荐）：业务诉求需要装饰性独特入口 → 先在本 CLAUDE.md §10.6 表里登记（理由 + 限定使用范围）→ 经设计师/产品确认 → 再写代码。**禁止**先写代码再补登记。
+
+### 10.7 重名禁令（避免遮蔽通用组件）
+
+**禁止**在业务代码里定义与 `lib/ui/primitives/` 或 `lib/ui/composites/` 同名的类，例如：
+- ❌ 在 `fragment_detail_page.dart` 里定义 `class GlowButton`（已删除，历史违规）
+- ❌ 在 `xxx_page.dart` 里定义 `class PageBackButton` / `class SettingsCard` / `class FilledButton` 包装类
+
+如果通用组件不满足需求，要么：
+1. 扩展通用组件（加可选参数）
+2. 在 `lib/ui/primitives/` 新建一个**不同名**的组件
+
+### 10.8 颜色保留语义（与按钮颜色解耦）
+
+**日间色**：
+
+| 颜色 | 保留用途 |
+|---|---|
+| `AppColors.ink` | 主文字、主按钮背景、强调元素、iconTheme 日间默认 |
+| `AppColors.inkMuted` | 次要文字、占位、辅助说明 |
+| `AppColors.line` | 描边、分隔线 |
+| `AppColors.paper` / `AppColors.white` | 背景、卡片底色 |
+| `AppColors.teaGreen` | **品牌强调色** - icon 着色、连接成功、织线、信号灯。**不**用作按钮背景 |
+| `AppColors.sunsetCoral` | **危险色** - 仅用于删除 / 退出登录类不可逆动作（日夜间都用） |
+| `AppColors.lilac` | **AI 强调色** - 仅用于 AI 润色按钮的呼吸渐变 |
+
+**夜间色**（日间色的对应切换值，必须成对使用）：
+
+| 颜色 | 对应日间色 | 保留用途 |
+|---|---|---|
+| `AppColors.nightInk` | ink | 夜间主文字/图标、iconTheme 夜间默认 |
+| `AppColors.nightInkMuted` | inkMuted | 夜间次要文字/图标 |
+| `AppColors.nightAccent` | teaGreen | 夜间强调色（对应日间 teaGreen） |
+| `AppColors.nightBackground` | paper | 夜间背景 |
+| `AppColors.nightSurface` / `nightSurfaceHigh` | white | 夜间卡片底色 |
+| `AppColors.nightBorder` | line | 夜间描边 |
+
+**iconTheme 机制**（ThemeData 已配）：业务代码里 `Icon` 不传 `color` 时，日间自动 ink，夜间自动 nightInk。这是 82+ 个图标的默认行为，**不要破坏它**——需要强调色的图标才显式传 color（配 nightMode 三元）。
+
+**禁止**：用 `Color(0xFF...)` 任何硬编码颜色（除已经在 §9.1 三个中性白名单内）。
+### 10.9 AI 自检清单（§10 专用）
+
+每次新增/修改 UI 时，在 §9.13 清单基础上额外自问：
+
+- [ ] 我加了"返回键"吗？是不是 `PageBackButton`？
+- [ ] 我加了按钮吗？颜色是不是 4 种语义之一（默认/危险/危险次级/AI）？
+- [ ] 我加了"知道了"或"确认"弹窗吗？主按钮是不是 `FilledButton`？
+- [ ] 我加了"开关行"或"导航行"吗？是不是用了 `SettingsSwitchRow`/`SettingsNavRow`？
+- [ ] 我加了自定义类吗？类名是不是和通用组件重名（GlowButton/PageBackButton 等）？
+- [ ] 我加了一个"看起来很独特"的入口吗？它是不是登记在 §10.6 白名单里？
+
+任何一条违反，必须当场修，**不允许**留 TODO。
+
+---
+
+## 十一、监控与可观测性（MVP 最小组合）
 
 | 组件 | 方案 | 说明 |
 |-----|------|------|
@@ -2386,7 +2897,7 @@ CLAUDE.md 不需要一开始就完美。一开始覆盖核心规范即可。后�
 
 ---
 
-## 十、待决策事项（远期）
+## 十二、待决策事项（远期）
 
 以下条目在阶段讨论中标注为"后期"或"待定"，不在 MVP 范围：
 

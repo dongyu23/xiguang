@@ -45,6 +45,7 @@ void main() {
     expect(find.text('屿'), findsOneWidget);
     expect(find.text('我的'), findsOneWidget);
     expect(find.text('捕光'), findsWidgets);
+    expect(find.byKey(const ValueKey('global-capture-button')), findsNothing);
 
     await tester.enterText(
         find.byKey(const ValueKey('capture-content')), '测试里落下的一束光');
@@ -73,6 +74,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('nav-timeline')));
     await tester.pumpAndSettle(const Duration(milliseconds: 100),
         EnginePhase.sendSemanticsUpdate, const Duration(seconds: 5));
+    expect(find.byKey(const ValueKey('global-capture-button')), findsOneWidget);
     expect(find.text('TIME RIVER'), findsNothing);
     expect(find.byKey(const ValueKey('timeline-compact-title')), findsNothing);
     expect(find.textContaining('测试里落下'), findsWidgets);
@@ -94,10 +96,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('nav-universe')));
     await _pumpUntilFound(tester, find.text('小宇宙'));
     expect(find.text('小宇宙'), findsOneWidget);
+    expect(find.byKey(const ValueKey('global-capture-button')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('nav-mine')));
     await _pumpUntilFound(tester, find.text('数据边界'));
     expect(find.text('数据边界'), findsOneWidget);
+    expect(find.byKey(const ValueKey('global-capture-button')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('profile-edit-toggle')));
     await tester.pump(const Duration(seconds: 1));

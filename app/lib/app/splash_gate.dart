@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../design/tokens/colors.dart';
+import '../design/tokens/motion.dart';
+
 class SplashGate extends StatefulWidget {
   const SplashGate({super.key, required this.child});
 
@@ -24,7 +27,7 @@ class _SplashGateState extends State<SplashGate>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: AppMotion.linger,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_startSplash());
@@ -37,7 +40,7 @@ class _SplashGateState extends State<SplashGate>
     await _controller.forward();
     if (!mounted) return;
     setState(() => _showSplash = false);
-    await Future<void>.delayed(const Duration(milliseconds: 240));
+    await Future<void>.delayed(AppMotion.normal);
     if (!mounted) return;
     setState(() => _mountSplash = false);
   }
@@ -56,7 +59,7 @@ class _SplashGateState extends State<SplashGate>
         IgnorePointer(
           ignoring: true,
           child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 220),
+            duration: AppMotion.fast,
             opacity: _showSplash ? 1 : 0,
             child: _OpeningSplash(animation: _controller),
           ),
@@ -77,26 +80,31 @@ class _OpeningSplash extends StatelessWidget {
         return AnimatedBuilder(
           animation: animation,
           builder: (context, _) {
-            final exit = Curves.easeInCubic.transform(
+            final exit = AppMotion.easeIn.transform(
               ((animation.value - .74) / .26).clamp(0, 1),
             );
-            final appear = Curves.easeOutCubic.transform(
+            final appear = AppMotion.easeOut.transform(
               (animation.value / .40).clamp(0, 1),
             );
             final visible = (appear * (1 - exit)).clamp(0.0, 1.0);
             return Material(
               color: Colors.transparent,
               child: Container(
-                color: const Color(0xFFFBF7EF),
+                color: AppColors.paperDark,
                 child: Stack(textDirection: TextDirection.ltr, children: [
                   Positioned.fill(
                     child: Opacity(
                       opacity: visible,
-                      child: Image.asset(
-                        SplashGate.openingImage.assetName,
-                        fit: BoxFit.cover,
-                        alignment: Alignment.center,
-                        gaplessPlayback: true,
+                      child: Center(
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: Image.asset(
+                            SplashGate.openingImage.assetName,
+                            fit: BoxFit.contain,
+                            alignment: Alignment.center,
+                            gaplessPlayback: true,
+                          ),
+                        ),
                       ),
                     ),
                   ),

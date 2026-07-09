@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
+import '../../../../design/tokens/spacing.dart';
 
 class RelationNoteInput extends StatelessWidget {
   const RelationNoteInput({
@@ -28,10 +29,11 @@ class RelationNoteInput extends StatelessWidget {
         hintText: '它们都像是被一句话轻轻击中的时刻。',
         hintStyle: AppText.placeholder,
         counterStyle: AppText.caption,
-        contentPadding: const EdgeInsets.fromLTRB(16, 15, 16, 12),
+        contentPadding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.s15, AppSpacing.md, AppSpacing.s12),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: .76)),
+          borderSide: BorderSide(color: AppColors.white.withValues(alpha: .76)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),

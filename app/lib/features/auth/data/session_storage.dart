@@ -128,7 +128,8 @@ class SessionStorage {
       return StoredAuthSession(
         accessToken: decoded['at'] as String? ?? '',
         refreshToken: decoded['rt'] as String? ?? '',
-        expiresAt: DateTime.tryParse(decoded['exp'] as String? ?? '') ?? DateTime.now(),
+        expiresAt: DateTime.tryParse(decoded['exp'] as String? ?? '') ??
+            DateTime.now(),
         session: AuthSession(
           id: decoded['id'] as int? ?? 0,
           publicId: decoded['pid'] as String? ?? '',
@@ -144,8 +145,7 @@ class SessionStorage {
     }
   }
 
-  Future<String?> _readLegacySecret(
-      SharedPreferences prefs, String key) async {
+  Future<String?> _readLegacySecret(SharedPreferences prefs, String key) async {
     try {
       final value = await _secureStorage.read(key: key);
       if (value != null) return value;

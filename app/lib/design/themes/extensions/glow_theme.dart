@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../tokens/colors.dart';
+
 /// 微光主题扩展 — 光晕效果的参数
 class GlowTheme extends ThemeExtension<GlowTheme> {
   const GlowTheme({
@@ -15,7 +17,7 @@ class GlowTheme extends ThemeExtension<GlowTheme> {
   factory GlowTheme.default_() => const GlowTheme(
         radius: 120,
         intensity: .3,
-        color: Color(0xFFFFFCF6),
+        color: AppColors.white,
       );
 
   @override

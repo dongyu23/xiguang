@@ -34,6 +34,11 @@ type Config struct {
 	TencentASREngine       string
 	TencentASRRealtimeHost string
 	AllowedOrigin          string
+
+	// 在线更新：APK 静态目录绝对路径，以及客户端可访问的下载基地址。
+	// 静态目录用于发版时校验文件已上传；下载基地址形如 https://host/media/app。
+	ReleaseStaticDir    string
+	ReleaseDownloadBase string
 }
 
 func Load() Config {
@@ -73,6 +78,8 @@ func Load() Config {
 		TencentASREngine:       env("TENCENT_ASR_ENGINE_MODEL_TYPE", "16k_zh"),
 		TencentASRRealtimeHost: env("TENCENT_ASR_REALTIME_HOST", "asr.cloud.tencent.com"),
 		AllowedOrigin:          env("ALLOWED_ORIGIN", "*"),
+		ReleaseStaticDir:       env("RELEASE_STATIC_DIR", ""),
+		ReleaseDownloadBase:    env("RELEASE_DOWNLOAD_BASE", "/media/app"),
 	}
 	if err := cfg.Validate(); err != nil {
 		panic(err)

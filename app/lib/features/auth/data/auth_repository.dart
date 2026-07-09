@@ -71,25 +71,10 @@ class AuthRepository {
     _expiresAt = stored.expiresAt;
     _api.accessToken = stored.accessToken;
 
-    final needsRefresh = stored.expiresAt
-        .isBefore(DateTime.now().add(const Duration(minutes: 1)));
-    if (needsRefresh) {
-      try {
-        await _refresh();
-      } catch (_) {
-        // Refresh failed — try using the stored session anyway.
-        // If it's truly expired, the next API call will 401 and re-auth.
-      }
-    }
-    // Skip /users/me when token is still fresh to avoid unnecessary network round-trip.
-    if (!needsRefresh) return _session!;
-
-    try {
-      return await me();
-    } catch (_) {
-      await logout();
-      return null;
-    }
+    // 启动恢复只读取本地缓存，不在这里同步等待后端。
+    // 无网时 refresh/me 会等到 Dio 超时，导致启动页长时间转圈；
+    // 后续页面和同步引擎会各自尝试联网，失败时回退本地数据并显示未连接状态。
+    return _session!;
   }
 
   Future<AuthSession> login({
@@ -125,14 +110,7 @@ class AuthRepository {
   }
 
   Future<AuthSession> me() async {
-    if (_api.hasToken &&
-        _expiresAt != null &&
-        _expiresAt!.isBefore(DateTime.now().add(const Duration(minutes: 1)))) {
-      await _refresh();
-    }
-    if (!_api.hasToken) {
-      throw StateError('not_authenticated');
-    }
+    await _ensureFreshAccessToken();
     final body = await _api.get('/users/me');
     _session = _parseUser(body);
     return _session!;
@@ -144,9 +122,7 @@ class AuthRepository {
     required bool aiEnabled,
     required String privacyMode,
   }) async {
-    if (!_api.hasToken) {
-      throw StateError('not_authenticated');
-    }
+    await _ensureFreshAccessToken();
     final body = await _api.put('/users/me', {
       'nickname': nickname.trim(),
       'avatar_key': avatarKey.trim(),
@@ -156,6 +132,28 @@ class AuthRepository {
     _session = _parseUser(body);
     await _persistCurrent();
     return _session!;
+  }
+
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    await _ensureFreshAccessToken();
+    await _api.put('/auth/password', {
+      'old_password': oldPassword,
+      'new_password': newPassword,
+    });
+  }
+
+  Future<void> _ensureFreshAccessToken() async {
+    if (_api.hasToken &&
+        _expiresAt != null &&
+        _expiresAt!.isBefore(DateTime.now().add(const Duration(minutes: 1)))) {
+      await _refresh();
+    }
+    if (!_api.hasToken) {
+      throw StateError('not_authenticated');
+    }
   }
 
   Future<void> _refresh() async {

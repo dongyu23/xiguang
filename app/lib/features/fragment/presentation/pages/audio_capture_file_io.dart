@@ -8,7 +8,8 @@ Future<String> nextAudioCapturePath() async {
   return '${dir.path}/xiguang_voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
 }
 
-Future<String?> audioPathToDataUrl(String path, [String mime = 'audio/mp4']) async {
+Future<String?> audioPathToDataUrl(String path,
+    [String mime = 'audio/mp4']) async {
   final file = File(path);
   if (!await file.exists()) return null;
   final bytes = await file.readAsBytes();
