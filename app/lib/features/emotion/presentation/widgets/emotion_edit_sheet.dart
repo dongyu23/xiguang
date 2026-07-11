@@ -235,9 +235,17 @@ class _EmotionEditSheetState extends ConsumerState<EmotionEditSheet> {
     try {
       final description = _descriptionController.text.trim();
       if (widget.existing == null) {
-        await ref
+        final emotions =
+            ref.read(emotionsProvider).valueOrNull ?? const <UserEmotion>[];
+        final shownCount = emotions.where((e) => !e.hidden).length;
+        final newEmotion = await ref
             .read(emotionsProvider.notifier)
             .addCustom(name, description: description, soundKey: _soundKey);
+        // 展示已达上限时，新增项先收起，避免超过 maxShownEmotions
+        if (shownCount >= maxShownEmotions) {
+          await ref.read(emotionsProvider.notifier).toggleHidden(newEmotion);
+          _showMessage('已添加。展示已满 $maxShownEmotions 个，已先收起。');
+        }
       } else {
         await ref.read(emotionsProvider.notifier).save(
               existing: widget.existing!,

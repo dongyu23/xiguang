@@ -30,18 +30,13 @@ class AiBuildIslandsPage extends ConsumerStatefulWidget {
 
 class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
   int _phase = 0;
+  bool _started = false;
   String? _error;
   String? _outcomeStatus;
   Map<String, dynamic>? _result;
   final _selectedIslandKeys = <String>{};
   final _createdIslandKeys = <String>{};
   bool _confirming = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _startAnalysis();
-  }
 
   Future<void> _startAnalysis() async {
     final phases = ['正在读你的光片…', '发现了一些隐秘的联系…', '正在给它们取名字…'];
@@ -166,13 +161,66 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
           ),
           const SizedBox(height: AppSpacing.md),
           Expanded(
-            child: _result != null
-                ? _buildResults()
-                : _error != null
-                    ? _buildError()
-                    : _buildAnalyzing(),
+            child: !_started
+                ? _buildIntro()
+                : _result != null
+                    ? _buildResults()
+                    : _error != null
+                        ? _buildError()
+                        : _buildAnalyzing(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildIntro() {
+    final theme = NightTheme.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 116,
+            height: 116,
+            decoration: BoxDecoration(
+              color: AppColors.lilac.withValues(alpha: .18),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(
+                color: AppColors.lilac.withValues(alpha: .24),
+              ),
+            ),
+            child: Icon(
+              Icons.explore_outlined,
+              size: 44,
+              color: theme.foreground,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Text(
+            '让星图管理员帮你找岛',
+            style: AppText.titleMedium.copyWith(color: theme.foreground),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '星图管理员会读你的光片，找出可以成岛的主题。每天一次，结果由你确认。',
+            style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () {
+                setState(() => _started = true);
+                _startAnalysis();
+              },
+              icon: const Icon(Icons.auto_awesome_rounded, size: 20),
+              label: const Text('开始'),
+            ),
+          ),
+        ]),
       ),
     );
   }

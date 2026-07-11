@@ -114,7 +114,6 @@ class _FakeEmotionRepository implements EmotionRepositoryPort {
   Future<void> update(UserEmotion emotion) async {}
 
   @override
-  Future<void> setUserDefault(int id) async {}
 
   @override
   Future<void> setHidden(int id, bool hidden) async {}

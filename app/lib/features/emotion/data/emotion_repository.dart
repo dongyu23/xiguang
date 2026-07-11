@@ -67,14 +67,6 @@ class EmotionRepository implements EmotionRepositoryPort {
   }
 
   @override
-  Future<void> setUserDefault(int id) async {
-    await _db.transaction(() async {
-      await _db.clearUserDefaultEmotion();
-      await _db.markUserDefaultEmotion(id);
-    });
-  }
-
-  @override
   Future<void> setHidden(int id, bool hidden) async {
     await _db.setEmotionHidden(id, hidden);
   }

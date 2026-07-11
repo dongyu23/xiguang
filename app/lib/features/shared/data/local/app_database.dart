@@ -227,18 +227,6 @@ class AppDatabase extends _$AppDatabase {
     return row.read(emotions.sortOrder.max()) ?? 0;
   }
 
-  /// 清除所有心情的 isUserDefault 标记。
-  Future<void> clearUserDefaultEmotion() {
-    return (update(emotions)..where((t) => t.isUserDefault.equals(true)))
-        .write(EmotionsCompanion(isUserDefault: const Value(false)));
-  }
-
-  /// 标记指定心情为首选。
-  Future<void> markUserDefaultEmotion(int id) {
-    return (update(emotions)..where((t) => t.id.equals(id)))
-        .write(EmotionsCompanion(isUserDefault: const Value(true)));
-  }
-
   /// 设置指定心情的隐藏状态。
   Future<void> setEmotionHidden(int id, bool hidden) {
     return (update(emotions)..where((t) => t.id.equals(id)))

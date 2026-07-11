@@ -45,9 +45,9 @@ class _EmotionPickerState extends ConsumerState<EmotionPicker> {
             style: AppText.titleSmall.copyWith(color: theme.foreground)),
         SizedBox(height: widget.dense ? AppSpacing.s7 : AppSpacing.s10),
         emotionsAsync.when(
-          loading: () => _grid(_fallbackEmotions(), null),
-          error: (_, __) => _grid(_fallbackEmotions(), null),
-          data: (emotions) => _grid(emotions, emotions),
+          loading: () => _grid(_fallbackEmotions()),
+          error: (_, __) => _grid(_fallbackEmotions()),
+          data: (emotions) => _grid(emotions),
         ),
       ],
     );
@@ -77,7 +77,7 @@ class _EmotionPickerState extends ConsumerState<EmotionPicker> {
         .toList();
   }
 
-  Widget _grid(List<UserEmotion> emotions, List<UserEmotion>? fullList) {
+  Widget _grid(List<UserEmotion> emotions) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 380;
@@ -132,8 +132,7 @@ class _EmotionPickerState extends ConsumerState<EmotionPicker> {
               isSelected: false,
               compact: compact || dense,
               isMore: true,
-              onTap: () => _openMore(
-                  (fullList ?? emotions).where((e) => !e.hidden).toList()),
+              onTap: _openMore,
             );
           },
         );
@@ -141,21 +140,19 @@ class _EmotionPickerState extends ConsumerState<EmotionPicker> {
     );
   }
 
-  void _openMore(List<UserEmotion> all) async {
-    final picked = await showModalBottomSheet<String>(
+  void _openMore() async {
+    await showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => EmotionMoreSheet(
-        emotions: all,
         selected: widget.selected,
+        onSelected: (name) {
+          if (mounted) widget.onSelected(name);
+        },
       ),
     );
-    if (picked != null && mounted) {
-      widget.onSelected(picked);
-      ref.invalidate(emotionsProvider);
-    }
   }
 }
 

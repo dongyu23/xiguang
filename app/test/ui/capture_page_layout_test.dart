@@ -26,6 +26,28 @@ void main() {
     );
   });
 
+  testWidgets('capture action stays available while the keyboard is open',
+      (tester) async {
+    await _pumpCapturePage(tester, const Size(360, 800));
+    addTearDown(tester.view.resetViewInsets);
+
+    await tester.tap(find.byKey(const ValueKey('capture-content')));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final captureAction = find.text('捕光');
+    expect(tester.takeException(), isNull);
+    expect(captureAction, findsOneWidget);
+    expect(captureAction.hitTestable(), findsOneWidget);
+    expect(tester.getBottomRight(captureAction).dy, greaterThan(460));
+    expect(tester.getBottomRight(captureAction).dy, lessThan(500));
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('../goldens/capture_page_keyboard.png'),
+    );
+  });
+
   testWidgets(
       'more emotions sheet keeps its add action intact on a short screen',
       (tester) async {
@@ -154,7 +176,6 @@ class _FakeEmotionRepository implements EmotionRepositoryPort {
   Future<void> update(UserEmotion emotion) async {}
 
   @override
-  Future<void> setUserDefault(int id) async {}
 
   @override
   Future<void> setHidden(int id, bool hidden) async {}

@@ -12,13 +12,16 @@ class SettingsCard extends StatelessWidget {
     super.key,
     required this.children,
     this.compact = false,
+    this.onTap,
   });
 
   final List<Widget> children;
   final bool compact;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) => XiguangCard(
+        onTap: onTap,
         padding: EdgeInsets.all(
           compact ? AppSpacing.widgetPadding : AppSpacing.s18,
         ),

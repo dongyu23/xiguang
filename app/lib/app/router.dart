@@ -205,6 +205,8 @@ class _AppShellState extends ConsumerState<_AppShell> {
     final currentIndex = widget.navigationShell.currentIndex;
     _reportActiveTab(currentIndex);
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    // 键盘弹出时收起底部导航，把空间留给输入区
+    final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -253,15 +255,24 @@ class _AppShellState extends ConsumerState<_AppShell> {
               left: 16,
               right: 16,
               bottom: 10 + bottomPadding,
-              child: _XiguangNavBar(
-                selectedIndex: currentIndex,
-                onTap: (i) {
-                  if (i == currentIndex) {
-                    ref.read(scrollToTopSignalProvider.notifier).state++;
-                  } else {
-                    widget.navigationShell.goBranch(i, initialLocation: true);
-                  }
-                },
+              child: IgnorePointer(
+                ignoring: keyboardVisible,
+                child: AnimatedOpacity(
+                  opacity: keyboardVisible ? 0 : 1,
+                  duration: AppMotion.fast,
+                  curve: AppMotion.easeOut,
+                  child: _XiguangNavBar(
+                    selectedIndex: currentIndex,
+                    onTap: (i) {
+                      if (i == currentIndex) {
+                        ref.read(scrollToTopSignalProvider.notifier).state++;
+                      } else {
+                        widget.navigationShell.goBranch(i,
+                            initialLocation: true);
+                      }
+                    },
+                  ),
+                ),
               ),
             ),
           ],

@@ -45,6 +45,9 @@ app/android/build/
 /build/
 /coverage/
 
+# Golden test 本地失败对比图（matchesGoldenFile 失败时生成，勿入库）
+app/test/**/failures/
+
 # Dart code generation (freezed / json_serializable / build_runner)
 *.freezed.dart
 *.g.dart

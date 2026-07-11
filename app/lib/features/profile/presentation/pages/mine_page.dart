@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:open_filex/open_filex.dart';
 
 import 'package:xiguang/app/app_state.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
@@ -37,11 +38,26 @@ class _MinePageState extends ConsumerState<MinePage> {
 
   Future<void> _exportLocalArchive() async {
     if (_exporting) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('导出本地记录'),
+        content: const Text('将导出全部文字光片，并复制本地图片和声音到本机。可能需要一些时间。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('开始导出')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     setState(() => _exporting = true);
     try {
       final result = await ref.read(exportLocalArchiveProvider)();
       if (!mounted) return;
-      await Clipboard.setData(ClipboardData(text: result.directoryPath));
       _showExportResult(result);
     } catch (_) {
       if (!mounted) return;
@@ -53,6 +69,31 @@ class _MinePageState extends ConsumerState<MinePage> {
       );
     } finally {
       if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _copyPath(String path) async {
+    await Clipboard.setData(ClipboardData(text: path));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('路径已复制'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _openRecord(String markdownPath) async {
+    try {
+      await OpenFilex.open(markdownPath);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('无法打开记录文件。'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -72,7 +113,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                   style: AppText.titleLarge.copyWith(color: theme.foreground)),
               const SizedBox(height: AppSpacing.s10),
               Text(
-                '已导出 ${result.fragmentCount} 束光、${result.mediaCount} 个本地媒体文件。导出目录路径已复制。',
+                '已导出 ${result.fragmentCount} 束光、${result.mediaCount} 个本地媒体文件。',
                 style: AppText.body.copyWith(color: theme.foreground),
               ),
               const SizedBox(height: AppSpacing.s12),
@@ -81,9 +122,27 @@ class _MinePageState extends ConsumerState<MinePage> {
                 style: AppText.caption.copyWith(color: theme.foregroundMuted),
               ),
               const SizedBox(height: AppSpacing.s18),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _copyPath(result.directoryPath),
+                    icon: const Icon(Icons.copy_rounded, size: 18),
+                    label: const Text('复制路径'),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _openRecord(result.markdownPath),
+                    icon: const Icon(Icons.menu_book_rounded, size: 18),
+                    label: const Text('打开记录'),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: AppSpacing.sm),
               SizedBox(
                 width: double.infinity,
-                child: FilledButton(
+                child: TextButton(
                   onPressed: () => Navigator.of(ctx).pop(),
                   child: const Text('知道了'),
                 ),
@@ -153,22 +212,8 @@ class _MinePageState extends ConsumerState<MinePage> {
                   Text('BOUNDARY',
                       style: AppText.eyebrow.copyWith(color: theme.accent)),
                   SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-                  Row(children: [
-                    Expanded(
-                        child: Text('我的',
-                            style: AppText.hero
-                                .copyWith(color: theme.foreground))),
-                    // 夜间模式状态指示图标
-                    Icon(
-                      theme.isNight
-                          ? Icons.nights_stay_outlined
-                          : Icons.wb_sunny_outlined,
-                      color: theme.isNight
-                          ? AppColors.emotionHappy
-                          : theme.foregroundMuted,
-                      size: 20,
-                    ),
-                  ]),
+                  Text('我的',
+                      style: AppText.hero.copyWith(color: theme.foreground)),
                   SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
                   Text('账号、隐私和那些你想自己决定的边界。',
                       style: AppText.body.copyWith(color: theme.foreground)),
@@ -178,86 +223,38 @@ class _MinePageState extends ConsumerState<MinePage> {
                   _ProfileCard(
                     session: session,
                     compact: compact,
+                    onTap: () => _showEditProfileSheet(context, session),
                   ),
                   SizedBox(height: compact ? AppSpacing.md : AppSpacing.lg),
 
-                  // ── 星图管理员 ──
-                  const SettingsSectionLabel('星图管理员'),
+                  // ── 账号 ──
+                  const SettingsSectionLabel('账号'),
                   SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
                   _FlatNavGroup(
                     compact: compact,
                     items: [
                       _NavItem(
-                        icon: Icons.auto_awesome_outlined,
-                        iconColor: AppColors.lilac,
-                        label: '柔光整理',
-                        subtitle: '和星图管理员对话，看见光片之间的线',
-                        onTap: () => context.push('/glow-organize'),
-                      ),
-                      _NavItem(
-                        icon: Icons.explore_outlined,
+                        icon: Icons.person_outline_rounded,
                         iconColor: AppColors.teaGreen,
-                        label: 'AI 建岛',
-                        subtitle: '让星图管理员读光片，找出可以成岛的主题',
-                        onTap: () => context.push('/ai/build-islands'),
+                        label: '编辑资料',
+                        subtitle: '昵称、密码',
+                        onTap: () => _showEditProfileSheet(context, session),
                       ),
                       _NavItem(
-                        icon: Icons.tune_rounded,
-                        iconColor: AppColors.inkMuted,
-                        label: '星图管理员设置',
-                        subtitle: session.aiEnabled ? '已开启，只在主动触发时提供建议' : '已关闭',
-                        onTap: () => _showAiToggleSheet(context, session),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
-
-                  // ── 空间与氛围 ──
-                  const SettingsSectionLabel('空间与氛围'),
-                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-                  _FlatNavGroup(
-                    compact: compact,
-                    items: [
-                      _NavItem(
-                        icon: Icons.palette_outlined,
-                        iconColor: AppColors.teaGreen,
-                        label: '空间主题',
-                        subtitle: '查看当前空间的底色和氛围描述',
-                        onTap: () => context.push('/space'),
-                      ),
-                      _NavItem(
-                        icon: Icons.graphic_eq_rounded,
+                        icon: Icons.system_update_alt_rounded,
                         iconColor: AppColors.mistBlue,
-                        label: '白噪音',
-                        subtitle: '雨声、风声和一些轻轻托住注意力的声音',
-                        onTap: () => context.push('/whitenoise'),
+                        label: '检查更新',
+                        subtitle: ref.watch(appUpdateBadgeProvider)
+                            ? '发现可用的新版本'
+                            : '查看是否有新版可用',
+                        onTap: () => showAppUpdateSheet(context),
                       ),
-                    ],
-                  ),
-                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
-
-                  // ── 显示与外观 ──
-                  const SettingsSectionLabel('显示与外观'),
-                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-                  _NightModeSelector(
-                    currentOption: appearanceOption,
-                    compact: compact,
-                    onChanged: (option) => updateNightModeOption(ref, option),
-                  ),
-                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
-
-                  // ── 心绪 ──
-                  const SettingsSectionLabel('心绪'),
-                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-                  _FlatNavGroup(
-                    compact: compact,
-                    items: [
                       _NavItem(
-                        icon: Icons.palette_outlined,
-                        iconColor: AppColors.lilac,
-                        label: '管理心情',
-                        subtitle: '编辑默认情绪、新增自定义感觉',
-                        onTap: () => context.push('/emotions/manage'),
+                        icon: Icons.info_outline_rounded,
+                        iconColor: AppColors.inkMuted,
+                        label: '关于隙光',
+                        subtitle: '版本信息和产品说明',
+                        onTap: () => _showAbout(context),
                       ),
                     ],
                   ),
@@ -287,37 +284,71 @@ class _MinePageState extends ConsumerState<MinePage> {
                   ),
                   SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
 
-                  // ── 账号 ──
-                  const SettingsSectionLabel('账号'),
+                  // ── 显示与外观 ──
+                  const SettingsSectionLabel('显示与外观'),
+                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
+                  _NightModeSelector(
+                    currentOption: appearanceOption,
+                    compact: compact,
+                    onChanged: (option) => updateNightModeOption(ref, option),
+                  ),
+                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
+
+                  // ── 氛围与心绪 ──
+                  const SettingsSectionLabel('氛围与心绪'),
                   SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
                   _FlatNavGroup(
                     compact: compact,
                     items: [
                       _NavItem(
-                        icon: Icons.person_outline_rounded,
+                        icon: Icons.palette_outlined,
                         iconColor: AppColors.teaGreen,
-                        label: '编辑资料',
-                        subtitle: '昵称、密码',
-                        onTap: () => _showEditProfileSheet(context, session),
+                        label: '当前空间',
+                        subtitle: '你现在的底色与氛围',
+                        onTap: () => context.push('/space'),
                       ),
                       _NavItem(
-                        icon: Icons.system_update_alt_rounded,
+                        icon: Icons.graphic_eq_rounded,
                         iconColor: AppColors.mistBlue,
-                        label: '检查更新',
-                        subtitle: ref.watch(appUpdateBadgeProvider)
-                            ? '· 发现可用的新版本'
-                            : '查看是否有新版可用',
-                        onTap: () => showAppUpdateSheet(context),
+                        label: '白噪音',
+                        subtitle: '雨声、风声和一些轻轻托住注意力的声音',
+                        onTap: () => context.push('/whitenoise'),
                       ),
                       _NavItem(
-                        icon: Icons.info_outline_rounded,
-                        iconColor: AppColors.inkMuted,
-                        label: '关于隙光',
-                        subtitle: '版本信息和产品说明',
-                        onTap: () => _showAbout(context),
+                        icon: Icons.palette_outlined,
+                        iconColor: AppColors.lilac,
+                        label: '管理心情',
+                        subtitle: '编辑默认情绪、新增自定义感觉',
+                        onTap: () => context.push('/emotions/manage'),
                       ),
                     ],
                   ),
+                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
+
+                  // ── 星图管理员 ──
+                  const SettingsSectionLabel('星图管理员'),
+                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
+                  _FlatNavGroup(
+                    compact: compact,
+                    items: [
+                      _NavItem(
+                        icon: Icons.auto_awesome_outlined,
+                        iconColor: AppColors.lilac,
+                        label: '柔光整理',
+                        subtitle: '和星图管理员对话，看见光片之间的线',
+                        onTap: () => context.push('/glow-organize'),
+                      ),
+                      _NavItem(
+                        icon: Icons.explore_outlined,
+                        iconColor: AppColors.teaGreen,
+                        label: 'AI 建岛',
+                        subtitle: '让星图管理员读光片，找出可以成岛的主题',
+                        onTap: () => context.push('/ai/build-islands'),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.xs),
+                  _AiToggleCard(session: session, compact: compact),
                   SizedBox(height: compact ? AppSpacing.s18 : AppSpacing.lg),
 
                   // ── 退出 ──
@@ -363,16 +394,17 @@ class _MinePageState extends ConsumerState<MinePage> {
     String? errorText;
     bool showPasswordSection = false;
     BuildContext? sheetCtx;
+    StateSetter? currentSetState; // 在 builder 中捕获，供 safeSetState 使用
     bool sheetDisposed = false; // sheet 关闭后,所有异步 setSheetState 必须跳过
 
-    Future<void> save(StateSetter setSheetState) async {
-      // sheet 已 dispose（用户拖关），直接放弃后续 UI 更新
-      void safeSetState(VoidCallback fn) {
-        if (sheetDisposed) return;
-        if (sheetCtx == null || !sheetCtx!.mounted) return;
-        setSheetState(fn);
-      }
+    // sheet 已 dispose（用户拖关或点遮罩关闭），直接放弃后续 UI 更新
+    void safeSetState(VoidCallback fn) {
+      if (sheetDisposed) return;
+      if (sheetCtx == null || !sheetCtx!.mounted) return;
+      currentSetState!(fn);
+    }
 
+    Future<void> save() async {
       final nickname = nicknameCtrl.text.trim();
       if (nickname.isEmpty) {
         safeSetState(() => errorText = '昵称不能为空');
@@ -459,14 +491,15 @@ class _MinePageState extends ConsumerState<MinePage> {
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
-      // 禁用拖拽关闭：sheet 内有 TextField，拖关时 onChanged/setState 会引用
-      // 已 dispose 的 StatefulBuilder 触发黑屏。改为只能点关闭按钮或点遮罩关闭。
-      enableDrag: false,
+      // 允许拖拽关闭：所有 setSheetState 已通过 safeSetState 守卫，
+      // 拖关后 sheetDisposed 标记会短路异步更新，避免引用已 dispose 的 StatefulBuilder。
+      enableDrag: true,
       backgroundColor: Colors.transparent,
       builder: (builderCtx) {
         sheetCtx = builderCtx;
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
+            currentSetState = setSheetState;
             final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
             final theme = NightTheme.of(ctx);
             return Padding(
@@ -502,7 +535,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                         ),
                         onChanged: (_) {
                           if (errorText != null) {
-                            setSheetState(() => errorText = null);
+                            safeSetState(() => errorText = null);
                           }
                         },
                       ),
@@ -514,7 +547,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                           alignment: Alignment.centerLeft,
                           child: TextButton.icon(
                             onPressed: () =>
-                                setSheetState(() => showPasswordSection = true),
+                                safeSetState(() => showPasswordSection = true),
                             icon: const Icon(Icons.lock_outline_rounded,
                                 size: 16),
                             label: const Text('修改密码'),
@@ -539,7 +572,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                           ),
                           onChanged: (_) {
                             if (errorText != null) {
-                              setSheetState(() => errorText = null);
+                              safeSetState(() => errorText = null);
                             }
                           },
                         ),
@@ -553,7 +586,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                           ),
                           onChanged: (_) {
                             if (errorText != null) {
-                              setSheetState(() => errorText = null);
+                              safeSetState(() => errorText = null);
                             }
                           },
                         ),
@@ -562,13 +595,13 @@ class _MinePageState extends ConsumerState<MinePage> {
                           controller: confirmPasswordCtrl,
                           obscureText: true,
                           textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => save(setSheetState),
+                          onSubmitted: (_) => save(),
                           decoration: const InputDecoration(
                             labelText: '确认新密码',
                           ),
                           onChanged: (_) {
                             if (errorText != null) {
-                              setSheetState(() => errorText = null);
+                              safeSetState(() => errorText = null);
                             }
                           },
                         ),
@@ -588,7 +621,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: saving ? null : () => save(setSheetState),
+                          onPressed: saving ? null : () => save(),
                           icon: saving
                               ? const SizedBox(
                                   width: 18,
@@ -617,84 +650,6 @@ class _MinePageState extends ConsumerState<MinePage> {
       newPasswordCtrl.dispose();
       confirmPasswordCtrl.dispose();
     });
-  }
-
-  // ── AI 开关 BottomSheet ──
-
-  void _showAiToggleSheet(BuildContext context, AuthSession session) {
-    bool aiEnabled = session.aiEnabled;
-    bool saving = false;
-
-    showModalBottomSheet(
-      context: context,
-      useRootNavigator: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final theme = NightTheme.of(ctx);
-            return XiguangBottomSheet(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Expanded(
-                      child: Text('星图管理员',
-                          style: AppText.titleLarge
-                              .copyWith(color: theme.foreground)),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.close_rounded,
-                          color: theme.foregroundMuted),
-                      onPressed: () => Navigator.of(ctx).pop(),
-                    ),
-                  ]),
-                  const SizedBox(height: AppSpacing.md),
-                  SettingsSwitchRow(
-                    label: '启用星图管理员',
-                    subtitle: '开启后，只在你主动触发时提供建议。不在后台分析你的光片。',
-                    value: aiEnabled,
-                    onChanged: saving
-                        ? null
-                        : (v) => setSheetState(() => aiEnabled = v),
-                  ),
-                  const SizedBox(height: AppSpacing.s20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: saving
-                          ? null
-                          : () async {
-                              setSheetState(() => saving = true);
-                              try {
-                                final updated = await ref
-                                    .read(
-                                        authActionsControllerProvider.notifier)
-                                    .updateProfile(
-                                      nickname: session.nickname,
-                                      avatarKey: session.avatarKey,
-                                      aiEnabled: aiEnabled,
-                                      privacyMode: session.privacyMode,
-                                    );
-                                ref
-                                    .read(aiPolishEnabledProvider.notifier)
-                                    .state = updated.aiEnabled;
-                                if (ctx.mounted) Navigator.of(ctx).pop();
-                              } catch (_) {
-                                setSheetState(() => saving = false);
-                              }
-                            },
-                      child: Text(saving ? '保存中...' : '保存'),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   // ── 关于隙光 ──
@@ -738,21 +693,24 @@ class _MinePageState extends ConsumerState<MinePage> {
 // 私有组件
 // ═══════════════════════════════════════════════════════════
 
-/// 资料卡片 — 只读展示
+/// 资料卡片 — 点击进入编辑
 class _ProfileCard extends StatelessWidget {
   const _ProfileCard({
     required this.session,
     required this.compact,
+    required this.onTap,
   });
 
   final AuthSession session;
   final bool compact;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
     return SettingsCard(
       compact: compact,
+      onTap: onTap,
       children: [
         Row(children: [
           Container(
@@ -775,10 +733,8 @@ class _ProfileCard extends StatelessWidget {
                       AppText.caption.copyWith(color: theme.foregroundMuted)),
             ]),
           ),
+          Icon(Icons.chevron_right_rounded, color: theme.foregroundMuted),
         ]),
-        SizedBox(height: compact ? AppSpacing.s10 : AppSpacing.s14),
-        SettingsInfoRow(
-            label: '用户名', value: session.username, compact: compact),
       ],
     );
   }
@@ -843,6 +799,75 @@ class _NavItem {
   final String label;
   final String subtitle;
   final VoidCallback onTap;
+}
+
+/// 星图管理员开关 - 拨动即时生效，无需单独"保存"
+class _AiToggleCard extends ConsumerStatefulWidget {
+  const _AiToggleCard({required this.session, required this.compact});
+
+  final AuthSession session;
+  final bool compact;
+
+  @override
+  ConsumerState<_AiToggleCard> createState() => _AiToggleCardState();
+}
+
+class _AiToggleCardState extends ConsumerState<_AiToggleCard> {
+  bool _saving = false;
+  // 乐观本地值：null 表示跟随 session（权威值）
+  bool? _localValue;
+  bool get _value => _localValue ?? widget.session.aiEnabled;
+
+  Future<void> _toggle(bool v) async {
+    if (_saving || v == _value) return;
+    setState(() {
+      _saving = true;
+      _localValue = v;
+    });
+    try {
+      final updated = await ref
+          .read(authActionsControllerProvider.notifier)
+          .updateProfile(
+            nickname: widget.session.nickname,
+            avatarKey: widget.session.avatarKey,
+            aiEnabled: v,
+            privacyMode: widget.session.privacyMode,
+          );
+      ref.read(aiPolishEnabledProvider.notifier).state = updated.aiEnabled;
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _localValue = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _localValue = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('切换失败，请稍后再试'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return XiguangCard(
+      padding: EdgeInsets.all(widget.compact ? AppSpacing.s14 : AppSpacing.md),
+      child: SettingsSwitchRow(
+        label: '启用星图管理员',
+        subtitle: _value ? '已开启，只在主动触发时提供建议' : '已关闭',
+        value: _value,
+        onChanged: _saving ? null : _toggle,
+      ),
+    );
+  }
 }
 
 class _ErrorPanel extends StatelessWidget {

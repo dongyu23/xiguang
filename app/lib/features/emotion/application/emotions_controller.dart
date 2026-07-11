@@ -8,6 +8,9 @@ import '../domain/user_emotion.dart';
 export '../../../app/providers.dart' show emotionRepositoryProvider;
 export '../domain/emotion_color.dart' show autoColorForEmotionName;
 
+/// 选择器首屏最多展示的心绪数（7 个 + 1 个"更多"按钮 = 4×2 网格）。
+const maxShownEmotions = 7;
+
 final emotionsProvider =
     AsyncNotifierProvider<EmotionsController, List<UserEmotion>>(
   EmotionsController.new,
@@ -89,21 +92,6 @@ class EmotionsController extends AsyncNotifier<List<UserEmotion>> {
       state = AsyncData([
         for (final item in emotions)
           if (item.id != emotion.id) item,
-      ]);
-    } catch (error, stackTrace) {
-      state = AsyncError<List<UserEmotion>>(error, stackTrace)
-          .copyWithPrevious(AsyncData(emotions));
-      rethrow;
-    }
-  }
-
-  Future<void> setUserDefault(UserEmotion emotion) async {
-    final emotions = await future;
-    state = const AsyncLoading<List<UserEmotion>>().copyWithPrevious(state);
-    try {
-      await ref.read(emotionRepositoryProvider).setUserDefault(emotion.id);
-      state = AsyncData([
-        for (final e in emotions) e.copyWith(isUserDefault: e.id == emotion.id),
       ]);
     } catch (error, stackTrace) {
       state = AsyncError<List<UserEmotion>>(error, stackTrace)

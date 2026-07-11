@@ -23,9 +23,7 @@ import '../widgets/emotion_row.dart';
 
 // PAGE_SIZE_EXEMPT: 本轮保留页面级交互编排；编辑表单和列表行已拆到 widgets，
 // 后续将新增/长按操作菜单抽为独立 coordinator 后移除此豁免。
-enum _AddChoice { emotion, audio }
-
-enum _EmotionAction { setDefault, toggleHidden, edit, delete }
+enum _EmotionAction { edit, delete }
 
 class EmotionManagePage extends ConsumerStatefulWidget {
   const EmotionManagePage({super.key});
@@ -77,11 +75,19 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
                         AppText.titleLarge.copyWith(color: theme.foreground)),
               ),
               XiguangButton(
-                label: '新增',
+                label: '心情',
                 expand: false,
                 height: 40,
-                onPressed: () => _showAddChoiceSheet(),
-                leading: const Icon(Icons.add_rounded, size: 18),
+                onPressed: () => _showEditSheet(context, null),
+                leading: const Icon(Icons.mood_outlined, size: 18),
+              ),
+              const SizedBox(width: AppSpacing.s6),
+              XiguangButton(
+                label: '音乐',
+                expand: false,
+                height: 40,
+                onPressed: () => _showAudioSheet(context),
+                leading: const Icon(Icons.music_note_rounded, size: 18),
               ),
             ]),
             const SizedBox(height: AppSpacing.md),
@@ -99,7 +105,7 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
                     ? const Center(
                         child: XiguangEmptyState(
                           title: '还没有心情',
-                          description: '点右上角"新增"，写一个自己的感觉。',
+                          description: '点右上角"心情"，写一个自己的感觉。',
                         ),
                       )
                     : ListView.separated(
@@ -185,50 +191,6 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
     }
   }
 
-  Future<void> _showAddChoiceSheet() async {
-    final theme = NightTheme.of(context);
-    final choice = await showModalBottomSheet<_AddChoice>(
-      context: context,
-      useRootNavigator: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => SafeArea(
-        top: false,
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(
-              AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
-          child: XiguangBottomSheet(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('新增',
-                    style:
-                        AppText.titleLarge.copyWith(color: theme.foreground)),
-                const SizedBox(height: AppSpacing.md),
-                _ActionTile(
-                  icon: Icons.mood_outlined,
-                  label: '新增心情',
-                  onTap: () => Navigator.of(ctx).pop(_AddChoice.emotion),
-                ),
-                _ActionTile(
-                  icon: Icons.music_note_rounded,
-                  label: '新增背景音乐',
-                  onTap: () => Navigator.of(ctx).pop(_AddChoice.audio),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    if (!mounted || choice == null) return;
-    if (choice == _AddChoice.emotion) {
-      _showEditSheet(context, null);
-    } else if (choice == _AddChoice.audio) {
-      _showAudioSheet(context);
-    }
-  }
-
   Future<void> _showEmotionActionSheet(
     UserEmotion emotion,
   ) async {
@@ -251,21 +213,6 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
                     style:
                         AppText.titleLarge.copyWith(color: theme.foreground)),
                 const SizedBox(height: AppSpacing.md),
-                if (!emotion.isUserDefault)
-                  _ActionTile(
-                    icon: Icons.star_outline_rounded,
-                    label: '设为默认心情',
-                    onTap: () =>
-                        Navigator.of(ctx).pop(_EmotionAction.setDefault),
-                  ),
-                _ActionTile(
-                  icon: emotion.hidden
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
-                  label: emotion.hidden ? '取消隐藏' : '隐藏',
-                  onTap: () =>
-                      Navigator.of(ctx).pop(_EmotionAction.toggleHidden),
-                ),
                 _ActionTile(
                   icon: Icons.edit_outlined,
                   label: '编辑',
@@ -286,10 +233,6 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
     );
     if (!mounted || action == null) return;
     switch (action) {
-      case _EmotionAction.setDefault:
-        await ref.read(emotionsProvider.notifier).setUserDefault(emotion);
-      case _EmotionAction.toggleHidden:
-        await ref.read(emotionsProvider.notifier).toggleHidden(emotion);
       case _EmotionAction.edit:
         _showEditSheet(context, emotion);
       case _EmotionAction.delete:

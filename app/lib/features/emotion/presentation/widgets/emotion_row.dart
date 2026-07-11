@@ -65,14 +65,6 @@ class EmotionRow extends StatelessWidget {
                   Text(emotion.name,
                       style:
                           AppText.titleSmall.copyWith(color: theme.foreground)),
-                  if (emotion.isUserDefault) ...[
-                    const SizedBox(width: AppSpacing.s6),
-                    _Tag(label: '默认', color: theme.accent),
-                  ],
-                  if (emotion.hidden) ...[
-                    const SizedBox(width: AppSpacing.s6),
-                    _Tag(label: '已隐藏', color: theme.foregroundMuted),
-                  ],
                 ]),
                 if (emotion.description.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.s2),
@@ -103,29 +95,6 @@ class EmotionRow extends StatelessWidget {
           ],
         ]),
       ),
-    );
-  }
-}
-
-/// 小标签 - "默认" / "已隐藏" 等状态标记。
-class _Tag extends StatelessWidget {
-  const _Tag({required this.label, required this.color});
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s5,
-        vertical: AppSpacing.s1,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: .14),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: Text(label, style: AppText.microLabel.copyWith(color: color)),
     );
   }
 }

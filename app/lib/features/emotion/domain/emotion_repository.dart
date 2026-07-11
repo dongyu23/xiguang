@@ -7,9 +7,6 @@ abstract interface class EmotionRepositoryPort {
   Future<void> update(UserEmotion emotion);
   Future<void> delete(int id);
 
-  /// 设为首选心情：清除其他 isUserDefault，置目标为 true（事务）。
-  Future<void> setUserDefault(int id);
-
   /// 设置隐藏状态。
   Future<void> setHidden(int id, bool hidden);
 

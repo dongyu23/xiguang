@@ -58,25 +58,52 @@ class _CapturePageBody extends ConsumerStatefulWidget {
   ConsumerState<_CapturePageBody> createState() => _CapturePageBodyState();
 }
 
-class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
-  String _emotion = '说不清';
-  bool _userDefaultApplied = false;
+class _CapturePageBodyState extends ConsumerState<_CapturePageBody>
+    with WidgetsBindingObserver {
+  String _emotion = '';
+  final _composerKey = GlobalKey<_QuickRecordComposerState>();
+  final _captureActionKey = GlobalKey();
+  final _preparingMedia = ValueNotifier(false);
+  bool _keyboardVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // 页面挂载时键盘可能已弹出（如从详情页返回），首帧回调校正初值
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final visible = View.of(context).viewInsets.bottom > 0;
+      if (visible != _keyboardVisible) {
+        setState(() => _keyboardVisible = visible);
+      }
+    });
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (!mounted) return;
+    final visible = View.of(context).viewInsets.bottom > 0;
+    if (visible != _keyboardVisible) {
+      setState(() => _keyboardVisible = visible);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _preparingMedia.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    // 首次拿到数据时，若用户设了默认心情，用它替换初始值
-    final emotions = ref.watch(emotionsProvider).valueOrNull;
-    if (!_userDefaultApplied && emotions != null && emotions.isNotEmpty) {
-      _userDefaultApplied = true;
-      for (final e in emotions) {
-        if (e.isUserDefault) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _emotion = e.name);
-          });
-          break;
-        }
-      }
-    }
+    // 键盘检测：本页位于 _AppShell 的 Scaffold(resizeToAvoidBottomInset:true)
+    // body 内，Scaffold 消费 viewInsets 后 body 子树的 MediaQuery 不再随键盘
+    // 变化、不会触发本 widget 重建。故用 WidgetsBindingObserver.didChangeMetrics
+    // 监听 metrics 变化，在回调里读 View.of 的原始 viewInsets 并 setState。
+    final keyboardVisible = _keyboardVisible;
     final viewport = MediaQuery.sizeOf(context);
     final compact = viewport.width < 430;
     final moodColor = AppColors.emotionColor(_effectiveEmotion);
@@ -86,40 +113,75 @@ class _CapturePageBodyState extends ConsumerState<_CapturePageBody> {
       ref.watch(audioTracksProvider).valueOrNull ?? const [],
     );
     final isActive = ref.watch(activeTabIndexProvider) == 0;
+    final captureState = ref.watch(captureControllerProvider);
+    final bottomSafeArea = MediaQuery.paddingOf(context).bottom;
     final horizontalPadding =
         MediaQuery.sizeOf(context).width > 520 ? AppSpacing.lg : AppSpacing.md;
-    return XiguangPage(
-      padding: EdgeInsets.fromLTRB(
-        horizontalPadding,
-        AppSpacing.md,
-        horizontalPadding,
-        AppSpacing.captureComposerClearance,
-      ),
-      backgroundLayer: _MoodBackground(moodColor: moodColor),
-      child: TickerMode(
-        enabled: isActive,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _PageHeader(
-              label: 'GAP OF LIGHT',
-              title: '隙',
-              subtitle: '不用解释，也不用整理。先把这一束光轻轻放下。',
-              compact: compact,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        XiguangPage(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            AppSpacing.md,
+            horizontalPadding,
+            AppSpacing.captureComposerClearance + AppSpacing.xxl,
+          ),
+          backgroundLayer: _MoodBackground(moodColor: moodColor),
+          child: TickerMode(
+            enabled: isActive,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _PageHeader(
+                  label: 'GAP OF LIGHT',
+                  title: '隙',
+                  subtitle: '不用解释，也不用整理。先把这一束光轻轻放下。',
+                  compact: compact,
+                ),
+                SizedBox(height: compact ? AppSpacing.sm : AppSpacing.s10),
+                _BreathingLightBanner(
+                  moodColor: moodColor,
+                  audioTrack: vinylAudioTrack,
+                ),
+                SizedBox(height: compact ? AppSpacing.s9 : AppSpacing.s12),
+                _QuickRecordComposer(
+                  key: _composerKey,
+                  selectedEmotion: _emotion,
+                  onEmotionChanged: (emotion) =>
+                      setState(() => _emotion = emotion),
+                  onPreparingChanged: (preparing) =>
+                      _preparingMedia.value = preparing,
+                  keyboardVisible: keyboardVisible,
+                ),
+              ],
             ),
-            SizedBox(height: compact ? AppSpacing.sm : AppSpacing.s10),
-            _BreathingLightBanner(
-              moodColor: moodColor,
-              audioTrack: vinylAudioTrack,
-            ),
-            SizedBox(height: compact ? AppSpacing.s9 : AppSpacing.s12),
-            _QuickRecordComposer(
-              selectedEmotion: _emotion,
-              onEmotionChanged: (emotion) => setState(() => _emotion = emotion),
-            ),
-          ],
+          ),
         ),
-      ),
+        Positioned(
+          left: horizontalPadding,
+          right: horizontalPadding,
+          bottom: keyboardVisible
+              ? AppSpacing.sm + bottomSafeArea
+              : AppSpacing.routeOverlayClearance + bottomSafeArea,
+          child: TickerMode(
+            enabled: isActive,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _preparingMedia,
+              builder: (context, preparing, _) {
+                final busy = preparing || captureState.isSaving;
+                return _FloatingCaptureAction(
+                  key: _captureActionKey,
+                  busy: busy,
+                  compact: compact,
+                  onPressed:
+                      busy ? null : () => _composerKey.currentState?._save(),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -362,14 +424,65 @@ class _BreathingLightBanner extends StatelessWidget {
   }
 }
 
+/// 始终停在四项导航上方的捕光操作条。
+///
+/// 它属于页面层而非输入卡片的滚动内容，所以键盘抬起页面时，
+/// 按钮和底部导航会保持同一节奏上移。
+class _FloatingCaptureAction extends StatelessWidget {
+  const _FloatingCaptureAction({
+    super.key,
+    required this.busy,
+    required this.compact,
+    required this.onPressed,
+  });
+
+  final bool busy;
+  final bool compact;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return AnimatedContainer(
+      duration: AppMotion.normal,
+      curve: AppMotion.microMovement,
+      padding: const EdgeInsets.all(AppSpacing.s5),
+      decoration: BoxDecoration(
+        color: theme.surface.withValues(alpha: theme.isNight ? .9 : .94),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: theme.border.withValues(alpha: .72)),
+        boxShadow: [
+          BoxShadow(
+            color: theme.foreground.withValues(alpha: theme.isNight ? .2 : .1),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: XiguangButton(
+        label: busy ? '落下中' : '捕光',
+        onPressed: onPressed,
+        leading: const Icon(Icons.wb_sunny_outlined, size: 18),
+        loading: busy,
+        height: compact ? 44 : 48,
+      ),
+    );
+  }
+}
+
 class _QuickRecordComposer extends ConsumerStatefulWidget {
   const _QuickRecordComposer({
+    super.key,
     required this.selectedEmotion,
     required this.onEmotionChanged,
+    required this.onPreparingChanged,
+    required this.keyboardVisible,
   });
 
   final String selectedEmotion;
   final ValueChanged<String> onEmotionChanged;
+  final ValueChanged<bool> onPreparingChanged;
+  final bool keyboardVisible;
 
   @override
   ConsumerState<_QuickRecordComposer> createState() =>
@@ -383,6 +496,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   final List<XFile> _images = [];
   Timer? _audioTimer;
   bool _recordingAudio = false;
+  bool _audioPaused = false;
   final ValueNotifier<int> _audioSeconds = ValueNotifier(0);
   String? _audioPath;
   bool _preparingMedia = false;
@@ -417,7 +531,9 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
         ),
         SizedBox(height: compact ? AppSpacing.s9 : AppSpacing.s12),
         // 文字输入单独成区；媒体操作不再与输入框共用边框，避免录音状态撑高输入框。
-        Container(
+        AnimatedContainer(
+          duration: AppMotion.normal,
+          curve: AppMotion.microMovement,
           decoration: BoxDecoration(
               color: theme.surfaceHigh.withValues(
                 alpha: theme.isNight ? .72 : .78,
@@ -429,8 +545,12 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
           child: TextField(
             key: const ValueKey('capture-content'),
             controller: _controller,
-            minLines: compact ? 2 : 5,
-            maxLines: compact ? 5 : 8,
+            minLines: compact ? 3 : 5,
+            maxLines:
+                widget.keyboardVisible ? (compact ? 3 : 5) : (compact ? 6 : 8),
+            scrollPadding: const EdgeInsets.only(
+              bottom: AppSpacing.captureComposerClearance,
+            ),
             style: AppText.body.copyWith(color: theme.foreground),
             decoration: InputDecoration(
               hintText: '可以只留一句，也可以慢慢写完。',
@@ -446,21 +566,45 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
             ),
           ),
         ),
-        if (_images.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.s6),
-          SizedBox(
-            height: 36,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _images.length,
-              separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.s6),
-              itemBuilder: (context, index) => _InlineImageThumb(
-                image: _images[index],
-                onRemove: () => setState(() => _images.removeAt(index)),
+        AnimatedSize(
+          duration: AppMotion.normal,
+          curve: AppMotion.microMovement,
+          alignment: Alignment.topCenter,
+          child: AnimatedSwitcher(
+            duration: AppMotion.normal,
+            switchInCurve: AppMotion.easeOut,
+            switchOutCurve: AppMotion.easeIn,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: .94, end: 1).animate(animation),
+                alignment: Alignment.centerLeft,
+                child: child,
               ),
             ),
+            child: _images.isEmpty
+                ? const SizedBox.shrink(key: ValueKey('empty-image-strip'))
+                : Padding(
+                    key: ValueKey('image-strip-${_images.length}'),
+                    padding: const EdgeInsets.only(top: AppSpacing.s6),
+                    child: SizedBox(
+                      height: 36,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _images.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: AppSpacing.s6),
+                        itemBuilder: (context, index) => _InlineImageThumb(
+                          key: ValueKey(_images[index].path),
+                          image: _images[index],
+                          onRemove: () =>
+                              setState(() => _images.removeAt(index)),
+                        ),
+                      ),
+                    ),
+                  ),
           ),
-        ],
+        ),
         SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
         Row(
           children: [
@@ -472,16 +616,18 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
             ),
             const SizedBox(width: AppSpacing.s6),
             _AttachmentAction(
-              icon: _recordingAudio
-                  ? Icons.stop_rounded
+              icon: _audioPaused
+                  ? Icons.play_arrow_rounded
                   : _hasAudioCue
                       ? Icons.graphic_eq_rounded
                       : Icons.mic_none_rounded,
               label: _audioActionLabel,
-              active: _hasAudioCue || _recordingAudio,
+              time: _audioTimeLabel,
+              active: _hasAudioCue || _recordingAudio || _audioPaused,
               recording: _recordingAudio,
-              showRemove: _hasAudioCue && !_recordingAudio,
+              showRemove: _hasAudioCue,
               onTap: busy ? null : _handleAudioAction,
+              onRemove: busy ? null : _cancelAudio,
             ),
             const Spacer(),
             _ComposerMetaRow(writtenCount: _writtenCount),
@@ -492,14 +638,6 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
             selected: widget.selectedEmotion,
             onSelected: (e) => widget.onEmotionChanged(e),
             dense: compact),
-        SizedBox(height: compact ? AppSpacing.s10 : AppSpacing.s14),
-        XiguangButton(
-          label: busy ? '落下中' : '捕光',
-          onPressed: busy ? null : _save,
-          leading: const Icon(Icons.wb_sunny_outlined, size: 18),
-          loading: busy,
-          height: compact ? 44 : 48,
-        ),
       ]),
     );
   }
@@ -507,9 +645,14 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   bool get _hasAudioCue => _audioSeconds.value > 0 || _audioPath != null;
 
   String get _audioActionLabel {
-    if (_recordingAudio) return '录音 ${_formatAudioTime(_audioSeconds.value)}';
-    if (_hasAudioCue) return '声音 ${_formatAudioTime(_audioSeconds.value)}';
+    if (_recordingAudio) return '暂停';
+    if (_audioPaused) return '继续';
     return '声音';
+  }
+
+  String get _audioTimeLabel {
+    if (_audioSeconds.value > 0) return _formatAudioTime(_audioSeconds.value);
+    return '';
   }
 
   String _formatAudioTime(int seconds) {
@@ -519,12 +662,16 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   }
 
   Future<void> _handleAudioAction() async {
+    if (_isDesktopPlatform) {
+      await _pickAudioFile();
+      return;
+    }
     if (_recordingAudio) {
-      await _stopAudio();
-    } else if (_hasAudioCue) {
-      await _clearAudio();
+      await _pauseAudio();
+    } else if (_audioPaused) {
+      await _resumeAudio();
     } else {
-      await _toggleAudio();
+      await _startAudio();
     }
   }
 
@@ -567,6 +714,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       return;
     }
     setState(() => _preparingMedia = true);
+    widget.onPreparingChanged(true);
     try {
       final mediaUrls = await _mediaUrlsForSave();
       if (!mounted) return;
@@ -586,12 +734,16 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
       );
       return;
     } finally {
-      if (mounted) setState(() => _preparingMedia = false);
+      if (mounted) {
+        setState(() => _preparingMedia = false);
+        widget.onPreparingChanged(false);
+      }
     }
     if (!mounted) return;
     _audioTimer?.cancel();
     setState(() {
       _recordingAudio = false;
+      _audioPaused = false;
       _audioPath = null;
       _controller.clear();
       _images.clear();
@@ -638,7 +790,7 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
   }
 
   Future<String?> _audioUrlForSave() async {
-    if (_recordingAudio) {
+    if (_recordingAudio || _audioPaused) {
       await _stopAudio();
     }
     final path = _audioPath;
@@ -662,21 +814,9 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
 
   int get _writtenCount => _controller.text.trim().runes.length;
 
-  Future<void> _toggleAudio() async {
-    if (_isDesktopPlatform) {
-      await _pickAudioFile();
-      return;
-    }
-    if (_recordingAudio) {
-      await _stopAudio();
-      return;
-    }
-    await _startAudio();
-  }
-
   Future<void> _pickAudioFile() async {
     if (_audioPath != null) {
-      _clearAudio();
+      _cancelAudio();
       return;
     }
     try {
@@ -715,6 +855,21 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
         return;
       }
       final path = await nextAudioCapturePath();
+      // 先切到录音态并启动计时器，让 UI 立即响应；
+      // recorder 硬件初始化较慢，放后面异步执行，失败则回退。
+      _audioTimer?.cancel();
+      setState(() {
+        _recordingAudio = true;
+        _audioPaused = false;
+        _audioPath = path;
+      });
+      _audioSeconds.value = 0;
+      _audioTimer = Timer.periodic(AppTiming.audioMeterTick, (_) {
+        if (!mounted) return;
+        setState(() {
+          _audioSeconds.value += 1;
+        });
+      });
       await _recorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
@@ -726,20 +881,16 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
         ),
         path: path,
       );
+    } catch (_) {
+      // recorder 启动失败：回退到空闲态
       _audioTimer?.cancel();
+      if (!mounted) return;
       setState(() {
-        _recordingAudio = true;
-        _audioPath = path;
+        _recordingAudio = false;
+        _audioPaused = false;
+        _audioPath = null;
       });
       _audioSeconds.value = 0;
-      _audioTimer = Timer.periodic(AppTiming.audioMeterTick, (_) {
-        if (!mounted) return;
-        setState(() {
-          _audioSeconds.value += 1;
-        });
-      });
-    } catch (_) {
-      if (!mounted) return;
       showOverlaySnackBar(
         context,
         const SnackBar(
@@ -790,23 +941,58 @@ class _QuickRecordComposerState extends ConsumerState<_QuickRecordComposer> {
     if (!mounted) return;
     setState(() {
       _recordingAudio = false;
+      _audioPaused = false;
       _audioPath = path;
     });
     if (_audioSeconds.value == 0) _audioSeconds.value = 1;
   }
 
-  Future<void> _clearAudio() async {
+  Future<void> _pauseAudio() async {
     _audioTimer?.cancel();
-    if (_recordingAudio) {
-      try {
-        await _attachmentRecorder?.cancel();
-      } catch (_) {
-        // Ignore recorder cleanup errors.
-      }
+    try {
+      await _attachmentRecorder?.pause();
+    } catch (_) {
+      // Ignore recorder pause errors.
     }
     if (!mounted) return;
     setState(() {
       _recordingAudio = false;
+      _audioPaused = true;
+    });
+  }
+
+  Future<void> _resumeAudio() async {
+    try {
+      await _attachmentRecorder?.resume();
+    } catch (_) {
+      // If resume fails, fall back to starting a new recording.
+      return _startAudio();
+    }
+    _audioTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _recordingAudio = true;
+      _audioPaused = false;
+    });
+    _audioTimer = Timer.periodic(AppTiming.audioMeterTick, (_) {
+      if (!mounted) return;
+      setState(() {
+        _audioSeconds.value += 1;
+      });
+    });
+  }
+
+  Future<void> _cancelAudio() async {
+    _audioTimer?.cancel();
+    try {
+      await _attachmentRecorder?.cancel();
+    } catch (_) {
+      // Ignore recorder cleanup errors.
+    }
+    if (!mounted) return;
+    setState(() {
+      _recordingAudio = false;
+      _audioPaused = false;
       _audioPath = null;
     });
     _audioSeconds.value = 0;
@@ -926,6 +1112,7 @@ class _SelectedImagePreviewState extends State<_SelectedImagePreview> {
 /// 输入框内左下角的内联图片缩略图（32x32 + 删除按钮）
 class _InlineImageThumb extends StatelessWidget {
   const _InlineImageThumb({
+    super.key,
     required this.image,
     required this.onRemove,
   });
@@ -967,64 +1154,253 @@ class _InlineImageThumb extends StatelessWidget {
   }
 }
 
-/// 输入区下方的轻量媒体操作。录音计时在原位更新，不新增布局层级。
-class _AttachmentAction extends StatelessWidget {
+/// 输入区下方的轻量媒体操作。
+///
+/// 按下时先有很轻的收缩回应；附件完成后颜色、图标和宽度连续过渡。
+/// 录音态用低幅声波代替闪烁红点，保留灵动感但不抢内容。
+class _AttachmentAction extends StatefulWidget {
   const _AttachmentAction({
     required this.icon,
     required this.label,
+    this.time = '',
     required this.active,
     required this.onTap,
     this.recording = false,
     this.showRemove = false,
+    this.onRemove,
   });
 
   final IconData icon;
   final String label;
+  final String time;
   final bool active;
   final VoidCallback? onTap;
   final bool recording;
   final bool showRemove;
+  final VoidCallback? onRemove;
+
+  @override
+  State<_AttachmentAction> createState() => _AttachmentActionState();
+}
+
+class _AttachmentActionState extends State<_AttachmentAction> {
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
-    final color = recording
+    final color = widget.recording
         ? theme.danger
-        : active
+        : widget.active
             ? theme.accent
             : theme.foregroundMuted;
+    final displayText = widget.time.isEmpty
+        ? widget.label
+        : '${widget.label} ${widget.time}';
     return Semantics(
       button: true,
-      label: label,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        child: Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s10),
-          decoration: BoxDecoration(
-            color: active ? color.withValues(alpha: .12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            border: Border.all(
-              color: active
-                  ? color.withValues(alpha: .42)
-                  : theme.border.withValues(alpha: .72),
+      label: displayText,
+      child: AnimatedScale(
+        scale: _pressed ? .96 : 1,
+        duration: AppMotion.quick,
+        curve: AppMotion.easeOut,
+        child: AnimatedSize(
+          duration: AppMotion.normal,
+          curve: AppMotion.microMovement,
+          alignment: Alignment.centerLeft,
+          child: AnimatedContainer(
+            duration: AppMotion.normal,
+            curve: AppMotion.microMovement,
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s10),
+            decoration: BoxDecoration(
+              color: widget.active
+                  ? color.withValues(alpha: widget.recording ? .16 : .12)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              border: Border.all(
+                color: widget.active
+                    ? color.withValues(alpha: widget.recording ? .52 : .42)
+                    : theme.border.withValues(alpha: .72),
+              ),
+              boxShadow: widget.recording
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: .12),
+                        blurRadius: 12,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: AppSpacing.s5),
-              Text(label, style: AppText.captionStrong.copyWith(color: color)),
-              if (showRemove) ...[
-                const SizedBox(width: AppSpacing.xs),
-                Icon(Icons.close_rounded, size: 13, color: color),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: widget.onTap,
+                  onHighlightChanged: widget.onTap == null
+                      ? null
+                      : (pressed) =>
+                          setState(() => _pressed = pressed),
+                  borderRadius: BorderRadius.horizontal(
+                      left: const Radius.circular(AppRadius.pill)),
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                        right: widget.showRemove ? AppSpacing.s5 : 0),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedSwitcher(
+                          duration: AppMotion.normal,
+                          switchInCurve: AppMotion.easeOut,
+                          switchOutCurve: AppMotion.easeIn,
+                          transitionBuilder: (child, animation) =>
+                              ScaleTransition(
+                                  scale: animation, child: child),
+                          child: widget.recording
+                              ? _RecordingWaveGlyph(
+                                  key: const ValueKey('recording-wave'),
+                                  color: color,
+                                )
+                              : Icon(
+                                  widget.icon,
+                                  key: ValueKey(widget.icon),
+                                  size: 16,
+                                  color: color,
+                                ),
+                        ),
+                        const SizedBox(width: AppSpacing.s5),
+                        AnimatedSwitcher(
+                          duration: AppMotion.normal,
+                          switchInCurve: AppMotion.easeOut,
+                          switchOutCurve: AppMotion.easeIn,
+                          transitionBuilder: (child, animation) =>
+                              FadeTransition(
+                                  opacity: animation, child: child),
+                          child: Text(
+                            widget.label,
+                            key: ValueKey(widget.label),
+                            style: AppText.captionStrong
+                                .copyWith(color: color),
+                          ),
+                        ),
+                        if (widget.time.isNotEmpty) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          SizedBox(
+                            width: 30,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                widget.time,
+                                style: AppText.captionStrong.copyWith(
+                                  color: color,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (widget.showRemove)
+                  GestureDetector(
+                    onTap: widget.onRemove,
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: AppSpacing.s2),
+                      child: Icon(Icons.close_rounded,
+                          size: 13, color: color),
+                    ),
+                  ),
               ],
-            ],
+            ),
           ),
         ),
       ),
     );
+  }
+}
+
+class _RecordingWaveGlyph extends StatefulWidget {
+  const _RecordingWaveGlyph({super.key, required this.color});
+
+  final Color color;
+
+  @override
+  State<_RecordingWaveGlyph> createState() => _RecordingWaveGlyphState();
+}
+
+class _RecordingWaveGlyphState extends State<_RecordingWaveGlyph>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: AppMotion.ripple,
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => CustomPaint(
+          size: const Size.square(16),
+          painter: _RecordingWavePainter(
+            progress: _controller.value,
+            color: widget.color,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecordingWavePainter extends CustomPainter {
+  const _RecordingWavePainter({
+    required this.progress,
+    required this.color,
+  });
+
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    const bars = 4;
+    for (var i = 0; i < bars; i++) {
+      final phase = progress * pi * 2 + i * .9;
+      final height = 4 + (sin(phase).abs() * 7);
+      final x = 2.5 + i * 3.6;
+      canvas.drawLine(
+        Offset(x, (size.height - height) / 2),
+        Offset(x, (size.height + height) / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RecordingWavePainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.color != color;
   }
 }
