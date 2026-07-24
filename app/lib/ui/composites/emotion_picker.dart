@@ -143,7 +143,6 @@ class _EmotionPickerState extends ConsumerState<EmotionPicker> {
   void _openMore() async {
     await showModalBottomSheet<void>(
       context: context,
-      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => EmotionMoreSheet(

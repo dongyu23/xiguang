@@ -174,7 +174,7 @@ Reflectly 案例：逻辑是"通过持续日记和 AI 引导建立情绪觉察�
 | 光片详情 | 线/详情 | 查看/编辑/软删除 |
 | 微光情绪选择器 | 隙 | 柔和色点+情绪词（平静/开心/疲惫/焦虑/失落/被击中/混乱/说不清），可跳过，默认"说不清"，不做 AI 辅助 |
 | 手动标签 | 隙/详情 | 用户打字输入，暂不联想。保存后补充亦可 |
-| 时间河流 | 线 | 日期分组（今天/昨天/某天）+ 光片卡片 + 情绪色点 + 图片缩略图 + 光片状态 |
+| 时间河流 | 线 | 日期分组（今天/昨天/某天）+ 光片卡片 + 情绪色点 + 图片缩略图 |
 | 标签/情绪筛选 | 线 | 快速回看某类内容 |
 | 媒介筛选 | 线 | 文字/图片/录音（若录音后置则先做文字/图片） |
 | 小宇宙轻量页 | 屿 | 今日微光 / 高频主题 / 主题星点 / 小岛卡片 |
@@ -628,7 +628,7 @@ lib/
 │   │   └── morandi_card.dart            # 莫兰迪风格卡片 (圆角+低饱和底色+柔和投影+毛玻璃可选)
 │   ├── composites/                      # 组合组件 — 由 primitives 组装
 │   │   ├── emotion_picker.dart          # 微光情绪选择器（一排柔和色点，每点对应情绪词，点击选中，长按看解释）
-│   │   ├── light_card.dart              # 光片卡片（文字摘要+图片缩略图+情绪色点+光片状态+时间）
+│   │   ├── light_card.dart              # 光片卡片（文字摘要+图片缩略图+情绪色点+时间）
 │   │   ├── time_river_item.dart         # 时间河流条目（日期分组头+光片卡片列表+底部渐变分割线）
 │   │   ├── tag_chip.dart                # 标签芯片（圆角+低饱和底色+标签名+可选删除按钮）
 │   │   └── image_grid.dart              # 图片缩略图网格（瀑布流/柔和网格，点击放大）
@@ -658,7 +658,7 @@ lib/
 │   ├── fragment/
 │   │   ├── domain/
 │   │   │   ├── fragment.dart            # Fragment (freezed) — id, public_id, user_id, content_text, emotion, status, tags, media_urls, created_at
-│   │   │   ├── fragment_status.dart     # enum FragmentStatus { twilight, stardust, echo, seed, tide, islandCore }
+│   │   │   ├── fragment_status.dart     # 兼容旧数据的状态枚举（当前不作为产品生长机制）
 │   │   │   ├── emotion.dart             # class Emotion — id, name, colorHex, description
 │   │   │   ├── create_params.dart       # CreateFragmentParams (freezed) — content_text, emotion, tag_names, media_paths
 │   │   │   └── fragment_repository.dart # abstract class FragmentRepository
@@ -1389,6 +1389,9 @@ CREATE TYPE fragment_status AS ENUM (
     'island_core'       -- 岛屿核心
 );
 
+-- 兼容说明：fragment_status 当前仅作为旧数据字段保留，
+-- 不作为时间线徽标或小岛生长依据。
+
 CREATE TABLE fragments (
     id              BIGSERIAL           PRIMARY KEY,
     public_id       UUID                NOT NULL,
@@ -1757,22 +1760,23 @@ CREATE INDEX idx_ai_user_status ON ai_requests (user_id, status, created_at DESC
 
 ### 5.8 岛屿生长引擎 — 完整规则
 
-岛的生长由 `island/rules/engine.go` 实现，规则如下：
+岛的生长由 `island/rules/engine.go` 实现。自动主题岛以同标签的未删除光片数量为
+依据，手动岛以岛内成员数量为依据：
 
-| 触发条件 | 状态变化 | 说明 |
-|---------|---------|------|
-| 同一标签出现第 3 次 | `null` → `star_point` | 生成主题星点 |
-| 同一标签出现第 3-4 次之间 | `star_point` → `growing` | 生长中 |
-| 同一标签出现第 5 次及以上 | `growing` → `formed` | 小岛成形 |
-| 某主题连续 30 天无新光片 | `formed` → `dormant` | 进入静默状态（`dormant_at` 记录时间） |
-| 静默主题重新出现新光片 | `dormant` → `relit` | 旧光被重新点亮（`relit_at` 记录时间） |
-| 重亮后持续有新光片 | `relit` → `formed` | 恢复成形 |
+| 光片数量或活动 | 自动主题岛 | 手动小岛 |
+|---------------|------------|----------|
+| 0～2 束 | 不生成 | `star_point`（允许空岛） |
+| 3 束 | `star_point` | `star_point` |
+| 4 束 | `growing` | `growing` |
+| 5 束及以上 | `formed` | `formed` |
+| 已成岛 30 天无成员新建 | `dormant` | `dormant` |
+| 休眠后再次出现活动 | `relit` | 按成员数量直接重算 |
 
-`fragment_count` 是一个冗余字段，每次有新光片加入岛时递增，避免每次查询都要
-COUNT island_fragments。
+`fragment_count` 是冗余字段。更新岛屿时先计算实际匹配数量，再写回该字段，避免
+列表查询时重复执行 `COUNT island_fragments`。
 
-**岛屿的生长检测时机**：在光片创建、标签关联变更、标签新增时触发。不设定时任
-务——事件驱动，保证实时性。
+**当前检测时机**：自动主题岛在创建或编辑光片标签时重算；休眠在读取小岛列表时
+检查；手动岛在添加或移除成员时重算。完整边界见 6.8。
 
 ### 5.9 Nginx 配置要点
 
@@ -1784,7 +1788,7 @@ server {
     proxy_request_buffering off;  # 关闭请求缓冲（流式上传不适用，但 presigned 直传不经过此）
     proxy_buffering off;          # ⚠️ 关键：关闭响应缓冲，否则 SSE/流式响应失效
                                   # 未来柔光整理等 AI 流式场景需要此配置
-
+    
     # API 转发
     location /api/ {
         proxy_pass http://app:8080;
@@ -1793,7 +1797,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_read_timeout 120s;  # 预留长连接（AI 调用可能超 30s）
     }
-
+    
     # 扩展音频直接 serve（从 MinIO 拉取或本地静态文件）
     location /media/audio/ {
         proxy_pass http://minio:9000/whitenoise/;
@@ -2113,25 +2117,56 @@ GoRouter(
 
 **注意**：织线（/weave）不作为一级导航。织线入口在光片详情页（`/fragments/:id` 底部按钮"和另一束光织在一起"）、旧光回访卡、小岛详情页中作为上下文动作触发。
 
-### 6.8 FragmentStatus 计算规则
+### 6.8 小岛生长计算规则（当前实现）
 
-光片状态由 Go 端 `fragment/service/status.go` 计算，不在 DDL 中写死：
+旧版 `FragmentStatus` 六状态不再作为当前产品机制。数据库中的
+`fragment_status` 和 Flutter 兼容枚举暂时保留，只用于兼容旧数据；时间线不应据此
+展示状态徽标，小岛也不依赖它生长。
 
-| 状态 | 计算条件 |
-|-----|---------|
-| `twilight`（微光） | 默认初始状态。新创建的 fragment |
-| `stardust`（星尘） | fragment 被至少 1 条织线关联（作为 source 或 target） |
-| `echo`（回声） | fragment 创建超过 7 天，且在过去 7 天内被用户重新浏览/编辑过 |
-| `seed`（种子） | fragment 所属的 tag 出现了第 3 次（触发 island `star_point` 生长），该岛所有的 fragment 标记为 seed |
-| `tide`（潮汐） | fragment 的 emotion 与用户过去 7 天主要情绪不一致（情绪偏离） |
-| `island_core`（岛屿核心） | fragment 所属 island 达到 `formed` 状态 |
+小岛分为自动主题岛和手动小岛。两者共用 `star_point / growing / formed /
+dormant / relit` 五种岛屿状态，但生成和更新方式不同。
 
-状态转换在以下时机触发：
-- 创建 fragment → `twilight`
-- 织线创建/删除 → 重算 source 和 target 的 status
-- 用户浏览 fragment 详情 → 记录访问时间，定时任务每日批量重算 echo
-- 标签出现次数变化 → 触发 island 生长检测 → 关联 fragment 状态级联更新
-- stats 情绪密度变化 → 检测潮汐 fragment
+#### 自动主题岛
+
+自动主题岛只由同一标签下的有效光片数量产生。后端在创建或编辑光片标签时，统计
+当前用户带有该标签的未删除光片数量：
+
+| 同标签光片数 | 结果 |
+|-------------|------|
+| 0～2 束 | 不生成自动主题岛 |
+| 3 束 | `star_point`（主题星点） |
+| 4 束 | `growing`（生长中） |
+| 5 束及以上 | `formed`（已成岛） |
+
+- 每个用户的每个标签最多对应一座自动主题岛，岛名使用标签名
+- 自动岛生成或更新时，所有带该标签的未删除光片都会写入岛的成员关系
+- 当前只会重算本次创建或编辑后仍然存在的标签；从光片移除旧标签时，对应的旧岛
+  不会立即缩小。这是当前实现边界，不能描述为已经支持完整的双向缩减
+
+#### 手动小岛
+
+- 用户创建后立即存在，允许暂时没有光片，初始状态为 `star_point`
+- 只有手动小岛允许用户直接添加或移除成员
+- 0～3 束为 `star_point`，4 束为 `growing`，5 束及以上为 `formed`
+- 视觉层将 0 束光显示为“初生浅滩”，1～3 束显示为“开始生长”
+
+#### 休眠与重亮
+
+- 每次读取小岛列表时，后端会检查岛屿是否进入休眠
+- `formed` 或 `relit` 的岛，如果 30 天内没有任何成员光片的新创建记录，会变为
+  `dormant`
+- 自动岛休眠后再次出现该标签的活动，会先变为 `relit`；后续再次活动且仍有至少
+  5 束光时回到 `formed`
+- 手动岛在添加或移除成员后会直接按照成员数量重算，不经过 `relit`。这是当前手动
+  岛与自动岛之间仍存在的一处行为差异
+
+#### 离线回退
+
+- Flutter 离线时按本地标签使用相同的 3 / 4 / 5 阈值推导自动岛
+- 推导结果按光片数量降序排列，目前只返回前 6 座
+- 离线回退不计算 `dormant` 和 `relit`，联网后以后端结果为准
+
+小岛成长当前不使用情绪、图片或声音数量，也不使用旧版 `FragmentStatus` 判断。
 
 ### 6.9 标签与光片的业务逻辑
 
@@ -2247,7 +2282,7 @@ Flutter: auth interceptor (dio)
 3. **"自由放置" vs MVP 只有时间线** → "自由放置"是中长期功能（沉浸式空间做），MVP 时间河流是被动接收而非主动摆放，描述准确
 4. **"多模态"宣传 vs MVP 仅文字+图片+录音** → 产品定位写"多媒体"但功能表明确标注"不做涂鸦和短视频"。MVP 和内测版不对外宣称"全模态"
 5. **AI 柔光整理在一句话定义中 vs MVP 不做** → 定义描述完整产品形态，MVP 是当前交付范围。两者不矛盾，AI 按钮预留即可
-6. **光片状态在产品机制中 vs 数据结构缺失** → 已补 `fragment_status` ENUM 和 `fragment/service/status.go` 计算规则，状态由事件驱动而非用户手动设置
+6. **“主题反复出现” vs “小岛如何生长”** → 当前以同标签的有效光片数量作为自动岛的生长依据：3 束成为星点、4 束进入生长、5 束形成小岛；旧版 `FragmentStatus` 不再作为产品机制
 
 ### 6.15 SDD（规范驱动开发）闭环
 
@@ -2309,7 +2344,6 @@ CLAUDE.md 不需要一开始就完美。一开始覆盖核心规范即可。后�
 - 页面标题：时间河流
 - 日期分组：今天 / 昨天 / 某月某日
 - 光片卡片：文字摘要 + 图片缩略图 + 时间 + 情绪色点（小面积，不大量染色）
-- 光片状态：微光、星尘、回声等轻状态
 - 筛选条：按标签 / 情绪 / 媒介（文字/图片/录音）筛选
 - 旧光回访卡（P1）：根据标签/情绪/日期规则推荐相似旧光
 - 核心原则：不是日记也不是档案库，让用户重新看见——那天有哪些光片、某类情绪什么时候出现、哪些主题开始反复出现
@@ -2453,7 +2487,7 @@ CLAUDE.md 不需要一开始就完美。一开始覆盖核心规范即可。后�
 | 深色背景上的标题 | `AppText.inverseTitle` | 20 |
 | 深色背景上的正文 | `AppText.inverseBody` | 13 |
 
-**夜间模式**：所有文本必须经过 `AppText.onNight(style, nightMode)` 处理颜色，不要直接传 `style`。
+**夜间模式**：所有文本颜色必须通过 `NightTheme.of(context)` 的 `foreground` / `foregroundMuted` / `accent` 处理日夜切换，不要直接传日间 `style`（`AppText.onNight` 已移除）。
 
 **禁止操作**：
 
@@ -2666,7 +2700,7 @@ ThemeData 已配 `iconTheme`：日间 `AppColors.ink`，夜间 `AppColors.nightI
 - [ ] BottomSheet 三件套齐全吗？
 - [ ] 按钮是否四选一，不是 `Container + GestureDetector` 自造？
 - [ ] 卡片是否用了 `softDecoration` / `nightDecoration`？
-- [ ] 夜间模式文本是否都过了 `AppText.onNight(...)`？
+- [ ] 夜间模式文本颜色是否通过 `NightTheme.of(context).foreground/foregroundMuted` 处理，而非硬编码日间色？
 - [ ] **图标颜色有没有硬编码 `AppColors.ink/inkMuted/teaGreen`？普通图标应不传 color 走 iconTheme，强调图标用 nightMode 三元**（§9.10）
 - [ ] 动效是否引用 `AppMotion.*`，没有出现裸 `Duration(milliseconds: 数字)` 或 `Curves.xxx`？
 - [ ] 如果文件含自绘动画，是否在顶部声明了 `// MOTION_EXEMPT: self-painted` 标记？
@@ -2813,6 +2847,17 @@ Row [
 | `SettingsSectionLabel` | 设置分组小标签 | `AppText.eyebrow`(11) |
 
 业务页面里出现"开关行 / 导航行 / 信息行 / 分组标签"必须用上述 4 个组件，**禁止**用 `Material + InkWell + Row` 自造。
+
+### 10.5b Chip / 标签芯片
+
+整个 App 的标签芯片只允许以下两个组件，**禁止**再用 `GestureDetector + Container` 自造 Chip：
+
+| 组件 | 用途 | 实现 | 使用场景 |
+|---|---|---|---|
+| `XiguangChip`（[lib/ui/composites/xiguang_chip.dart](app/lib/ui/composites/xiguang_chip.dart)） | 可选中的筛选 Chip | `FilterChip` 封装，`selected` + `onSelected` 语义，胶囊形 | 多选筛选、分类切换、柔光整理提示词选择 |
+| `TagChip` / `MiniTag`（[lib/ui/composites/tag_chip.dart](app/lib/ui/composites/tag_chip.dart)） | 展示型标签（可选删除） | 自绘 `Container`，`filled` + `onTap` + `onDeleted` 语义，方形圆角 | 光片详情标签展示、标签管理、光片卡片内迷你标签 |
+
+**选择依据**：需要"选中/未选中"状态切换用 `XiguangChip`；只需要展示标签（可能带删除）用 `TagChip` / `MiniTag`。两者 API 不互换，不要混用。
 
 ### 10.6 装饰性入口组件白名单（当前为空）
 

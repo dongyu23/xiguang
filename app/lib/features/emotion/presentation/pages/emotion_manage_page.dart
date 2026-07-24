@@ -75,7 +75,7 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
                         AppText.titleLarge.copyWith(color: theme.foreground)),
               ),
               XiguangButton(
-                label: '心情',
+                label: '添加心情',
                 expand: false,
                 height: 40,
                 onPressed: () => _showEditSheet(context, null),
@@ -83,7 +83,7 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
               ),
               const SizedBox(width: AppSpacing.s6),
               XiguangButton(
-                label: '音乐',
+                label: '添加音乐',
                 expand: false,
                 height: 40,
                 onPressed: () => _showAudioSheet(context),
@@ -105,7 +105,7 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
                     ? const Center(
                         child: XiguangEmptyState(
                           title: '还没有心情',
-                          description: '点右上角"心情"，写一个自己的感觉。',
+                          description: '点右上角"添加心情"，写一个自己的感觉。',
                         ),
                       )
                     : ListView.separated(

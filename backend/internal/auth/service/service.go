@@ -55,7 +55,7 @@ func (s *Service) Register(ctx context.Context, params domain.RegisterParams) (d
 	if err != nil {
 		return domain.User{}, domain.TokenPair{}, err
 	}
-	tokens, err := s.IssueTokens(ctx, user.ID)
+	tokens, err := s.IssueTokens(ctx, user.ID, params.DeviceInfo)
 	return user, tokens, err
 }
 
@@ -74,7 +74,7 @@ func (s *Service) Login(ctx context.Context, params domain.LoginParams) (domain.
 		return domain.User{}, domain.TokenPair{}, err
 	}
 	user.PasswordHash = ""
-	tokens, err := s.IssueTokens(ctx, user.ID)
+	tokens, err := s.IssueTokens(ctx, user.ID, params.DeviceInfo)
 	return user, tokens, err
 }
 
@@ -117,6 +117,21 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, oldPassword,
 	return s.repo.UpdatePassword(ctx, userID, string(hash))
 }
 
+func (s *Service) DeleteAccount(ctx context.Context, userID int64, password string) error {
+	user, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	fullUser, err := s.repo.FindByUsername(ctx, user.Username)
+	if err != nil {
+		return err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(fullUser.PasswordHash), []byte(password)) != nil {
+		return ErrWrongPassword
+	}
+	return s.repo.DeleteUser(ctx, userID)
+}
+
 func (s *Service) Refresh(ctx context.Context, refreshToken string) (domain.TokenPair, error) {
 	if refreshToken == "" {
 		return domain.TokenPair{}, ErrRefreshFailed
@@ -126,63 +141,90 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (domain.Toke
 		return domain.TokenPair{}, err
 	}
 	accessExpiresAt := time.Now().Add(s.cfg.AccessExpiry)
-	userID, err := s.repo.RotateRefreshToken(ctx, tokenHash(refreshToken), tokenHash(newRefresh), time.Now().Add(s.cfg.RefreshExpiry))
+	userID, tokenID, err := s.repo.RotateRefreshToken(ctx, tokenHash(refreshToken), tokenHash(newRefresh), time.Now().Add(s.cfg.RefreshExpiry))
 	if err != nil {
 		return domain.TokenPair{}, ErrRefreshFailed
 	}
-	access, err := s.signToken(userID, accessExpiresAt)
+	access, err := s.signToken(userID, tokenID, accessExpiresAt)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
 	return domain.TokenPair{AccessToken: access, RefreshToken: newRefresh, ExpiresAt: accessExpiresAt}, nil
 }
 
-func (s *Service) IssueTokens(ctx context.Context, userID int64) (domain.TokenPair, error) {
+func (s *Service) IssueTokens(ctx context.Context, userID int64, deviceInfo string) (domain.TokenPair, error) {
 	expiresAt := time.Now().Add(s.cfg.AccessExpiry)
-	access, err := s.signToken(userID, expiresAt)
-	if err != nil {
-		return domain.TokenPair{}, err
-	}
 	refresh, err := randomToken()
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	err = s.repo.InsertRefreshToken(ctx, userID, tokenHash(refresh), time.Now().Add(s.cfg.RefreshExpiry))
+	tokenID, err := s.repo.InsertRefreshToken(ctx, userID, tokenHash(refresh), deviceInfo, time.Now().Add(s.cfg.RefreshExpiry))
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	access, err := s.signToken(userID, tokenID, expiresAt)
 	return domain.TokenPair{AccessToken: access, RefreshToken: refresh, ExpiresAt: expiresAt}, err
 }
 
+func (s *Service) ListDevices(ctx context.Context, userID int64) ([]domain.DeviceSession, error) {
+	return s.repo.ListDevices(ctx, userID)
+}
+
+func (s *Service) RevokeDevice(ctx context.Context, userID, tokenID int64) (bool, error) {
+	return s.repo.RevokeDevice(ctx, userID, tokenID)
+}
+
 func (s *Service) ParseToken(token string) (int64, error) {
+	userID, _, err := s.ParseTokenSession(token)
+	return userID, err
+}
+
+func (s *Service) ParseTokenSession(token string) (int64, int64, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return 0, shared.ErrUnauthorized
+		return 0, 0, shared.ErrUnauthorized
 	}
 	unsigned := parts[0] + "." + parts[1]
 	mac := hmac.New(sha256.New, []byte(s.cfg.JWTSecret))
 	mac.Write([]byte(unsigned))
 	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(expected), []byte(parts[2])) {
-		return 0, shared.ErrUnauthorized
+		return 0, 0, shared.ErrUnauthorized
 	}
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var payload struct {
 		Sub string `json:"sub"`
 		Exp int64  `json:"exp"`
+		Sid int64  `json:"sid"`
 	}
 	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if time.Now().Unix() > payload.Exp {
-		return 0, shared.ErrUnauthorized
+		return 0, 0, shared.ErrUnauthorized
 	}
-	return strconv.ParseInt(payload.Sub, 10, 64)
+	userID, err := strconv.ParseInt(payload.Sub, 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	if _, err := s.repo.FindByID(context.Background(), userID); err != nil {
+		return 0, 0, shared.ErrUnauthorized
+	}
+	if payload.Sid > 0 {
+		active, err := s.repo.DeviceSessionActive(context.Background(), userID, payload.Sid)
+		if err != nil || !active {
+			return 0, 0, shared.ErrUnauthorized
+		}
+	}
+	return userID, payload.Sid, nil
 }
 
-func (s *Service) signToken(userID int64, expiresAt time.Time) (string, error) {
+func (s *Service) signToken(userID, tokenID int64, expiresAt time.Time) (string, error) {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
-	payloadBytes, err := json.Marshal(map[string]any{"sub": strconv.FormatInt(userID, 10), "exp": expiresAt.Unix()})
+	payloadBytes, err := json.Marshal(map[string]any{"sub": strconv.FormatInt(userID, 10), "sid": tokenID, "exp": expiresAt.Unix()})
 	if err != nil {
 		return "", err
 	}

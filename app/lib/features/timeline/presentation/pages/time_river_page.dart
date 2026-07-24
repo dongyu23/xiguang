@@ -1,4 +1,6 @@
 // PAGE_SIZE_EXEMPT: migration in progress; selection workflow and timeline sections remain to be extracted.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,11 +16,13 @@ import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../features/fragment/domain/fragment.dart';
+import '../../../../features/fragment/application/fragment_library_controller.dart';
 import '../../../../features/relation/domain/relation.dart';
 import '../../../../features/timeline/domain/date_group.dart';
 import '../../application/timeline_actions_controller.dart';
 import '../../../../features/timeline/presentation/providers/timeline_provider.dart';
 import '../../../../ui/composites/light_card.dart';
+import '../../../../ui/composites/xiguang_card.dart';
 import '../../../../ui/primitives/scroll_to_top.dart';
 import '../widgets/timeline_month_picker.dart';
 
@@ -34,6 +38,11 @@ class TimeRiverPage extends ConsumerStatefulWidget {
 
 class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
   DateTime? _selectedMonth;
+  final _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  String _searchQuery = '';
+  List<Fragment>? _searchResults;
+  bool _searching = false;
   final Set<int> _selectedIds = {};
   bool _deleting = false;
 
@@ -50,6 +59,13 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
   List<Object>? _cachedSliverItems;
   List<Fragment>? _cachedFilteredItems;
   DateTime? _cachedSelectedMonth;
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
 
   List<Fragment> _buildItems(
       AsyncValue timeline, Map<int, String> relationByFragment) {
@@ -114,7 +130,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     final fragments = ref.watch(fragmentsProvider);
     final timeline = ref.watch(timelineGroupsProvider);
     final theme = NightTheme.of(context);
-    final polishEnabled = ref.watch(aiPolishEnabledProvider);
+    final polishEnabled = ref.watch(aiEnabledProvider);
     final polishing = ref.watch(timelineActionsControllerProvider).isLoading;
     final relations = ref.watch(relationsProvider);
     final relationByFragment = _buildRelationMap(relations);
@@ -136,13 +152,16 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
         error: (_, __) => const <Fragment>[],
       ),
     );
+    final visibleItems = _searchQuery.isEmpty
+        ? allItems
+        : (_searchResults ?? const <Fragment>[]);
     return Stack(children: [
       // C2: Background now provided by _AppShell in router.dart
       // C1: Use CustomScrollView + SliverList.builder for virtualized rendering
       SafeArea(
         child: ScrollToTop(
           builder: (context, controller) {
-            final sliverItems = _buildSliverItems(allItems);
+            final sliverItems = _buildSliverItems(visibleItems);
             return Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
@@ -163,18 +182,42 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
                       padding: const EdgeInsets.fromLTRB(
                           AppSpacing.s22, AppSpacing.s10, AppSpacing.s22, 0),
                       sliver: SliverToBoxAdapter(
-                        child: allItems.isNotEmpty
-                            ? _TimelineControls(
-                                selectedMonth: _selectedMonth,
-                                onSelected: (month) =>
-                                    setState(() => _selectedMonth = month),
-                                onOpenPicker: () => _showMonthPicker(allItems),
-                              )
-                            : const SizedBox(height: AppSpacing.xl),
+                        child: Row(children: [
+                          Expanded(
+                            child: _TimelineSearchField(
+                              controller: _searchController,
+                              searching: _searching,
+                              onChanged: (value) =>
+                                  _onSearchChanged(value, allItems),
+                              onClear: _clearSearch,
+                            ),
+                          ),
+                          if (visibleItems.isNotEmpty) ...[
+                            const SizedBox(width: AppSpacing.sm),
+                            _TimelineMonthButton(
+                              selectedMonth: _selectedMonth,
+                              onTap: () => _showMonthPicker(visibleItems),
+                            ),
+                          ],
+                        ]),
                       ),
                     ),
                     // Fragment list (virtualized) or loading/empty state
-                    if (allItems.isEmpty)
+                    if (_searchQuery.isNotEmpty &&
+                        !_searching &&
+                        sliverItems.isEmpty)
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.s22, AppSpacing.lg, AppSpacing.s22, 0),
+                        sliver: SliverToBoxAdapter(
+                          child: Text(
+                            '没有找到包含“$_searchQuery”的旧光。',
+                            style: AppText.body
+                                .copyWith(color: theme.foregroundMuted),
+                          ),
+                        ),
+                      )
+                    else if (allItems.isEmpty && _searchQuery.isEmpty)
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(
                             AppSpacing.s22, AppSpacing.md, AppSpacing.s22, 0),
@@ -241,17 +284,82 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
           },
         ),
       ),
-      if (_selectionMode)
-        _SelectionActionBar(
-          count: _selectedIds.length,
-          deleting: _deleting,
-          polishing: polishing,
-          polishEnabled: polishEnabled,
-          onCancel: _busy ? null : _clearSelection,
-          onPolish: _busy ? null : () => _polishSelected(timeline, fragments),
-          onDelete: _busy ? null : _deleteSelected,
-        ),
+      _SelectionActionBar(
+        visible: _selectionMode,
+        count: _selectedIds.length,
+        deleting: _deleting,
+        polishing: polishing,
+        polishEnabled: polishEnabled,
+        onCancel: _busy ? null : _clearSelection,
+        onPolish: _busy ? null : () => _polishSelected(timeline, fragments),
+        onDelete: _busy ? null : _deleteSelected,
+      ),
     ]);
+  }
+
+  void _onSearchChanged(String raw, List<Fragment> visibleHistory) {
+    final query = raw.trim();
+    _searchDebounce?.cancel();
+    if (query.isEmpty) {
+      _clearSearch();
+      return;
+    }
+    setState(() {
+      _searchQuery = query;
+      _searchResults = null;
+      _searching = true;
+      _selectedMonth = null;
+    });
+    _searchDebounce = Timer(const Duration(milliseconds: 280), () async {
+      try {
+        final results =
+            await ref.read(fragmentLibraryControllerProvider).search(query);
+        if (!mounted || _searchQuery != query) return;
+        final merged = <String, Fragment>{};
+        for (final fragment in results) {
+          merged[_searchKey(fragment)] = fragment;
+        }
+        // The timeline may already hold server history that has not been
+        // mirrored locally yet. Keep search useful while an older backend is
+        // being upgraded by also matching the history currently on screen.
+        for (final fragment in visibleHistory.where(
+          (fragment) => _matchesSearch(fragment, query),
+        )) {
+          merged.putIfAbsent(_searchKey(fragment), () => fragment);
+        }
+        setState(() {
+          _searchResults = merged.values.toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _searching = false;
+        });
+      } catch (_) {
+        if (!mounted || _searchQuery != query) return;
+        setState(() {
+          _searchResults = const [];
+          _searching = false;
+        });
+      }
+    });
+  }
+
+  String _searchKey(Fragment fragment) =>
+      fragment.publicId.isNotEmpty ? fragment.publicId : fragment.id.toString();
+
+  bool _matchesSearch(Fragment fragment, String query) {
+    final needle = query.toLowerCase();
+    return fragment.contentText.toLowerCase().contains(needle) ||
+        fragment.emotion.toLowerCase().contains(needle) ||
+        fragment.tags.any((tag) => tag.toLowerCase().contains(needle));
+  }
+
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    if (_searchController.text.isNotEmpty) _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _searchResults = null;
+      _searching = false;
+    });
   }
 
   void _startSelection(int id) {
@@ -318,22 +426,44 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
       );
       return;
     }
-    final result = await ref
+    final results = await ref
         .read(timelineActionsControllerProvider.notifier)
         .polish(selected);
     if (!mounted) return;
     setState(_selectedIds.clear);
-    final msg = StringBuffer();
-    if (result.success > 0) msg.write('已润色 ${result.success} 束光');
-    if (result.failed > 0) {
-      if (msg.isNotEmpty) msg.write('，');
-      msg.write('${result.failed} 束润色失败');
+    final valid =
+        results.where((item) => item.polishedText.isNotEmpty).toList();
+    if (valid.isEmpty) {
+      showOverlaySnackBar(
+        context,
+        const SnackBar(
+          content: Text('没有生成新的润色内容。'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
     }
-    if (msg.isEmpty) msg.write('没有生成新的润色内容。');
+    final accepted = await showModalBottomSheet<List<TimelinePolishItem>>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _BatchPolishSheet(items: valid),
+    );
+    if (accepted == null || accepted.isEmpty || !mounted) return;
+    for (final item in accepted) {
+      await ref.read(fragmentsProvider.notifier).updateText(
+            item.fragment.id,
+            item.polishedText,
+            emotion: item.fragment.emotion,
+            tags: item.fragment.tags,
+          );
+    }
+    if (!mounted) return;
     showOverlaySnackBar(
       context,
       SnackBar(
-        content: Text(msg.toString()),
+        content: Text('已润色 ${accepted.length} 束光'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -591,6 +721,7 @@ class _LoadingBar extends StatelessWidget {
 
 class _SelectionActionBar extends StatelessWidget {
   const _SelectionActionBar({
+    required this.visible,
     required this.count,
     required this.deleting,
     required this.polishing,
@@ -600,6 +731,7 @@ class _SelectionActionBar extends StatelessWidget {
     required this.onDelete,
   });
 
+  final bool visible;
   final int count;
   final bool deleting;
   final bool polishing;
@@ -617,117 +749,138 @@ class _SelectionActionBar extends StatelessWidget {
       right: 18,
       // 抬到浮岛导航上方，避免与底部功能岛重叠（§9.4 pageBottomNav）
       bottom: AppSpacing.pageBottomNav,
-      child: SafeArea(
-        top: false,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.s14,
-                    AppSpacing.s12, AppSpacing.s12, AppSpacing.s12),
-                decoration: BoxDecoration(
-                  color: theme.surfaceHigh.withValues(
-                    alpha: theme.isNight ? .96 : .98,
-                  ),
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  border: Border.all(
-                    color: theme.border.withValues(alpha: .95),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(
-                        alpha: theme.isNight ? .24 : .12,
-                      ),
-                      blurRadius: 28,
-                      offset: const Offset(0, 14),
-                    ),
-                  ],
-                ),
-                child: Row(children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: theme.accent.withValues(
-                        alpha: theme.isNight ? .18 : .14,
-                      ),
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                    child: Icon(
-                      Icons.checklist_rounded,
-                      size: 19,
-                      color: theme.accent,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.s10),
-                  Expanded(
-                    child: Text(
-                      '已选 $count 束光',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          AppText.titleSmall.copyWith(color: theme.foreground),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: onCancel,
-                    child: Text(
-                      '取消',
-                      style:
-                          AppText.chip.copyWith(color: theme.foregroundMuted),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.s6),
-                  if (polishEnabled) ...[
-                    OutlinedButton.icon(
-                      onPressed: onPolish,
-                      icon: polishing
-                          ? SizedBox(
-                              width: 15,
-                              height: 15,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.teaGreen,
-                              ),
-                            )
-                          : const Icon(Icons.auto_awesome_outlined, size: 17),
-                      label: Text(polishing ? '润色中' : 'AI 润色'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(96, 40),
-                        foregroundColor: theme.accent,
-                        side: BorderSide(
-                          color: AppColors.teaGreen.withValues(alpha: .58),
-                        ),
-                        shape: RoundedRectangleBorder(
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: AnimatedSlide(
+          offset: visible ? Offset.zero : const Offset(0, .22),
+          duration: AppMotion.normal,
+          curve: AppMotion.easeOut,
+          child: AnimatedOpacity(
+            opacity: visible ? 1 : 0,
+            duration: AppMotion.fast,
+            curve: visible ? AppMotion.easeOut : AppMotion.easeIn,
+            child: ExcludeSemantics(
+              excluding: !visible,
+              child: SafeArea(
+                top: false,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.s14,
+                            AppSpacing.s12, AppSpacing.s12, AppSpacing.s12),
+                        decoration: BoxDecoration(
+                          color: theme.surfaceHigh.withValues(
+                            alpha: theme.isNight ? .96 : .98,
+                          ),
                           borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(
+                            color: theme.border.withValues(alpha: .95),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(
+                                alpha: theme.isNight ? .24 : .12,
+                              ),
+                              blurRadius: 28,
+                              offset: const Offset(0, 14),
+                            ),
+                          ],
                         ),
+                        child: Row(children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: theme.accent.withValues(
+                                alpha: theme.isNight ? .18 : .14,
+                              ),
+                              borderRadius: BorderRadius.circular(AppRadius.md),
+                            ),
+                            child: Icon(
+                              Icons.checklist_rounded,
+                              size: 19,
+                              color: theme.accent,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.s10),
+                          Expanded(
+                            child: Text(
+                              '已选 $count 束光',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.titleSmall
+                                  .copyWith(color: theme.foreground),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: onCancel,
+                            child: Text(
+                              '取消',
+                              style: AppText.chip
+                                  .copyWith(color: theme.foregroundMuted),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.s6),
+                          if (polishEnabled) ...[
+                            OutlinedButton.icon(
+                              onPressed: onPolish,
+                              icon: polishing
+                                  ? SizedBox(
+                                      width: 15,
+                                      height: 15,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.teaGreen,
+                                      ),
+                                    )
+                                  : const Icon(Icons.auto_awesome_outlined,
+                                      size: 17),
+                              label: Text(polishing ? '润色中' : 'AI 润色'),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(96, 40),
+                                foregroundColor: theme.accent,
+                                side: BorderSide(
+                                  color:
+                                      AppColors.teaGreen.withValues(alpha: .58),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadius.md),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.s6),
+                          ],
+                          FilledButton.icon(
+                            onPressed: onDelete,
+                            icon: deleting
+                                ? SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.white
+                                          .withValues(alpha: .78),
+                                    ),
+                                  )
+                                : const Icon(Icons.delete_outline_rounded,
+                                    size: 18),
+                            label: Text(deleting ? '删除中' : '删除'),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size(86, 40),
+                              backgroundColor: AppColors.sunsetCoral,
+                              foregroundColor: AppColors.white,
+                            ),
+                          ),
+                        ]),
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.s6),
-                  ],
-                  FilledButton.icon(
-                    onPressed: onDelete,
-                    icon: deleting
-                        ? SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.white.withValues(alpha: .78),
-                            ),
-                          )
-                        : const Icon(Icons.delete_outline_rounded, size: 18),
-                    label: Text(deleting ? '删除中' : '删除'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(86, 40),
-                      backgroundColor: AppColors.sunsetCoral,
-                      foregroundColor: AppColors.white,
-                    ),
                   ),
-                ]),
+                ),
               ),
             ),
           ),
@@ -737,118 +890,125 @@ class _SelectionActionBar extends StatelessWidget {
   }
 }
 
-class _TimelineControls extends StatelessWidget {
-  const _TimelineControls({
+class _TimelineMonthButton extends StatelessWidget {
+  const _TimelineMonthButton({
     required this.selectedMonth,
-    required this.onSelected,
-    required this.onOpenPicker,
-  });
-
-  final DateTime? selectedMonth;
-  final ValueChanged<DateTime?> onSelected;
-  final VoidCallback onOpenPicker;
-
-  @override
-  Widget build(BuildContext context) {
-    return _DateNavigationBar(
-      selectedMonth: selectedMonth,
-      onSelected: onSelected,
-      onOpenPicker: onOpenPicker,
-    );
-  }
-}
-
-class _DateNavigationBar extends StatelessWidget {
-  const _DateNavigationBar({
-    required this.selectedMonth,
-    required this.onSelected,
-    required this.onOpenPicker,
-  });
-
-  final DateTime? selectedMonth;
-  final ValueChanged<DateTime?> onSelected;
-  final VoidCallback onOpenPicker;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = NightTheme.of(context);
-    final border = theme.border.withValues(alpha: .92);
-    final monthLabel = selectedMonth == null
-        ? '全部旧光'
-        : '${selectedMonth!.year}年${selectedMonth!.month}月';
-
-    return Container(
-      height: 40,
-      decoration: BoxDecoration(
-        color: theme.surfaceHigh.withValues(alpha: .56),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: border),
-      ),
-      child: Row(children: [
-        _DateNavigationItem(
-          label: '全部',
-          selected: selectedMonth == null,
-          onTap: () => onSelected(null),
-        ),
-        if (selectedMonth != null) ...[
-          Container(width: 1, height: 22, color: border),
-          _DateNavigationItem(
-            label: monthLabel,
-            selected: true,
-            onTap: onOpenPicker,
-          ),
-        ],
-        const Spacer(),
-        Container(width: 1, height: 22, color: border),
-        IconButton(
-          tooltip: '选择月份',
-          onPressed: onOpenPicker,
-          icon: Icon(
-            Icons.calendar_month_outlined,
-            size: 17,
-            color: theme.foregroundMuted,
-          ),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-        ),
-      ]),
-    );
-  }
-}
-
-class _DateNavigationItem extends StatelessWidget {
-  const _DateNavigationItem({
-    required this.label,
-    required this.selected,
     required this.onTap,
   });
 
-  final String label;
-  final bool selected;
+  final DateTime? selectedMonth;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        child: AnimatedContainer(
-          duration: AppMotion.quick,
-          height: 38,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-          decoration: BoxDecoration(
-            color: selected ? theme.accent : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-          ),
-          child: Text(
-            label,
-            style: AppText.chip.copyWith(
-              color: selected ? AppColors.white : theme.foregroundMuted,
+    final selected = selectedMonth != null;
+    final label = selected ? '${selectedMonth!.month}月' : '全部';
+    return Semantics(
+      button: true,
+      label: selected
+          ? '当前筛选${selectedMonth!.year}年${selectedMonth!.month}月'
+          : '当前显示全部日期',
+      child: Material(
+        color: theme.surfaceHigh.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: Container(
+            height: 44,
+            constraints: const BoxConstraints(minWidth: 88),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              border: Border.all(
+                color: selected
+                    ? theme.accent.withValues(alpha: .7)
+                    : theme.border.withValues(alpha: .9),
+              ),
             ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.calendar_month_outlined,
+                    size: 17,
+                    color: selected ? theme.accent : theme.foregroundMuted),
+                const SizedBox(width: AppSpacing.s6),
+                Text(label,
+                    style: AppText.chip.copyWith(
+                        color:
+                            selected ? theme.accent : theme.foregroundMuted)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimelineSearchField extends StatelessWidget {
+  const _TimelineSearchField({
+    required this.controller,
+    required this.searching,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final bool searching;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      borderSide: BorderSide(color: theme.border.withValues(alpha: .9)),
+    );
+    return SizedBox(
+      height: 44,
+      child: TextField(
+        key: const ValueKey('timeline-full-text-search'),
+        controller: controller,
+        onChanged: onChanged,
+        textInputAction: TextInputAction.search,
+        style: AppText.body.copyWith(color: theme.foreground),
+        decoration: InputDecoration(
+          hintText: '查找旧光',
+          hintStyle: AppText.body.copyWith(color: theme.foregroundMuted),
+          isDense: true,
+          filled: true,
+          fillColor: theme.surfaceHigh.withValues(alpha: .72),
+          contentPadding: const EdgeInsets.symmetric(vertical: AppSpacing.s10),
+          prefixIconConstraints:
+              const BoxConstraints.tightFor(width: 40, height: 44),
+          prefixIcon: Icon(Icons.search_rounded,
+              size: 20, color: theme.foregroundMuted),
+          suffixIconConstraints:
+              const BoxConstraints.tightFor(width: 40, height: 44),
+          suffixIcon: searching
+              ? Padding(
+                  padding: const EdgeInsets.all(AppSpacing.s12),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: theme.accent,
+                  ),
+                )
+              : controller.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: '清除搜索',
+                      onPressed: onClear,
+                      padding: EdgeInsets.zero,
+                      icon: Icon(Icons.close_rounded,
+                          size: 18, color: theme.foregroundMuted),
+                    ),
+          border: border,
+          enabledBorder: border,
+          focusedBorder: border.copyWith(
+            borderSide: BorderSide(color: theme.accent, width: 1.4),
           ),
         ),
       ),
@@ -923,4 +1083,143 @@ class _DateRailItem {
   const _DateRailItem({required this.label, required this.count});
   final String label;
   final int count;
+}
+
+/// 批量润色候选 sheet：展示 AI 润色结果，用户逐条选择是否采纳。
+/// 不自动覆盖原文（决策 3），由用户挑选后才写入。
+class _BatchPolishSheet extends StatefulWidget {
+  const _BatchPolishSheet({required this.items});
+
+  final List<TimelinePolishItem> items;
+
+  @override
+  State<_BatchPolishSheet> createState() => _BatchPolishSheetState();
+}
+
+class _BatchPolishSheetState extends State<_BatchPolishSheet> {
+  late final List<bool> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = List.filled(widget.items.length, true);
+  }
+
+  int get _acceptedCount => _selected.where((s) => s).length;
+
+  void _submit() {
+    final accepted = <TimelinePolishItem>[];
+    for (var i = 0; i < widget.items.length; i++) {
+      if (_selected[i]) accepted.add(widget.items[i]);
+    }
+    Navigator.of(context).pop(accepted);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return SafeArea(
+      top: false,
+      child: XiguangCard(
+        margin: const EdgeInsets.fromLTRB(
+            AppSpacing.md, 0, AppSpacing.md, AppSpacing.md),
+        padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg,
+            AppSpacing.lg, AppSpacing.lg + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text('润色预览',
+                      style:
+                          AppText.titleLarge.copyWith(color: theme.foreground)),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  color: theme.foregroundMuted,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              '挑选要采纳的润色，未选中的保留原文。',
+              style: AppText.caption.copyWith(color: theme.foregroundMuted),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: widget.items.length,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: AppSpacing.sm),
+                itemBuilder: (ctx, i) {
+                  final item = widget.items[i];
+                  return InkWell(
+                    onTap: () => setState(() => _selected[i] = !_selected[i]),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    child: XiguangCard(
+                      variant: XiguangCardVariant.outlined,
+                      selected: _selected[i],
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                _selected[i]
+                                    ? Icons.check_circle_rounded
+                                    : Icons.radio_button_unchecked_rounded,
+                                size: 18,
+                                color: _selected[i]
+                                    ? theme.accent
+                                    : theme.foregroundMuted,
+                              ),
+                              const SizedBox(width: AppSpacing.xs),
+                              Text('原文',
+                                  style: AppText.caption
+                                      .copyWith(color: theme.foregroundMuted)),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            item.fragment.contentText,
+                            style: AppText.bodyMuted
+                                .copyWith(color: theme.foregroundMuted),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text('润色',
+                              style: AppText.caption
+                                  .copyWith(color: theme.accent)),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            item.polishedText,
+                            style:
+                                AppText.body.copyWith(color: theme.foreground),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _acceptedCount == 0 ? null : _submit,
+                child: Text('采纳 $_acceptedCount 束光'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -90,6 +90,52 @@ App 默认连接 `http://127.0.0.1:8088/api/v1`。如需自定义：
 flutter run --dart-define=API_BASE_URL=http://你的地址/api/v1
 ```
 
+### 调试方式
+
+隙光有两种本地调试路径，按是否需要真机区分：
+
+**方式 A：推到手机调试（iOS / Android 真机）**
+
+最接近真实使用环境的调试方式，能验证触摸交互、软键盘行为、相机/录音权限、真机性能。
+
+```bash
+# 先确认设备已连接并被识别
+flutter devices
+
+# Android：手机开启 USB 调试，连接后
+flutter run -d android
+
+# iOS：Xcode 配好签名、设备信任开发者后
+flutter run -d ios
+```
+
+- 首次连接 iOS 真机需要在 Xcode 里打开 `app/ios/Runner.xcworkspace` 设置 Signing Team
+- App 默认连 `http://127.0.0.1:8088/api/v1`，真机上 127.0.0.1 指向手机本身，需用 `--dart-define=API_BASE_URL=http://你电脑局域网IP:8088/api/v1` 指向后端
+- 真机调试是验证键盘交互、手势、媒体权限的最终判据
+
+**方式 B：编译 macOS 原生版本**
+
+不需要真机，把同一份 Flutter 代码编译成 Mac 原生应用直接在电脑上跑，迭代最快，适合调布局、逻辑、初始化流程。
+
+```bash
+cd app
+
+# debug 构建，带调试横幅，支持热重载
+flutter run -d macos
+
+# 产物（双击即可单独打开）：
+# app/build/macos/Build/Products/Debug/xiguang.app
+
+# 出一个无调试横幅、性能更好的 release 版
+flutter build macos --release
+# 产物：app/build/macos/Build/Products/Release/xiguang.app
+```
+
+- macOS 版用鼠标/键盘交互，**测不到**真机软键盘弹起时的布局避让、触屏手势、相机/录音权限等行为，这些仍需回到方式 A 验证
+- 启动卡住、白屏、初始化崩溃等问题用方式 B 排查最快（日志直接在终端，无 Xcode/Logcat 中转）
+
+两种方式共用同一份 Dart 代码，排查问题时可先用 B 快速定位，再用 A 确认真机表现。
+
 ### 3. 跑测试
 
 ```bash

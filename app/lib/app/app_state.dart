@@ -69,6 +69,7 @@ Future<void> updateNightModeOption(
 }
 
 /// App-shell UI state. Feature workflows must own their own state instead.
-final aiPolishEnabledProvider = StateProvider<bool>((ref) => false);
+/// AI 总开关：关闭时所有 AI 功能入口不渲染、controller 守卫拒绝调用。
+final aiEnabledProvider = StateProvider<bool>((ref) => false);
 final activeTabIndexProvider = StateProvider<int>((ref) => 0);
 final scrollToTopSignalProvider = StateProvider<int>((ref) => 0);

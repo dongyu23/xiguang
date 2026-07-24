@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/island_model.dart';
 import 'island_providers.dart';
+import 'universe_overview_provider.dart';
 
 class IslandCreateState {
   const IslandCreateState({this.isCreating = false, this.error});
@@ -25,6 +26,7 @@ class IslandCreateController extends AutoDisposeNotifier<IslandCreateState> {
           .read(islandRepositoryProvider)
           .createIsland(name, description);
       ref.invalidate(islandsProvider);
+      ref.invalidate(universeOverviewProvider);
       state = const IslandCreateState();
       return island;
     } catch (error) {

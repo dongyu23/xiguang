@@ -51,7 +51,11 @@ func (h *Handler) requests(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) buildIslands(w http.ResponseWriter, r *http.Request) {
 	userID, _ := auth.UserID(r.Context())
-	result := h.service.BuildIslands(r.Context(), userID)
+	var req struct {
+		RangeDays int `json:"range_days"`
+	}
+	_ = shared.DecodeJSON(r, &req)
+	result := h.service.BuildIslands(r.Context(), userID, req.RangeDays)
 
 	status := http.StatusOK
 	switch result.Status {

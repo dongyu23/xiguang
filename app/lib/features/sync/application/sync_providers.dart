@@ -33,17 +33,24 @@ class SyncConfigNotifier extends StateNotifier<SyncConfig> {
   Future<void> _restore() async {
     final prefs = await SharedPreferences.getInstance();
     final frequencyName = prefs.getString(_frequencyKey);
-    final frequency = SyncFrequency.values.firstWhere(
+    final restoredFrequency = SyncFrequency.values.firstWhere(
       (item) => item.name == frequencyName,
       orElse: () => SyncFrequency.onCapture,
     );
+    final wasManual = restoredFrequency == SyncFrequency.manual;
+    final frequency = wasManual ? SyncFrequency.onCapture : restoredFrequency;
+    final enabled = wasManual ? false : prefs.getBool(_enabledKey) ?? true;
     if (!mounted) return;
     state = SyncConfig(
-      enabled: prefs.getBool(_enabledKey) ?? true,
+      enabled: enabled,
       frequency: frequency,
       wifiOnly: prefs.getBool(_wifiOnlyKey) ?? false,
       lastServerRev: prefs.getInt(_lastServerRevKey) ?? 0,
     );
+    if (wasManual) {
+      await prefs.setBool(_enabledKey, false);
+      await prefs.setString(_frequencyKey, frequency.name);
+    }
   }
 
   Future<void> _persist(SyncConfig config) async {
@@ -78,7 +85,6 @@ final syncEngineProvider = Provider<SyncEngine>((ref) {
   // authRestore 完成和登录成功后分别触发。
   fragmentRepository.onFragmentChanged =
       (entityType, opType, fragmentId, payload) {
-    if (!ref.read(syncConfigProvider).enabled) return;
     final publicId = (payload['public_id'] as String?) ?? fragmentId.toString();
     engine.enqueue(OpLog(
       clientOpId: engine.nextOpId(entityType, opType),

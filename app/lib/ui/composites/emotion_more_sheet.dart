@@ -160,8 +160,7 @@ class _EmotionMoreSheetState extends ConsumerState<EmotionMoreSheet> {
   }
 
   /// 切换某个心绪的展示/收起状态，带 max-7 / min-1 约束。
-  Future<void> _toggleShow(
-      UserEmotion emotion, List<UserEmotion> all) async {
+  Future<void> _toggleShow(UserEmotion emotion, List<UserEmotion> all) async {
     final shownCount = all.where((e) => !e.hidden).length;
     if (!emotion.hidden) {
       // 收起
@@ -219,11 +218,13 @@ class _EmotionMoreSheetState extends ConsumerState<EmotionMoreSheet> {
 
   void _toast(String msg) {
     showOverlaySnackBar(
-        context,
-        SnackBar(
-            content: Text(msg),
-            duration: AppMotion.snackbar,
-            behavior: SnackBarBehavior.floating));
+      context,
+      SnackBar(
+        content: Text(msg),
+        duration: AppMotion.snackbar,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 }
 
@@ -259,8 +260,7 @@ class _MoreChip extends StatelessWidget {
           decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(AppRadius.sm),
-            border:
-                Border.all(color: borderColor, width: isShown ? 1.1 : .85),
+            border: Border.all(color: borderColor, width: isShown ? 1.1 : .85),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Container(

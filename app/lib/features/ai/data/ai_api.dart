@@ -16,8 +16,10 @@ class AIApi {
     return _api.post('/ai/glow-summary', body, options: _aiOptions);
   }
 
-  Future<Map<String, dynamic>> buildIslands() {
-    return _api.post('/ai/build-islands', {}, options: _aiOptions);
+  Future<Map<String, dynamic>> buildIslands({int rangeDays = 0}) {
+    return _api.post('/ai/build-islands', {
+      if (rangeDays > 0) 'range_days': rangeDays,
+    }, options: _aiOptions);
   }
 
   Future<Map<String, dynamic>> polishFragment(

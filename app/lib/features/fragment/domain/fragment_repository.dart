@@ -34,6 +34,10 @@ abstract interface class FragmentRepositoryContract {
   Future<List<Fragment>> listFragments();
   Future<List<Fragment>> listLocalFragments();
   Future<List<Fragment>?> tryListRemoteFragments();
+  Future<List<Fragment>> searchFragments(String query);
+  Future<List<Fragment>> listDeletedFragments();
+  Future<void> restoreFragment(int id);
+  Future<void> permanentlyDeleteFragment(int id);
   Future<CursorPage<Fragment>> listFragmentsPaged({
     String? cursor,
     int limit = 20,

@@ -11,6 +11,7 @@ abstract class IslandRepositoryPort {
   List<IslandModel> computeIslandsFromFragments(List<Fragment> fragments);
   Future<IslandModel?> getIsland(String name);
   Future<IslandModel> createIsland(String name, String description);
+  Future<void> deleteIsland(int islandId);
   Future<IslandModel> addFragments(int islandId, List<int> fragmentIds);
   Future<IslandModel> removeFragments(int islandId, List<int> fragmentIds);
   Future<List<Fragment>> listIslandFragments(String name, {int? islandId});

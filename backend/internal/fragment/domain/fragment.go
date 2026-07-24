@@ -36,6 +36,7 @@ type UpdateParams struct {
 type ListQuery struct {
 	Emotion string
 	Tag     string
+	Search  string
 	Limit   int
 }
 

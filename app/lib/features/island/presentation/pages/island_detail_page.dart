@@ -12,17 +12,22 @@ import '../../../../features/fragment/domain/fragment.dart';
 import '../../domain/island_repository.dart';
 import '../../../../ui/composites/light_card.dart';
 import '../../../../ui/composites/xiguang_button.dart';
-import '../../../../ui/composites/xiguang_card.dart';
-import '../../../../ui/composites/xiguang_chip.dart';
 import '../../../../ui/composites/xiguang_empty_state.dart';
 import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
+import '../../domain/universe_overview.dart';
 import '../widgets/fragment_picker_sheet.dart';
+import '../widgets/island_detail_hero.dart';
 
 class IslandDetailPage extends ConsumerStatefulWidget {
-  const IslandDetailPage({super.key, required this.id});
+  const IslandDetailPage({
+    super.key,
+    required this.id,
+    this.initialIsland,
+  });
 
   final String id;
+  final IslandVisualNode? initialIsland;
 
   @override
   ConsumerState<IslandDetailPage> createState() => _IslandDetailPageState();
@@ -32,6 +37,13 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
   @override
   Widget build(BuildContext context) {
     final detail = ref.watch(islandDetailProvider(widget.id));
+    final data = detail.valueOrNull;
+    final heroIsland = data == null
+        ? widget.initialIsland
+        : IslandVisualNode(
+            island: data.island,
+            fragments: data.fragments,
+          );
     final theme = NightTheme.of(context);
     return XiguangPage(
       backgroundLayer: const AtmosphereBackground(),
@@ -44,81 +56,68 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _IslandPageHeader(title: '小岛详情'),
-          const SizedBox(height: AppSpacing.s18),
-          detail.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(AppSpacing.xl),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (_, __) => XiguangEmptyState(
-              title: '暂时无法打开这座小岛',
-              description: '后端暂时没有回应，小岛内容不会丢失。',
-              icon: Icons.wifi_off_rounded,
-              action: XiguangButton(
-                label: '重新加载',
-                expand: false,
-                variant: XiguangButtonVariant.secondary,
-                leading: const Icon(Icons.refresh_rounded, size: 18),
-                onPressed: () =>
-                    ref.invalidate(islandDetailProvider(widget.id)),
+          _IslandPageHeader(
+            title: '岛上',
+            onDelete: data != null && data.island.islandId > 0
+                ? () => _confirmDeleteIsland(data)
+                : null,
+          ),
+          const SizedBox(height: AppSpacing.s6),
+          if (heroIsland != null)
+            IslandDetailHero(
+              key: const ValueKey('stable-island-detail-hero'),
+              island: heroIsland,
+              onAdd: data?.island.manual == true
+                  ? () => _showFragmentPicker(context, data!)
+                  : null,
+            )
+          else
+            detail.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.all(AppSpacing.xl),
+                child: Center(child: CircularProgressIndicator()),
               ),
-            ),
-            data: (data) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                XiguangCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('ISLAND',
-                          style: AppText.eyebrow
-                              .copyWith(color: theme.foregroundMuted)),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(data.island.name,
-                          style: AppText.titleMedium
-                              .copyWith(color: theme.foreground)),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(data.island.description,
-                          style:
-                              AppText.body.copyWith(color: theme.foreground)),
-                      const SizedBox(height: AppSpacing.s10),
-                      Text(
-                        '${data.fragments.length} 束光 · ${_statusLabel(data.island.status)}',
-                        style: AppText.caption
-                            .copyWith(color: theme.foregroundMuted),
-                      ),
-                      const SizedBox(height: AppSpacing.s14),
-                      if (data.island.manual)
-                        XiguangButton(
-                          label: '添加光片',
-                          expand: false,
-                          onPressed: () => _showFragmentPicker(context, data),
-                          leading: const Icon(Icons.add_rounded, size: 18),
-                        )
-                      else
-                        const _AutoIslandPill(),
-                    ],
-                  ),
+              error: (_, __) => XiguangEmptyState(
+                title: '暂时无法打开这座小岛',
+                description: '后端暂时没有回应，小岛内容不会丢失。',
+                icon: Icons.wifi_off_rounded,
+                action: XiguangButton(
+                  label: '重新加载',
+                  expand: false,
+                  variant: XiguangButtonVariant.secondary,
+                  leading: const Icon(Icons.refresh_rounded, size: 18),
+                  onPressed: () =>
+                      ref.invalidate(islandDetailProvider(widget.id)),
                 ),
-                const SizedBox(height: AppSpacing.s14),
-                if (data.fragments.isEmpty)
-                  XiguangEmptyState(
-                    title: data.island.manual ? '这座小岛还没有光' : '它还在慢慢生长',
-                    description:
-                        data.island.manual ? '可以先添加第一束光。' : '这座小岛还在等更多同主题的光靠近。',
-                  )
-                else
-                  ...data.fragments.map((fragment) => LightFragmentCard(
-                        fragment: fragment.toLightFragment(),
-                        dense: true,
-                        showAttachmentBadge: true,
-                        showTitle: false,
-                        onTap: () => context.push('/fragments/${fragment.id}'),
-                      )),
+              ),
+              data: (_) => const SizedBox.shrink(),
+            ),
+          if (data != null && data.fragments.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.s28),
+            Row(
+              children: [
+                Text(
+                  '岛上的光',
+                  style: AppText.titleMedium.copyWith(color: theme.foreground),
+                ),
+                const Spacer(),
+                Text(
+                  '${data.fragments.length} 束',
+                  style: AppText.caption.copyWith(color: theme.foregroundMuted),
+                ),
               ],
             ),
-          ),
+            const SizedBox(height: AppSpacing.s14),
+            ...data.fragments.map((fragment) => LightFragmentCard(
+                  fragment: fragment.toLightFragment(),
+                  dense: true,
+                  showAttachmentBadge: true,
+                  showTitle: false,
+                  onTap: () => context.push(
+                    _fragmentDetailPath(data, fragment),
+                  ),
+                )),
+          ],
         ],
       ),
     );
@@ -173,21 +172,73 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
     );
   }
 
-  String _statusLabel(String status) {
-    return switch (status) {
-      'formed' => '已成岛',
-      'growing' => '生长中',
-      'dormant' => '休眠',
-      'relit' => '重新亮起',
-      _ => '主题星点',
-    };
+  String _fragmentDetailPath(
+    IslandDetailData current,
+    Fragment fragment,
+  ) {
+    final island = current.island;
+    return Uri(
+      path: '/fragments/${fragment.id}',
+      queryParameters: {
+        'islandId': '${island.islandId}',
+        'islandRouteId': widget.id,
+        'islandName': island.name,
+        'islandManual': island.manual ? '1' : '0',
+      },
+    ).toString();
+  }
+
+  Future<void> _confirmDeleteIsland(IslandDetailData current) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = NightTheme.of(dialogContext);
+        return AlertDialog(
+          backgroundColor: theme.surfaceHigh,
+          title: Text(
+            '删除「${current.island.name}」？',
+            style: AppText.titleMedium.copyWith(color: theme.foreground),
+          ),
+          content: Text(
+            '只会删除这座小岛，岛内的光片仍会保留在线和其他小岛中。',
+            style: AppText.body.copyWith(color: theme.foregroundMuted),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.danger,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('删除小岛'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(islandDetailProvider(widget.id).notifier).deleteIsland();
+      if (mounted) context.go('/universe');
+    } catch (_) {
+      if (!mounted) return;
+      showOverlaySnackBar(
+        context,
+        const SnackBar(content: Text('暂时无法删除这座小岛，请稍后再试。')),
+      );
+    }
   }
 }
 
 class _IslandPageHeader extends StatelessWidget {
-  const _IslandPageHeader({required this.title});
+  const _IslandPageHeader({required this.title, this.onDelete});
 
   final String title;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -208,22 +259,33 @@ class _IslandPageHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        if (onDelete != null)
+          Semantics(
+            button: true,
+            label: '删除小岛',
+            child: ExcludeSemantics(
+              child: SizedBox.square(
+                dimension: 36,
+                child: IconButton(
+                  key: const ValueKey('delete-island-detail-button'),
+                  tooltip: '删除小岛',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 36,
+                    height: 36,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onDelete,
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    size: 19,
+                    color: theme.danger,
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
-    );
-  }
-}
-
-// _InlineActionButton 已删除，统一使用 FilledButton.icon（§10.2 默认色，§10.6 不再保留装饰白名单）。
-
-class _AutoIslandPill extends StatelessWidget {
-  const _AutoIslandPill();
-
-  @override
-  Widget build(BuildContext context) {
-    return const XiguangChip(
-      label: '自动生长',
-      selected: true,
-      leading: Icon(Icons.auto_awesome_rounded, size: 16),
     );
   }
 }

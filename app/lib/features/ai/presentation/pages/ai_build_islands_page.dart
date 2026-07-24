@@ -37,6 +37,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
   final _selectedIslandKeys = <String>{};
   final _createdIslandKeys = <String>{};
   bool _confirming = false;
+  int _rangeDays = 0;
 
   Future<void> _startAnalysis() async {
     final phases = ['正在读你的光片…', '发现了一些隐秘的联系…', '正在给它们取名字…'];
@@ -49,8 +50,9 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
     }
 
     try {
-      final body =
-          await ref.read(aiBuildIslandsControllerProvider.notifier).analyze();
+      final body = await ref
+          .read(aiBuildIslandsControllerProvider.notifier)
+          .analyze(rangeDays: _rangeDays);
       if (!mounted) return;
       if (body['status'] == 'rate_limited') {
         setState(() {
@@ -204,9 +206,26 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            '星图管理员会读你的光片，找出可以成岛的主题。每天一次，结果由你确认。',
+            '星图管理员会读你选范围内的光片，找出可以成岛的主题。结果由你确认。',
             style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted),
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('分析范围',
+                style:
+                    AppText.eyebrow.copyWith(color: theme.foregroundMuted)),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Wrap(
+            spacing: AppSpacing.s6,
+            runSpacing: AppSpacing.s6,
+            children: [
+              _rangeChip(7, '最近 7 天'),
+              _rangeChip(30, '最近 30 天'),
+              _rangeChip(0, '全部'),
+            ],
           ),
           const SizedBox(height: AppSpacing.xl),
           SizedBox(
@@ -405,6 +424,10 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
             ),
           ]),
           const SizedBox(height: AppSpacing.s12),
+          Text('为什么是这些光',
+              style: AppText.eyebrow
+                  .copyWith(color: theme.foregroundMuted)),
+          const SizedBox(height: AppSpacing.xs),
           Text(
             island['description'] as String? ?? '',
             style: AppText.body.copyWith(color: theme.foreground),
@@ -413,22 +436,33 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
             const SizedBox(height: AppSpacing.sm),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    if (selected) {
-                      _selectedIslandKeys.remove(key);
-                    } else {
-                      _selectedIslandKeys.add(key);
-                    }
-                  });
-                },
-                icon: Icon(
-                  selected
-                      ? Icons.remove_circle_outline
-                      : Icons.add_circle_outline,
-                ),
-                label: Text(selected ? '跳过' : '恢复加入'),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _editIslandName(island),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('改名'),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        if (selected) {
+                          _selectedIslandKeys.remove(key);
+                        } else {
+                          _selectedIslandKeys.add(key);
+                        }
+                      });
+                    },
+                    icon: Icon(
+                      selected
+                          ? Icons.remove_circle_outline
+                          : Icons.add_circle_outline,
+                    ),
+                    label: Text(selected ? '跳过' : '恢复加入'),
+                  ),
+                ],
               ),
             ),
           ],
@@ -477,7 +511,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
   }
 
   String _islandKey(int index, Map<String, dynamic> island) {
-    return '$index:${island['name'] as String? ?? ''}';
+    return '$index';
   }
 
   String _confidenceLabel(String confidence) {
@@ -486,6 +520,54 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
       'low' => '联系较弱',
       _ => '有些联系',
     };
+  }
+
+  Future<void> _editIslandName(Map<String, dynamic> island) async {
+    final controller =
+        TextEditingController(text: island['name'] as String? ?? '');
+    String? result;
+    try {
+      result = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('给这座岛改个名字', style: AppText.titleLarge),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(labelText: '岛名'),
+            autofocus: true,
+            maxLength: 32,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final name = controller.text.trim();
+                if (name.isNotEmpty) Navigator.of(ctx).pop(name);
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+    if (result == null || result.isEmpty || !mounted) return;
+    setState(() {
+      island['name'] = result;
+    });
+  }
+
+  Widget _rangeChip(int days, String label) {
+    final selected = _rangeDays == days;
+    return XiguangChip(
+      label: label,
+      selected: selected,
+      onSelected: (_) => setState(() => _rangeDays = days),
+    );
   }
 }
 

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'app_state.dart';
+import 'providers.dart' show localReminderServiceProvider;
 import '../features/auth/presentation/providers/auth_providers.dart';
 import '../features/sync/presentation/providers/sync_providers.dart';
 import '../design/tokens/colors.dart';
@@ -21,6 +22,9 @@ import '../features/auth/domain/auth_session.dart';
 import '../features/app_update/application/app_update_providers.dart';
 import '../features/sync/domain/sync_config.dart';
 import '../features/sync/presentation/providers/sync_provider.dart';
+import '../features/fragment/domain/fragment.dart';
+import '../features/fragment/presentation/providers/fragment_providers.dart';
+import '../features/reminder/application/reminder_providers.dart';
 import 'router.dart';
 import 'splash_gate.dart';
 
@@ -89,7 +93,8 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
       next.whenData((session) {
         ref.read(authSessionProvider.notifier).state = session;
         if (session != null) {
-          ref.read(aiPolishEnabledProvider.notifier).state = session.aiEnabled;
+          ref.read(aiEnabledProvider.notifier).state = session.aiEnabled;
+          _scheduleReminders();
           // 重启 app 时（authRestore 恢复会话）主动触发一次同步检查。
           // syncEngineProvider 提前初始化时调过一次 checkConnection，但那时
           // apiClient 可能还没 token，必然失败。authRestore 完成后再调一次。
@@ -97,11 +102,8 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
           engine.checkConnection().then((connected) {
             if (!ref.exists(syncStatusProvider)) return;
             ref.read(syncStatusProvider.notifier).state = engine.status;
-            if (connected && ref.read(syncConfigProvider).enabled) {
-              engine.syncNow().then((status) {
-                if (!ref.exists(syncStatusProvider)) return;
-                ref.read(syncStatusProvider.notifier).state = status;
-              });
+            if (connected) {
+              triggerAutoSync(ref, SyncFrequency.onAppOpen);
             }
           });
         }
@@ -118,6 +120,7 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
       // 此时 apiClient 还没 token，永远拿到离线状态；登录后没有任何地方再次触发，
       // 导致用户进入应用后云同步一直显示离线，必须手动点测试连接才会更新。
       if (previous?.id != next?.id && next != null) {
+        _scheduleReminders();
         // 会话变更（登录或恢复）-> 立即标记已连接。
         // 登录：刚成功调用了 /auth/login，后端必然可达。
         // 恢复：本地读取 session，后续 checkConnection() 会验证真实连通性，
@@ -131,23 +134,35 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
         engine.checkConnection().then((connected) {
           if (!ref.exists(syncStatusProvider)) return;
           ref.read(syncStatusProvider.notifier).state = engine.status;
-          if (connected && ref.read(syncConfigProvider).enabled) {
-            engine.syncNow().then((status) {
-              if (!ref.exists(syncStatusProvider)) return;
-              ref.read(syncStatusProvider.notifier).state = status;
-            });
+          if (connected) {
+            triggerAutoSync(ref, SyncFrequency.onAppOpen);
           }
         });
+      }
+    });
+    ref.listenManual<AsyncValue<List<Fragment>>>(fragmentsProvider,
+        (previous, next) {
+      if (next.hasValue && !identical(previous?.value, next.value)) {
+        _scheduleReminders(fragments: next.value);
       }
     });
     // H8: Trigger nightMode initialization here (was previously in removed Consumer)
     ref.listenManual<AsyncValue<bool>>(nightModeLoadedProvider, (_, __) {});
     // 预初始化 SyncEngine，确保 onFragmentChanged 在首次捕光前就位
-    ref.read(syncEngineProvider);
+    final syncEngine = ref.read(syncEngineProvider);
+    syncEngine.onOperationEnqueued = () {
+      triggerAutoSync(ref, SyncFrequency.onCapture);
+    };
     ref.listenManual<SyncConfig>(syncConfigProvider, (previous, next) {
       if (previous == null) return;
+      ref.read(syncEngineProvider).updateConfig(next);
       stopAutoSync();
       startAutoSync(ref);
+      if (next.enabled &&
+          next.frequency == SyncFrequency.onAppOpen &&
+          ref.read(authSessionProvider) != null) {
+        triggerAutoSync(ref, SyncFrequency.onAppOpen);
+      }
     });
     // 启动后台静默检查更新 — 30 秒后访问 /app/version，将红点状态写入 provider。
     _appUpdateTimer = Timer(AppTiming.updateCheckDelay, () {
@@ -160,10 +175,27 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
     startAutoSync(ref);
   }
 
+  Future<void> _scheduleReminders({List<Fragment>? fragments}) async {
+    final session = ref.read(authSessionProvider);
+    if (session == null) return;
+    try {
+      final settings = await ref.read(reminderSettingsProvider.future);
+      final values = fragments ??
+          await ref.read(fragmentRepositoryProvider).listLocalFragments();
+      await ref.read(localReminderServiceProvider).schedule(
+            settings: settings,
+            fragments: values,
+            showPreview: session.privacyMode == 'balanced',
+          );
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(_lifecycleObserver);
     _appUpdateTimer?.cancel();
+    ref.read(syncEngineProvider).onOperationEnqueued = null;
+    stopAutoSync();
     _authNotifier.dispose();
     _router?.dispose();
     super.dispose();
@@ -251,14 +283,7 @@ class _AppLifecycleObserver with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      final engine = _ref.read(syncEngineProvider);
-      if (!engine.status.isSyncing) {
-        engine.syncNow().then((status) {
-          if (_ref.exists(syncStatusProvider)) {
-            _ref.read(syncStatusProvider.notifier).state = status;
-          }
-        });
-      }
+      triggerAutoSync(_ref, SyncFrequency.onAppOpen);
     }
   }
 }

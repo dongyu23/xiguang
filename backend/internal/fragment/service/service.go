@@ -57,6 +57,18 @@ func (s *Service) List(ctx context.Context, userID int64, emotion, tag, rawLimit
 	return s.repo.List(ctx, userID, domain.ListQuery{Emotion: emotion, Tag: tag, Limit: parseLimit(rawLimit, 50)})
 }
 
+func (s *Service) Search(ctx context.Context, userID int64, query, rawLimit string) ([]domain.Fragment, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []domain.Fragment{}, nil
+	}
+	return s.repo.List(ctx, userID, domain.ListQuery{Search: query, Limit: parseLimit(rawLimit, 100)})
+}
+
+func (s *Service) ListDeleted(ctx context.Context, userID int64, rawLimit string) ([]domain.Fragment, error) {
+	return s.repo.ListDeleted(ctx, userID, parseLimit(rawLimit, 100))
+}
+
 func (s *Service) Timeline(ctx context.Context, userID int64, emotion, tag, rawLimit string) (domain.TimelineResponse, error) {
 	limit := parseLimit(rawLimit, 100)
 	// Request one extra to detect has_more.
@@ -112,6 +124,14 @@ func (s *Service) Update(ctx context.Context, userID int64, params domain.Update
 
 func (s *Service) Delete(ctx context.Context, userID, id int64) (bool, error) {
 	return s.repo.Delete(ctx, userID, id)
+}
+
+func (s *Service) Restore(ctx context.Context, userID, id int64) (bool, error) {
+	return s.repo.Restore(ctx, userID, id)
+}
+
+func (s *Service) DeletePermanently(ctx context.Context, userID, id int64) (bool, error) {
+	return s.repo.DeletePermanently(ctx, userID, id)
 }
 
 func (s *Service) Weave(ctx context.Context, userID, sourceID, targetID int64, relationType, note string) (any, error) {

@@ -29,15 +29,22 @@ type pgFragmentLister struct {
 	db *pgxpool.Pool
 }
 
-func (l *pgFragmentLister) ListAllFragments(ctx context.Context, userID int64) ([]service.FragmentSummary, error) {
-	rows, err := l.db.Query(ctx, `SELECT f.id, f.content_text, COALESCE(f.emotion, '说不清'),
+func (l *pgFragmentLister) ListFragments(ctx context.Context, userID int64, rangeDays int) ([]service.FragmentSummary, error) {
+	query := `SELECT f.id, f.content_text, COALESCE(f.emotion, '说不清'),
 		COALESCE(jsonb_agg(DISTINCT t.name) FILTER (WHERE t.name IS NOT NULL), '[]'::jsonb)
 		FROM fragments f
 		LEFT JOIN fragment_tags ft ON ft.fragment_id = f.id
 		LEFT JOIN tags t ON t.id = ft.tag_id AND t.deleted_at IS NULL
-		WHERE f.user_id = $1 AND f.is_deleted = FALSE
+		WHERE f.user_id = $1 AND f.is_deleted = FALSE`
+	args := []any{userID}
+	if rangeDays > 0 {
+		query += ` AND f.created_at > now() - ($2 * interval '1 day')`
+		args = append(args, rangeDays)
+	}
+	query += `
 		GROUP BY f.id
-		ORDER BY f.created_at DESC`, userID)
+		ORDER BY f.created_at DESC`
+	rows, err := l.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

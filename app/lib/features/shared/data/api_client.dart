@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 
@@ -33,6 +34,14 @@ class ApiClient {
 
   String get baseUrl => _dio.options.baseUrl;
   bool get hasToken => _accessToken != null;
+  String get serverOrigin {
+    final uri = Uri.parse(baseUrl);
+    return uri
+        .replace(path: '', query: null, fragment: null)
+        .toString()
+        .replaceFirst(RegExp(r'/$'), '');
+  }
+
   String? debugAccessTokenForVerification() => _accessToken;
 
   void updateBaseUrl(String baseUrl) {
@@ -81,6 +90,35 @@ class ApiClient {
       options: Options(headers: _authHeaders()),
     );
     return _unwrap(response.data);
+  }
+
+  Future<void> downloadToFile(String source, String targetPath) async {
+    final trimmed = source.trim();
+    final url = trimmed.startsWith('http://') || trimmed.startsWith('https://')
+        ? trimmed
+        : '$serverOrigin/${trimmed.replaceFirst(RegExp(r'^/+'), '')}';
+    await _dio.download(
+      url,
+      targetPath,
+      options: Options(headers: _authHeaders()),
+    );
+  }
+
+  Future<void> uploadToSignedUrl(
+    String url,
+    String filePath, {
+    required String contentType,
+  }) async {
+    await Dio().put<void>(
+      url,
+      data: File(filePath).openRead(),
+      options: Options(
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': await File(filePath).length(),
+        },
+      ),
+    );
   }
 
   set tokenRefreshCallback(TokenRefreshCallback? callback) {

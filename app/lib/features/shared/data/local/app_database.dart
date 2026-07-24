@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../emotion/domain/emotion_sounds.dart';
 
@@ -21,8 +22,12 @@ class Fragments extends Table {
       text().named('media_urls').withDefault(const Constant('[]'))();
   DateTimeColumn get createdAt =>
       dateTime().named('created_at').withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().named('updated_at').nullable()();
   BoolColumn get isSynced =>
       boolean().named('is_synced').withDefault(const Constant(false))();
+  BoolColumn get isDeleted =>
+      boolean().named('is_deleted').withDefault(const Constant(false))();
+  DateTimeColumn get deletedAt => dateTime().named('deleted_at').nullable()();
 }
 
 /// 本地 OpLog 表（待同步操作）
@@ -80,7 +85,93 @@ class AudioLibrary extends Table {
       ];
 }
 
-@DriftDatabase(tables: [Fragments, OpLogs, Emotions, AudioLibrary])
+@DataClassName('LocalRelationEntry')
+class LocalRelations extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get serverId => integer().named('server_id').nullable()();
+  TextColumn get publicId => text().named('public_id')();
+  TextColumn get sourcePublicId => text().named('source_public_id')();
+  TextColumn get targetPublicId => text().named('target_public_id')();
+  TextColumn get relationType => text().named('relation_type')();
+  TextColumn get note => text().nullable()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {publicId}
+      ];
+}
+
+@DataClassName('LocalIslandEntry')
+class LocalIslands extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get serverId => integer().named('server_id').nullable()();
+  TextColumn get publicId => text().named('public_id')();
+  TextColumn get name => text()();
+  TextColumn get description => text().withDefault(const Constant(''))();
+  TextColumn get status => text().withDefault(const Constant('manual'))();
+  BoolColumn get isManual =>
+      boolean().named('is_manual').withDefault(const Constant(true))();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {publicId}
+      ];
+}
+
+@DataClassName('LocalIslandMemberEntry')
+class LocalIslandMembers extends Table {
+  TextColumn get islandPublicId => text().named('island_public_id')();
+  TextColumn get fragmentPublicId => text().named('fragment_public_id')();
+
+  @override
+  Set<Column> get primaryKey => {islandPublicId, fragmentPublicId};
+}
+
+@DataClassName('MediaAssetEntry')
+class MediaAssets extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get fragmentPublicId => text().named('fragment_public_id')();
+  TextColumn get source => text()();
+  TextColumn get localPath => text().named('local_path').nullable()();
+  TextColumn get objectKey => text().named('object_key').nullable()();
+  TextColumn get mimeType => text().named('mime_type')();
+  IntColumn get fileSize => integer().named('file_size')();
+  TextColumn get sha256 => text()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {fragmentPublicId, sha256}
+      ];
+}
+
+@DataClassName('ArchiveImportJobEntry')
+class ArchiveImportJobs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get archiveId => text().named('archive_id')();
+  TextColumn get archivePath => text().named('archive_path')();
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  TextColumn get reportJson =>
+      text().named('report_json').withDefault(const Constant('{}'))();
+  DateTimeColumn get createdAt =>
+      dateTime().named('created_at').withDefault(currentDateAndTime)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {archiveId}
+      ];
+}
+
+@DriftDatabase(tables: [
+  Fragments,
+  OpLogs,
+  Emotions,
+  AudioLibrary,
+  LocalRelations,
+  LocalIslands,
+  LocalIslandMembers,
+  MediaAssets,
+  ArchiveImportJobs,
+])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
@@ -89,7 +180,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -102,24 +193,94 @@ class AppDatabase extends _$AppDatabase {
             // Drift uses the current table definition here, so a direct
             // v1 -> v4 upgrade already creates every emotion column. Do not
             // run the incremental ALTER TABLE steps below for this branch.
-            await m.createTable(emotions);
+            if (!await _tableExists('emotions')) {
+              await m.createTable(emotions);
+            }
             await _seedDefaultEmotions();
-            if (to >= 4) await m.createTable(audioLibrary);
+            if (to >= 4 && !await _tableExists('audio_library')) {
+              await m.createTable(audioLibrary);
+            }
           } else {
             if (from < 3) {
               // v3: 心情增加 sound_key 列，并为已有默认心情绑定声音
-              await m.addColumn(emotions, emotions.soundKey);
+              if (!await _columnExists('emotions', 'sound_key')) {
+                await m.addColumn(emotions, emotions.soundKey);
+              }
               await _backfillDefaultSoundKeys();
             }
             if (from < 4) {
               // v4: 心情增加 is_user_default / hidden 列；新增音频库表
-              await m.addColumn(emotions, emotions.isUserDefault);
-              await m.addColumn(emotions, emotions.hidden);
-              await m.createTable(audioLibrary);
+              if (!await _columnExists('emotions', 'is_user_default')) {
+                await m.addColumn(emotions, emotions.isUserDefault);
+              }
+              if (!await _columnExists('emotions', 'hidden')) {
+                await m.addColumn(emotions, emotions.hidden);
+              }
+              if (!await _tableExists('audio_library')) {
+                await m.createTable(audioLibrary);
+              }
             }
+          }
+          if (from < 5) {
+            if (!await _columnExists('fragments', 'updated_at')) {
+              await m.addColumn(fragments, fragments.updatedAt);
+            }
+            if (!await _tableExists('local_relations')) {
+              await m.createTable(localRelations);
+            }
+            if (!await _tableExists('local_islands')) {
+              await m.createTable(localIslands);
+            }
+            if (!await _tableExists('local_island_members')) {
+              await m.createTable(localIslandMembers);
+            }
+            if (!await _tableExists('media_assets')) {
+              await m.createTable(mediaAssets);
+            }
+            if (!await _tableExists('archive_import_jobs')) {
+              await m.createTable(archiveImportJobs);
+            }
+          }
+          if (from < 6) {
+            if (!await _columnExists('fragments', 'is_deleted')) {
+              await m.addColumn(fragments, fragments.isDeleted);
+            }
+            if (!await _columnExists('fragments', 'deleted_at')) {
+              await m.addColumn(fragments, fragments.deletedAt);
+            }
+          }
+          if (from < 5) {
+            await _backfillFragmentMetadata();
           }
         },
       );
+
+  Future<bool> _tableExists(String name) async {
+    final rows = await customSelect(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+      variables: [Variable<String>(name)],
+    ).get();
+    return rows.isNotEmpty;
+  }
+
+  Future<bool> _columnExists(String table, String column) async {
+    final rows = await customSelect('PRAGMA table_info("$table")').get();
+    return rows.any((row) => row.read<String>('name') == column);
+  }
+
+  Future<void> _backfillFragmentMetadata() async {
+    final rows = await select(fragments).get();
+    const uuid = Uuid();
+    for (final row in rows) {
+      if (row.publicId.isNotEmpty && row.updatedAt != null) continue;
+      await (update(fragments)..where((table) => table.id.equals(row.id)))
+          .write(FragmentsCompanion(
+        publicId:
+            row.publicId.isEmpty ? Value(uuid.v4()) : const Value.absent(),
+        updatedAt: Value(row.updatedAt ?? row.createdAt),
+      ));
+    }
+  }
 
   /// 默认 7 个情绪种子数据（与 AppColors._emotionMap 对齐）。
   /// 颜色用 Color.value (int) 持久化，声音绑定见 emotion_sounds.dart。
@@ -157,7 +318,31 @@ class AppDatabase extends _$AppDatabase {
   // ── Fragment CRUD ──
 
   Future<List<Fragment>> getAllFragments() {
-    return (select(fragments)..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+    return (select(fragments)
+          ..where((t) => t.isDeleted.equals(false))
+          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+        .get();
+  }
+
+  Future<List<Fragment>> searchFragments(String query) {
+    final pattern = '%${query.trim()}%';
+    return (select(fragments)
+          ..where((t) =>
+              t.isDeleted.equals(false) &
+              (t.contentText.like(pattern) |
+                  t.tags.like(pattern) |
+                  t.emotion.like(pattern)))
+          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+        .get();
+  }
+
+  Future<List<Fragment>> getDeletedFragments() {
+    return (select(fragments)
+          ..where((t) => t.isDeleted.equals(true))
+          ..orderBy([
+            (t) => OrderingTerm.desc(t.deletedAt),
+            (t) => OrderingTerm.desc(t.createdAt),
+          ]))
         .get();
   }
 
@@ -174,6 +359,24 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<int> deleteFragment(int id) {
+    return (update(fragments)..where((t) => t.id.equals(id))).write(
+      FragmentsCompanion(
+        isDeleted: const Value(true),
+        deletedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<int> restoreFragment(int id) {
+    return (update(fragments)..where((t) => t.id.equals(id))).write(
+      const FragmentsCompanion(
+        isDeleted: Value(false),
+        deletedAt: Value(null),
+      ),
+    );
+  }
+
+  Future<int> permanentlyDeleteFragment(int id) {
     return (delete(fragments)..where((t) => t.id.equals(id))).go();
   }
 

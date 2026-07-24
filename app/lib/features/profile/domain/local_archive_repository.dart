@@ -1,6 +1,13 @@
-import '../../fragment/domain/fragment.dart';
-import 'local_export_result.dart';
+import 'archive_models.dart';
 
 abstract interface class LocalArchiveRepositoryPort {
-  Future<LocalExportResult> exportFragments(List<Fragment> fragments);
+  Future<ArchivePreflight> preflightExport();
+
+  Stream<ArchiveProgress> exportArchive(ArchiveExportRequest request);
+
+  Future<ArchiveImportPreview> inspectArchive(String zipPath);
+
+  Stream<ArchiveProgress> importArchive(ArchiveImportRequest request);
+
+  Future<void> verifyArchive(String zipPath);
 }

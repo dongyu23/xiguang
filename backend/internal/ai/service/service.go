@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,7 +23,7 @@ type FragmentSummary struct {
 }
 
 type FragmentLister interface {
-	ListAllFragments(ctx context.Context, userID int64) ([]FragmentSummary, error)
+	ListFragments(ctx context.Context, userID int64, rangeDays int) ([]FragmentSummary, error)
 }
 
 type Service struct {
@@ -57,7 +58,7 @@ func (s *Service) Requests(ctx context.Context, userID int64) (map[string]any, e
 	return map[string]any{"requests": items, "generated_at": time.Now()}, nil
 }
 
-func (s *Service) BuildIslands(ctx context.Context, userID int64) domain.BuildIslandsResponse {
+func (s *Service) BuildIslands(ctx context.Context, userID int64, rangeDays int) domain.BuildIslandsResponse {
 	dailyCount, err := s.repo.DailyBuildCount(ctx, userID)
 	if err != nil {
 		dailyCount = 0
@@ -69,7 +70,7 @@ func (s *Service) BuildIslands(ctx context.Context, userID int64) domain.BuildIs
 		}
 	}
 
-	fragments, err := s.frag.ListAllFragments(ctx, userID)
+	fragments, err := s.frag.ListFragments(ctx, userID, rangeDays)
 	if err != nil {
 		return domain.BuildIslandsResponse{
 			Status:  "error",
@@ -86,17 +87,21 @@ func (s *Service) BuildIslands(ctx context.Context, userID int64) domain.BuildIs
 
 	fragJSON, _ := json.Marshal(fragments)
 	inputSummary := fmt.Sprintf("analysing %d fragments", len(fragments))
+	fragmentIDs := make([]int64, len(fragments))
+	for i, f := range fragments {
+		fragmentIDs[i] = f.ID
+	}
 
 	aiResponse, tokens, err := s.ai.Chat(ctx, buildIslandsSystemPrompt, string(fragJSON))
 	if err != nil {
-		_ = s.repo.LogBuildIslands(ctx, userID, inputSummary, fmt.Sprintf(`{"error":"%s"}`, err.Error()))
+		_ = s.repo.LogBuildIslands(ctx, userID, fragmentIDs, inputSummary, fmt.Sprintf(`{"error":"%s"}`, err.Error()))
 		return domain.BuildIslandsResponse{
 			Status:  "error",
-			Message: "星图管理员暂时无法工作。请稍后再试。",
+			Message: aiErrorMessage(err),
 		}
 	}
 
-	_ = s.repo.LogBuildIslands(ctx, userID, inputSummary, aiResponse)
+	_ = s.repo.LogBuildIslands(ctx, userID, fragmentIDs, inputSummary, aiResponse)
 
 	var parsed struct {
 		Islands []domain.AISuggestedIsland `json:"islands"`
@@ -104,7 +109,7 @@ func (s *Service) BuildIslands(ctx context.Context, userID int64) domain.BuildIs
 	if err := json.Unmarshal([]byte(aiResponse), &parsed); err != nil {
 		return domain.BuildIslandsResponse{
 			Status:  "parse_error",
-			Message: "星图管理员看懂了，但没能说清楚。要不要再试一次？",
+			Message: "AI 返回了无法理解的内容，请重试。",
 		}
 	}
 
@@ -163,19 +168,33 @@ func (s *Service) PolishFragment(ctx context.Context, userID int64, req domain.P
 		}
 	}
 
+	polishCount, err := s.repo.DailyPolishCount(ctx, userID)
+	if err != nil {
+		polishCount = 0
+	}
+	if polishCount >= repository.MaxDailyPolish {
+		return domain.PolishResponse{
+			Status:  "rate_limited",
+			Message: "今天的润色次数已达上限，明天再试。",
+		}
+	}
+
+	inputSummary := fmt.Sprintf("polish: %d chars", len([]rune(req.ContentText)))
 	userMsg := fmt.Sprintf("原文：%s\n情绪：%s\n\n请润色这段文字，保持原意和长度，让它更温柔、更有画面感。只返回润色后的文字，不要加引号或说明。",
 		req.ContentText, req.Emotion)
 
 	polished, _, err := s.ai.TextChat(ctx, polishSystemPrompt, userMsg)
 	if err != nil {
+		_ = s.repo.LogPolish(ctx, userID, inputSummary, fmt.Sprintf(`{"error":"%s"}`, err.Error()))
 		return domain.PolishResponse{
 			Status:  "error",
-			Message: "星图管理员一时失神，请稍后再试。",
+			Message: aiErrorMessage(err),
 		}
 	}
 
 	polished = strings.TrimSpace(polished)
 	if polished == "" || polished == req.ContentText {
+		_ = s.repo.LogPolish(ctx, userID, inputSummary, "no_change")
 		return domain.PolishResponse{
 			Status:       "no_change",
 			Message:      "它已经足够好了，不需要改动。",
@@ -183,6 +202,7 @@ func (s *Service) PolishFragment(ctx context.Context, userID int64, req domain.P
 		}
 	}
 
+	_ = s.repo.LogPolish(ctx, userID, inputSummary, polished)
 	return domain.PolishResponse{
 		Status:       "success",
 		Message:      "润色完成。",
@@ -191,3 +211,11 @@ func (s *Service) PolishFragment(ctx context.Context, userID int64, req domain.P
 }
 
 const polishSystemPrompt = "你是隙光 App 的星图管理员，负责轻轻帮用户润色文字。\n\n规则：\n- 保持原文的语气、长度和核心意思\n- 让文字更温柔、更有画面感，但不刻意堆砌修辞\n- 不改动用户原本想表达的情绪\n- 不改动任何人名、地名、具体时间\n- 如果原文已经很好，就原样返回\n- 只返回润色后的文字，不要加引号、不要加任何说明"
+
+// aiErrorMessage 将 provider 错误翻译为用户可操作的真实原因，不掩盖成拟人化文案。
+func aiErrorMessage(err error) string {
+	if errors.Is(err, provider.ErrNotConfigured) {
+		return "AI 服务尚未配置，无法使用。"
+	}
+	return "AI 服务暂时不可用，请稍后重试。"
+}

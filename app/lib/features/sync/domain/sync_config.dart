@@ -29,20 +29,28 @@ class SyncConfig {
 
 enum SyncFrequency {
   /// 每次捕光后立即推送。
-  onCapture('每次捕光时'),
+  onCapture('每次捕光后'),
 
   /// 每 5 分钟自动检查。
-  every5Minutes('每 5 分钟'),
+  every5Minutes('使用时每 5 分钟'),
 
   /// 每小时自动检查。
-  hourly('每小时'),
+  hourly('使用时每小时'),
 
   /// 仅在打开 App 时推送。
-  onAppOpen('打开 App 时'),
+  onAppOpen('打开或返回 App 时'),
 
-  /// 完全手动触发。
+  /// 旧版持久化值，仅用于迁移，不再展示。
+  @Deprecated('关闭云同步后使用“立即同步”代替')
   manual('手动触发');
 
   const SyncFrequency(this.label);
   final String label;
+
+  static const automaticValues = <SyncFrequency>[
+    onCapture,
+    every5Minutes,
+    hourly,
+    onAppOpen,
+  ];
 }

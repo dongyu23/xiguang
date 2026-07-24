@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -20,9 +21,16 @@ type MinIOProvider struct {
 
 func NewMinIOProvider(cfg config.Config) (*MinIOProvider, error) {
 	useSSL := cfg.MinIOEndpoint != "minio:9000"
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// The app and MinIO share a private Docker network. Host proxy variables
+	// must never intercept service-to-service traffic such as `minio:9000`.
+	if cfg.MinIOEndpoint == "minio:9000" {
+		transport.Proxy = nil
+	}
 	client, err := minio.New(cfg.MinIOEndpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
-		Secure: useSSL,
+		Creds:     credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
+		Secure:    useSSL,
+		Transport: transport,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("minio client: %w", err)

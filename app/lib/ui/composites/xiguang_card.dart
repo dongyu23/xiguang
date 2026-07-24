@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design/themes/extensions/night_theme.dart';
+import '../../design/tokens/motion.dart';
 import '../../design/tokens/radius.dart';
 import '../../design/tokens/shadows.dart';
 import '../../design/tokens/spacing.dart';
@@ -15,8 +16,14 @@ class XiguangCard extends StatelessWidget {
     this.padding = const EdgeInsets.all(AppSpacing.s18),
     this.onTap,
     this.onLongPress,
+    this.onTapDown,
+    this.onTapUp,
+    this.onTapCancel,
+    this.onLongPressStart,
+    this.onLongPressEnd,
     this.margin,
     this.selected = false,
+    this.highlighted = false,
   });
 
   final Widget child;
@@ -24,8 +31,14 @@ class XiguangCard extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final GestureTapDownCallback? onTapDown;
+  final GestureTapUpCallback? onTapUp;
+  final GestureTapCancelCallback? onTapCancel;
+  final GestureLongPressStartCallback? onLongPressStart;
+  final GestureLongPressEndCallback? onLongPressEnd;
   final EdgeInsetsGeometry? margin;
   final bool selected;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
@@ -47,23 +60,47 @@ class XiguangCard extends StatelessWidget {
           border: Border.all(color: theme.border),
         ),
     };
-    final decoration = selected
+    final decoration = selected || highlighted
         ? baseDecoration.copyWith(
-            border: Border.all(color: theme.accent, width: 1.4),
+            border: Border.all(
+              color: theme.accent.withValues(alpha: highlighted ? .92 : 1),
+              width: highlighted ? 1.8 : 1.4,
+            ),
+            boxShadow: highlighted
+                ? [
+                    BoxShadow(
+                      color: theme.accent.withValues(
+                        alpha: theme.isNight ? .18 : .14,
+                      ),
+                      blurRadius: 20,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : baseDecoration.boxShadow,
           )
         : baseDecoration;
-    final content = Container(
+    final content = AnimatedContainer(
+      duration: AppMotion.fast,
+      curve: AppMotion.easeOut,
       margin: margin,
       padding: padding,
       decoration: decoration,
       child: child,
     );
     if (onTap == null && onLongPress == null) return content;
-    return InkWell(
-      onTap: onTap,
+    return GestureDetector(
       onLongPress: onLongPress,
-      borderRadius: BorderRadius.circular(AppRadius.xl),
-      child: content,
+      onLongPressStart: onLongPressStart,
+      onLongPressEnd: onLongPressEnd,
+      behavior: HitTestBehavior.translucent,
+      child: InkWell(
+        onTap: onTap,
+        onTapDown: onTapDown,
+        onTapUp: onTapUp,
+        onTapCancel: onTapCancel,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        child: content,
+      ),
     );
   }
 }

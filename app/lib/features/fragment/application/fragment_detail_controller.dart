@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/app_state.dart';
 import '../../../app/providers.dart';
 import '../domain/fragment.dart';
 import 'fragment_list_controller.dart';
@@ -85,6 +86,7 @@ class FragmentDetailController
     required String contentText,
     required String emotion,
   }) async {
+    if (!ref.read(aiEnabledProvider)) return;
     if (state.polishStatus == FragmentPolishStatus.loading) return;
     state = state.copyWith(
       polishStatus: FragmentPolishStatus.loading,
@@ -95,10 +97,10 @@ class FragmentDetailController
       final result = await ref
           .read(aiRepositoryProvider)
           .polishFragment(contentText, emotion);
-      if (result['status'] == 'error') {
+      if (result['status'] == 'error' || result['status'] == 'rate_limited') {
         state = state.copyWith(
           polishStatus: FragmentPolishStatus.error,
-          polishMessage: result['message'] as String? ?? '星图管理员一时失神，请稍后再试。',
+          polishMessage: result['message'] as String? ?? 'AI 服务暂时不可用，请稍后重试。',
         );
         return;
       }
@@ -111,7 +113,7 @@ class FragmentDetailController
       state = state.copyWith(
         error: error,
         polishStatus: FragmentPolishStatus.error,
-        polishMessage: '星图管理员一时失神，请稍后再试。',
+        polishMessage: 'AI 服务暂时不可用，请稍后重试。',
       );
     }
   }

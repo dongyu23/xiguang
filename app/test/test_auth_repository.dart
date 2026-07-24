@@ -67,6 +67,7 @@ class FakeAuthRepository extends AuthRepository {
     required String nickname,
     required String avatarKey,
     required bool aiEnabled,
+    bool aiConsentAccepted = false,
     required String privacyMode,
   }) async {
     final session = _session;
@@ -75,6 +76,9 @@ class FakeAuthRepository extends AuthRepository {
       nickname: nickname.trim().isEmpty ? session.nickname : nickname.trim(),
       avatarKey: avatarKey.trim(),
       aiEnabled: aiEnabled,
+      aiConsentAcceptedAt: aiConsentAccepted
+          ? DateTime.now().toIso8601String()
+          : session.aiConsentAcceptedAt,
       privacyMode: privacyMode,
     );
     return _session!;

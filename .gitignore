@@ -71,6 +71,9 @@ backend/tmp/
 # Build artifacts
 artifacts/
 
+# 岛屿原始设计素材（_chroma / _sheet_* 等原图，仅 family_0~5 处理产物入库）
+app/assets/islands/source/
+
 # Local environment/runtime artifacts
 .env
 .env.local

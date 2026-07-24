@@ -1,4 +1,5 @@
 import 'auth_session.dart';
+import 'device_session.dart';
 
 abstract interface class AuthRepositoryContract {
   AuthSession? get currentSession;
@@ -20,10 +21,15 @@ abstract interface class AuthRepositoryContract {
     required String nickname,
     required String avatarKey,
     required bool aiEnabled,
+    bool aiConsentAccepted = false,
     required String privacyMode,
   });
   Future<void> changePassword({
     required String oldPassword,
     required String newPassword,
   });
+  Future<void> deleteAccount({required String password});
+  Future<List<DeviceSession>> listDevices();
+  Future<void> revokeDevice(int id);
+  Future<String> currentDeviceId();
 }

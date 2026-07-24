@@ -17,6 +17,16 @@ class FragmentLocalDataSource {
     return rows.map(_toModel).toList();
   }
 
+  Future<List<Fragment>> search(String query) async {
+    final rows = await _db.searchFragments(query);
+    return rows.map(_toModel).toList();
+  }
+
+  Future<List<Fragment>> getDeleted() async {
+    final rows = await _db.getDeletedFragments();
+    return rows.map(_toModel).toList();
+  }
+
   Future<Fragment?> getById(int id) async {
     final row = await _db.getFragmentById(id);
     return row == null ? null : _toModel(row);
@@ -30,6 +40,8 @@ class FragmentLocalDataSource {
       tags: Value(jsonEncode(fragment.tags)),
       mediaUrls: Value(jsonEncode(fragment.mediaUrls)),
       createdAt: Value(fragment.createdAt),
+      updatedAt: Value(fragment.updatedAt ?? fragment.createdAt),
+      publicId: Value(fragment.publicId),
     ));
   }
 
@@ -45,6 +57,7 @@ class FragmentLocalDataSource {
             tags: Value(jsonEncode(fragment.tags)),
             mediaUrls: Value(jsonEncode(fragment.mediaUrls)),
             createdAt: Value(fragment.createdAt),
+            updatedAt: Value(fragment.updatedAt ?? fragment.createdAt),
             isSynced: const Value(true),
           ),
           mode: InsertMode.insertOrReplace,
@@ -54,16 +67,27 @@ class FragmentLocalDataSource {
   Future<void> update(Fragment fragment) async {
     await _db.updateFragment(local_db.FragmentsCompanion(
       id: Value(fragment.id),
+      publicId: Value(fragment.publicId),
       contentText: Value(fragment.contentText),
       emotion: Value(fragment.emotion),
       status: Value(FragmentMapper.statusToStorage(fragment.status)),
       tags: Value(jsonEncode(fragment.tags)),
       mediaUrls: Value(jsonEncode(fragment.mediaUrls)),
+      createdAt: Value(fragment.createdAt),
+      updatedAt: Value(fragment.updatedAt ?? fragment.createdAt),
     ));
   }
 
   Future<void> delete(int id) async {
     await _db.deleteFragment(id);
+  }
+
+  Future<void> restore(int id) async {
+    await _db.restoreFragment(id);
+  }
+
+  Future<void> permanentlyDelete(int id) async {
+    await _db.permanentlyDeleteFragment(id);
   }
 
   Fragment _toModel(local_db.Fragment row) {
@@ -75,7 +99,7 @@ class FragmentLocalDataSource {
       tags: _decodeJsonList(row.tags),
       mediaUrls: _decodeJsonList(row.mediaUrls),
       createdAt: row.createdAt,
-      updatedAt: row.createdAt,
+      updatedAt: row.updatedAt ?? row.createdAt,
       status: FragmentMapper.statusFromStorage(row.status),
     );
   }

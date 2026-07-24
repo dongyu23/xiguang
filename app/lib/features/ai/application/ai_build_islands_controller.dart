@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/app_state.dart';
 import '../../../app/providers.dart';
 import '../../island/application/island_providers.dart';
 
@@ -7,10 +8,14 @@ class AiBuildIslandsController extends AutoDisposeAsyncNotifier<void> {
   @override
   Future<void> build() async {}
 
-  Future<Map<String, dynamic>> analyze() async {
+  Future<Map<String, dynamic>> analyze({int rangeDays = 0}) async {
+    if (!ref.read(aiEnabledProvider)) {
+      return {'status': 'disabled', 'message': '星图管理员已关闭，可在设置中开启。'};
+    }
     state = const AsyncLoading();
     try {
-      final result = await ref.read(aiRepositoryProvider).buildIslands();
+      final result =
+          await ref.read(aiRepositoryProvider).buildIslands(rangeDays: rangeDays);
       state = const AsyncData(null);
       return result;
     } catch (error, stackTrace) {
@@ -20,6 +25,7 @@ class AiBuildIslandsController extends AutoDisposeAsyncNotifier<void> {
   }
 
   Future<void> createIsland(Map<String, dynamic> suggestion) async {
+    if (!ref.read(aiEnabledProvider)) return;
     final name = suggestion['name'] as String;
     final fragmentIds =
         (suggestion['fragment_ids'] as List<dynamic>? ?? const [])

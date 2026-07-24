@@ -19,9 +19,20 @@ import (
 var (
 	ErrInvalidPresign = errors.New("invalid_presign")
 	ErrInvalidConfirm = errors.New("invalid_confirm")
+	ErrInvalidExport  = errors.New("invalid_export")
+	ErrMediaOwnership = errors.New("media_ownership")
 )
 
 const presignTTL = 5 * time.Minute
+const exportTTL = 10 * time.Minute
+
+type ExportURL struct {
+	ObjectKey        string `json:"object_key"`
+	DownloadURL      string `json:"download_url"`
+	MimeType         string `json:"mime_type"`
+	FileSize         int64  `json:"file_size"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
+}
 
 type Service struct {
 	repo     repository.Repository
@@ -81,7 +92,7 @@ func (s *Service) Confirm(ctx context.Context, userID int64, req domain.ConfirmR
 }
 
 func (s *Service) Upload(ctx context.Context, userID, fragmentID int64, fileName string, data []byte) (domain.MediaFile, error) {
-	const maxImageSize = 10 << 20  // 10MB
+	const maxImageSize = 10 << 20 // 10MB
 	const maxAudioSize = 50 << 20 // 50MB
 
 	if len(data) == 0 || fileName == "" {
@@ -154,4 +165,40 @@ func (s *Service) Get(ctx context.Context, userID, mediaID int64) (domain.MediaF
 
 func (s *Service) Delete(ctx context.Context, userID, mediaID int64) (bool, error) {
 	return s.repo.Delete(ctx, userID, mediaID)
+}
+
+func (s *Service) ExportURLs(ctx context.Context, userID int64, objectKeys []string) ([]ExportURL, error) {
+	if len(objectKeys) == 0 || len(objectKeys) > 100 {
+		return nil, ErrInvalidExport
+	}
+	prefix := "users/" + strconv.FormatInt(userID, 10) + "/media/"
+	seen := make(map[string]struct{}, len(objectKeys))
+	for _, key := range objectKeys {
+		if !strings.HasPrefix(key, prefix) || strings.Contains(key, "..") || strings.Contains(key, "\\") {
+			return nil, ErrMediaOwnership
+		}
+		seen[key] = struct{}{}
+	}
+	owned, err := s.repo.FindByObjectKeys(ctx, userID, objectKeys)
+	if err != nil {
+		return nil, err
+	}
+	if len(owned) != len(seen) {
+		return nil, ErrMediaOwnership
+	}
+	result := make([]ExportURL, 0, len(owned))
+	for _, item := range owned {
+		url := item.FileURL
+		if s.provider != nil {
+			url, err = s.provider.PresignedGetObject(ctx, item.ObjectKey, exportTTL)
+			if err != nil {
+				return nil, fmt.Errorf("presign export: %w", err)
+			}
+		}
+		result = append(result, ExportURL{
+			ObjectKey: item.ObjectKey, DownloadURL: url, MimeType: item.MimeType,
+			FileSize: item.FileSize, ExpiresInSeconds: int(exportTTL.Seconds()),
+		})
+	}
+	return result, nil
 }

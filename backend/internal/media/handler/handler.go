@@ -27,9 +27,35 @@ func (h *Handler) Routes() http.Handler {
 	r.Post("/upload", h.upload)
 	r.Post("/presign-upload", h.presign)
 	r.Post("/confirm-upload", h.confirm)
+	r.Post("/export-urls", h.exportURLs)
 	r.Get("/{id}", h.get)
 	r.Delete("/{id}", h.delete)
 	return r
+}
+
+func (h *Handler) exportURLs(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	var req struct {
+		ObjectKeys []string `json:"object_keys"`
+	}
+	if err := shared.DecodeJSON(r, &req); err != nil {
+		shared.WriteError(w, http.StatusBadRequest, "bad_request", "媒体列表格式不正确。")
+		return
+	}
+	result, err := h.service.ExportURLs(r.Context(), userID, req.ObjectKeys)
+	if errors.Is(err, service.ErrInvalidExport) {
+		shared.WriteError(w, http.StatusBadRequest, "bad_request", "每批需要包含 1 到 100 个媒体。")
+		return
+	}
+	if errors.Is(err, service.ErrMediaOwnership) {
+		shared.WriteError(w, http.StatusForbidden, "forbidden", "归档中包含不属于当前账号的媒体。")
+		return
+	}
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "media_failed", "暂时无法生成下载地址。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, map[string]any{"items": result})
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -11,12 +11,11 @@ import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../app/providers.dart';
 import '../providers/sync_providers.dart';
-import '../../../../ui/composites/settings_widgets.dart';
+import '../providers/sync_provider.dart';
 import '../../../../ui/primitives/page_back_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../../../ui/composites/xiguang_card.dart';
 import '../../../../ui/composites/xiguang_page.dart';
-import '../../domain/sync_config.dart';
 import '../../domain/sync_status.dart';
 
 class SyncSettingsPage extends ConsumerStatefulWidget {
@@ -42,7 +41,6 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final config = ref.watch(syncConfigProvider);
     final status = ref.watch(syncStatusProvider);
     final theme = NightTheme.of(context);
     final baseUrl = ref.watch(apiBaseUrlProvider);
@@ -92,47 +90,9 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
             onSave: _saveBaseUrl,
             onReset: _resetBaseUrl,
           ),
-          const SizedBox(height: AppSpacing.md),
-          const _SectionLabel('同步时机'),
-          const SizedBox(height: AppSpacing.sm),
-          _Card(children: [
-            for (final freq in SyncFrequency.values)
-              _FrequencyTile(
-                frequency: freq,
-                selected: config.frequency == freq,
-                onTap: () => _updateConfig(config.copyWith(frequency: freq)),
-              ),
-          ]),
-          const SizedBox(height: AppSpacing.md),
-          const _SectionLabel('网络限制'),
-          const SizedBox(height: AppSpacing.sm),
-          _Card(children: [
-            SettingsSwitchRow(
-              label: '仅在 Wi-Fi 下同步',
-              subtitle: '开启后，使用移动数据时不自动同步。',
-              value: config.wifiOnly,
-              onChanged: (v) => _updateConfig(config.copyWith(wifiOnly: v)),
-            ),
-          ]),
-          const SizedBox(height: AppSpacing.md),
-          const _SectionLabel('同步开关'),
-          const SizedBox(height: AppSpacing.sm),
-          _Card(children: [
-            SettingsSwitchRow(
-              label: '启用云同步',
-              subtitle: '关闭后，光片仅保存在本地，不会推送到服务器。',
-              value: config.enabled,
-              onChanged: (v) => _updateConfig(config.copyWith(enabled: v)),
-            ),
-          ]),
         ]),
       ),
     );
-  }
-
-  void _updateConfig(SyncConfig config) {
-    ref.read(syncConfigProvider.notifier).update(config);
-    ref.read(syncEngineProvider).updateConfig(config);
   }
 
   Future<void> _saveBaseUrl() async {
@@ -242,10 +202,17 @@ class _SyncSettingsPageState extends ConsumerState<SyncSettingsPage> {
   Future<void> _syncNow() async {
     setState(() => _syncing = true);
     try {
-      final engine = ref.read(syncEngineProvider);
-      final status = await engine.syncNow();
-      ref.read(syncStatusProvider.notifier).state = status;
+      final status = await syncManually(ref);
       if (!mounted) return;
+      if (status.error != null) {
+        showOverlaySnackBar(
+            context,
+            const SnackBar(
+              content: Text('同步失败，请检查网络和后端状态。'),
+              behavior: SnackBarBehavior.floating,
+            ));
+        return;
+      }
       final pending = status.pendingCount;
       final msg = pending == 0 ? '同步完成，没有待推送的变更。' : '同步完成，仍有 $pending 条待推送。';
       showOverlaySnackBar(
@@ -293,7 +260,7 @@ class _ConnectionCard extends StatelessWidget {
             ? '后端暂时没有回应'
             : '等待连接确认';
     final statusHint = status.connected
-        ? '本地修改会按下面的策略同步。'
+        ? '服务器连接正常，可以安全推送本地修改。'
         : hasError
             ? '请确认服务器地址、网络和后端服务状态。'
             : '点一下测试连接，确认当前服务器是否可用。';
@@ -327,14 +294,23 @@ class _ConnectionCard extends StatelessWidget {
           ]),
         ),
       ]),
-      const SizedBox(height: AppSpacing.s12),
-      _InfoRow(label: '服务端版本', value: 'Rev ${status.lastServerRev}'),
-      _InfoRow(label: '待推送', value: '${status.pendingCount} 条'),
-      _InfoRow(
-        label: '上次同步',
-        value: status.lastSyncAt != null
-            ? '${status.lastSyncAt!.hour.toString().padLeft(2, '0')}:${status.lastSyncAt!.minute.toString().padLeft(2, '0')}:${status.lastSyncAt!.second.toString().padLeft(2, '0')}'
-            : '尚未同步',
+      const SizedBox(height: AppSpacing.s14),
+      Wrap(
+        spacing: AppSpacing.s10,
+        runSpacing: AppSpacing.s10,
+        children: [
+          _StatusMetric(
+            label: '服务端版本',
+            value: 'Rev ${status.lastServerRev}',
+          ),
+          _StatusMetric(label: '待推送', value: '${status.pendingCount} 条'),
+          _StatusMetric(
+            label: '上次同步',
+            value: status.lastSyncAt != null
+                ? '${status.lastSyncAt!.hour.toString().padLeft(2, '0')}:${status.lastSyncAt!.minute.toString().padLeft(2, '0')}'
+                : '尚未同步',
+          ),
+        ],
       ),
       const SizedBox(height: AppSpacing.s12),
       Row(children: [
@@ -385,7 +361,7 @@ class _SyncHeader extends StatelessWidget {
         const SizedBox(width: AppSpacing.s12),
         Expanded(
           child: Text(
-            '云同步',
+            '同步详情',
             style: AppText.titleLarge.copyWith(color: theme.foreground),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -485,44 +461,6 @@ class _ServerUrlCard extends StatelessWidget {
   }
 }
 
-class _FrequencyTile extends StatelessWidget {
-  const _FrequencyTile({
-    required this.frequency,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final SyncFrequency frequency;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = NightTheme.of(context);
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-            vertical: AppSpacing.s12, horizontal: AppSpacing.xs),
-        child: Row(children: [
-          Expanded(
-            child: Text(frequency.label,
-                style: AppText.titleSmall.copyWith(color: theme.foreground)),
-          ),
-          Icon(
-            selected ? Icons.radio_button_checked : Icons.radio_button_off,
-            size: 20,
-            color: selected ? theme.accent : theme.foregroundMuted,
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-// _SwitchTile 已删除，统一用 ui/composites/settings_widgets.dart 的 SettingsSwitchRow。
-
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel(this.label);
   final String label;
@@ -547,27 +485,33 @@ class _Card extends StatelessWidget {
       );
 }
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-  final String label, value;
+class _StatusMetric extends StatelessWidget {
+  const _StatusMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.s10),
-      child: Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            SizedBox(
-                width: 80,
-                child: Text(label,
-                    style: AppText.caption
-                        .copyWith(color: theme.foregroundMuted))),
-            Expanded(
-                child: Text(value,
-                    style: AppText.body.copyWith(color: theme.foreground))),
-          ]),
+    return Container(
+      constraints: const BoxConstraints(minWidth: 92),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s10,
+        vertical: AppSpacing.s6,
+      ),
+      decoration: BoxDecoration(
+        color: theme.surface.withValues(alpha: theme.isNight ? .60 : .72),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: theme.border.withValues(alpha: .72)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label,
+            style: AppText.caption.copyWith(color: theme.foregroundMuted)),
+        const SizedBox(height: AppSpacing.s2),
+        Text(value,
+            style: AppText.bodyStrong.copyWith(color: theme.foreground)),
+      ]),
     );
   }
 }

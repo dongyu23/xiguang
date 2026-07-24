@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:xiguang/features/emotion/domain/audio_track.dart';
 import 'package:xiguang/features/emotion/domain/emotion_repository.dart';
 import 'package:xiguang/features/emotion/domain/user_emotion.dart';
 import 'package:xiguang/features/fragment/presentation/pages/capture_page.dart';
+import 'package:xiguang/ui/composites/emotion_more_sheet.dart';
 
 void main() {
   testWidgets('capture actions remain visible on a common mobile viewport',
@@ -20,10 +22,45 @@ void main() {
     expect(find.text('声音'), findsOneWidget);
     expect(find.text('捕光'), findsOneWidget);
     expect(tester.getBottomRight(find.text('捕光')).dy, lessThan(700));
+    expect(
+      tester.getTopLeft(find.text('心绪收录')).dy,
+      greaterThan(tester.getBottomRight(find.text('捕光')).dy),
+    );
+    expect(find.byType(SingleChildScrollView), findsNothing);
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('../goldens/capture_page_night.png'),
     );
+  });
+
+  testWidgets('430px phone layout keeps banner compact and editor flexible',
+      (tester) async {
+    await _pumpCapturePage(tester, const Size(430, 932));
+
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('breathing-light-banner')))
+          .height,
+      96,
+    );
+    final tallEditorHeight =
+        tester.getSize(find.byKey(const ValueKey('capture-content'))).height;
+    expect(find.byType(SingleChildScrollView), findsNothing);
+
+    tester.view.physicalSize = const Size(430, 812);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final shortEditorHeight =
+        tester.getSize(find.byKey(const ValueKey('capture-content'))).height;
+
+    expect(shortEditorHeight, lessThan(tallEditorHeight));
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('breathing-light-banner')))
+          .height,
+      96,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('capture action stays available while the keyboard is open',
@@ -40,11 +77,36 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(captureAction, findsOneWidget);
     expect(captureAction.hitTestable(), findsOneWidget);
-    expect(tester.getBottomRight(captureAction).dy, greaterThan(460));
+    expect(tester.getBottomRight(captureAction).dy, greaterThan(300));
     expect(tester.getBottomRight(captureAction).dy, lessThan(500));
+    expect(
+      tester.getTopLeft(find.text('心绪收录')).dy,
+      greaterThan(tester.getBottomRight(captureAction).dy),
+    );
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('../goldens/capture_page_keyboard.png'),
+    );
+  });
+
+  testWidgets('adding an image keeps the emotion rail fixed', (tester) async {
+    FilePicker.platform = _FakeImageFilePicker();
+    await _pumpCapturePage(tester, const Size(360, 800));
+
+    final emotion = find.text('平静');
+    final emotionTopBefore = tester.getTopLeft(emotion).dy;
+
+    await tester.tap(find.text('图片'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('image-rail-1')), findsOneWidget);
+    expect(find.byTooltip('用系统预览打开'), findsOneWidget);
+    expect(tester.getTopLeft(emotion).dy, emotionTopBefore);
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('../goldens/capture_page_with_image.png'),
     );
   });
 
@@ -70,6 +132,58 @@ void main() {
       matchesGoldenFile('../goldens/emotion_more_sheet_short.png'),
     );
   });
+
+  testWidgets('emotion limit snackbar overlays without shifting the sheet',
+      (tester) async {
+    await _pumpCapturePage(tester, const Size(390, 844));
+
+    await tester.tap(find.text('更多'));
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final sheet = find.byType(EmotionMoreSheet);
+    final firstEmotion = find.descendant(
+      of: sheet,
+      matching: find.text('平静'),
+    );
+    await tester.ensureVisible(firstEmotion);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(firstEmotion);
+    await tester.pump(const Duration(milliseconds: 500));
+    final emotionTopBefore = tester.getTopLeft(firstEmotion).dy;
+    final sheetSizeBefore = tester.getSize(sheet);
+    await tester.tap(firstEmotion);
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('最多展示 7 个心绪，请先取消其他。'), findsOneWidget);
+    expect(tester.getTopLeft(firstEmotion).dy, emotionTopBefore);
+    expect(tester.getSize(sheet), sheetSizeBefore);
+  });
+}
+
+class _FakeImageFilePicker extends FilePicker {
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 30,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    return FilePickerResult([
+      PlatformFile(
+        name: 'nav_gap.png',
+        path: 'assets/nav_icons/nav_gap.png',
+        size: 1,
+      ),
+    ]);
+  }
 }
 
 Future<void> _pumpCapturePage(WidgetTester tester, Size size) async {
@@ -176,7 +290,6 @@ class _FakeEmotionRepository implements EmotionRepositoryPort {
   Future<void> update(UserEmotion emotion) async {}
 
   @override
-
   @override
   Future<void> setHidden(int id, bool hidden) async {}
 

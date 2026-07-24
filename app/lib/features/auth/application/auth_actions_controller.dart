@@ -48,12 +48,14 @@ class AuthActionsController extends Notifier<AuthActionState> {
     required String nickname,
     required String avatarKey,
     required bool aiEnabled,
+    bool aiConsentAccepted = false,
     required String privacyMode,
   }) {
     return _run(() => ref.read(authRepositoryProvider).updateMe(
           nickname: nickname,
           avatarKey: avatarKey,
           aiEnabled: aiEnabled,
+          aiConsentAccepted: aiConsentAccepted,
           privacyMode: privacyMode,
         ));
   }
@@ -66,6 +68,13 @@ class AuthActionsController extends Notifier<AuthActionState> {
           oldPassword: oldPassword,
           newPassword: newPassword,
         ));
+  }
+
+  Future<void> deleteAccount({required String password}) async {
+    await _run(() =>
+        ref.read(authRepositoryProvider).deleteAccount(password: password));
+    ref.read(authSessionProvider.notifier).state = null;
+    ref.invalidate(sessionProvider);
   }
 
   Future<T> _run<T>(Future<T> Function() action) async {

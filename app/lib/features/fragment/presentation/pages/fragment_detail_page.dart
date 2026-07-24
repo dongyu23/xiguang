@@ -13,6 +13,8 @@ import 'package:just_audio/just_audio.dart';
 
 import 'package:xiguang/app/app_state.dart';
 import '../../../emotion/application/emotions_controller.dart';
+import '../../../island/application/island_detail_controller.dart';
+import '../../../island/domain/island_repository.dart';
 import '../../../relation/presentation/providers/relation_providers.dart';
 import '../../application/fragment_detail_controller.dart';
 import '../providers/fragment_providers.dart';
@@ -23,7 +25,6 @@ import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../domain/fragment.dart';
-import '../../../../ui/composites/image_grid.dart';
 import '../../../../ui/composites/emotion_picker.dart';
 import '../../../../ui/composites/media_image.dart';
 import '../../../../ui/composites/xiguang_button.dart';
@@ -34,10 +35,23 @@ import '../../../../ui/primitives/night_background.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import 'image_attachment_picker.dart';
 
+enum _AutoSaveStatus { saved, pending, saving, error }
+
 class FragmentDetailPage extends ConsumerStatefulWidget {
-  const FragmentDetailPage({super.key, required this.id});
+  const FragmentDetailPage({
+    super.key,
+    required this.id,
+    this.islandId,
+    this.islandRouteId,
+    this.islandName,
+    this.islandManual = false,
+  });
 
   final String id;
+  final int? islandId;
+  final String? islandRouteId;
+  final String? islandName;
+  final bool islandManual;
 
   @override
   ConsumerState<FragmentDetailPage> createState() => _FragmentDetailPageState();
@@ -51,9 +65,16 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
   int? _loadedFragmentId;
   bool _pickingImage = false;
   bool _pickingAudio = false;
+  Timer? _autoSaveTimer;
+  Future<bool>? _activeAutoSave;
+  _AutoSaveStatus _autoSaveStatus = _AutoSaveStatus.saved;
+  int _editRevision = 0;
+  bool _hasPendingChanges = false;
+  bool _leaving = false;
 
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
     _contentController.dispose();
     _tagController.dispose();
     super.dispose();
@@ -93,122 +114,142 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
       return asyncValue.whenData(
           (items) => items.where((item) => item.id == fragmentID).firstOrNull);
     }));
-    final polishEnabled = ref.watch(aiPolishEnabledProvider);
+    final polishEnabled = ref.watch(aiEnabledProvider);
     final detailState = ref.watch(fragmentDetailControllerProvider);
 
-    return Stack(children: [
-      const Positioned.fill(child: NightBackgroundPlaceholder()),
-      const Positioned.fill(child: AtmosphereBackground()),
-      Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: fragmentAsync.when(
-            data: (fragment) {
-              if (fragment == null) {
-                return _MissingLightState(
-                  onBack: () => context.pop(),
-                );
-              }
-              _syncEditors(fragment);
-              return SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                    AppSpacing.s22,
-                    AppSpacing.sm,
-                    AppSpacing.s22,
-                    AppSpacing.pageBottomNav +
-                        MediaQuery.paddingOf(context).bottom),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _DetailHeader(
-                          onBack: () => context.pop(),
-                        ),
-                        const SizedBox(height: AppSpacing.s12),
-                        _LightEditCard(
-                          fragment: fragment,
-                          contentController: _contentController,
-                          tagController: _tagController,
-                          emotion: _emotion,
-                          onEmotionChanged: (value) =>
-                              setState(() => _emotion = value),
-                        ),
-                        if (detailState.polishStatus !=
-                            FragmentPolishStatus.idle)
-                          _PolishResultCard(
-                            state: detailState.polishStatus,
-                            polishedText: detailState.polishedText,
-                            message: detailState.polishMessage,
-                            onAccept: detailState.polishStatus ==
-                                        FragmentPolishStatus.done &&
-                                    detailState.polishedText.isNotEmpty
-                                ? () => _acceptPolish(
-                                    fragment, detailState.polishedText)
+    return PopScope(
+      canPop: !_hasPendingChanges,
+      onPopInvokedWithResult: (didPop, _) {
+        final fragment = fragmentAsync.asData?.value;
+        if (!didPop && fragment != null) {
+          unawaited(_leavePage(fragment));
+        }
+      },
+      child: Stack(children: [
+        const Positioned.fill(child: NightBackgroundPlaceholder()),
+        const Positioned.fill(child: AtmosphereBackground()),
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          body: SafeArea(
+            child: fragmentAsync.when(
+              data: (fragment) {
+                if (fragment == null) {
+                  return _MissingLightState(
+                    onBack: () => context.pop(),
+                  );
+                }
+                _syncEditors(fragment);
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                      AppSpacing.s22,
+                      AppSpacing.sm,
+                      AppSpacing.s22,
+                      AppSpacing.pageBottomNav +
+                          MediaQuery.paddingOf(context).bottom),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _DetailHeader(
+                            onBack: () => _leavePage(fragment),
+                            onDelete: () => _confirmDelete(fragment),
+                            onRemoveFromIsland: widget.islandManual &&
+                                    (widget.islandId ?? 0) > 0 &&
+                                    widget.islandRouteId?.isNotEmpty == true
+                                ? () => _confirmRemoveFromIsland(fragment)
                                 : null,
-                            onRetry: detailState.polishStatus ==
-                                    FragmentPolishStatus.error
-                                ? () => ref
+                          ),
+                          const SizedBox(height: AppSpacing.s12),
+                          _LightEditCard(
+                            fragment: fragment,
+                            contentController: _contentController,
+                            tagController: _tagController,
+                            emotion: _emotion,
+                            autoSaveStatus: _autoSaveStatus,
+                            onContentChanged: (_) =>
+                                _scheduleAutoSave(fragment),
+                            onTagsChanged: (_) => _scheduleAutoSave(fragment),
+                            onRetrySave: () => _flushAutoSave(fragment),
+                            onEmotionChanged: (value) {
+                              setState(() => _emotion = value);
+                              _scheduleAutoSave(fragment);
+                            },
+                            extensions: _LightExtensionsPanel(
+                              urls: fragment.mediaUrls,
+                              fragmentId: fragment.id,
+                              picking: _pickingImage,
+                              pickingAudio: _pickingAudio,
+                              onPickImages: () => _pickImages(fragment),
+                              onPickAudio: () => _pickAudio(fragment),
+                              onWeave: () async {
+                                final saved = await _flushAutoSave(fragment);
+                                if (saved && context.mounted) {
+                                  context.push('/weave/${fragment.id}');
+                                }
+                              },
+                            ),
+                          ),
+                          if (detailState.polishStatus !=
+                              FragmentPolishStatus.idle)
+                            _PolishResultCard(
+                              state: detailState.polishStatus,
+                              polishedText: detailState.polishedText,
+                              message: detailState.polishMessage,
+                              onAccept: detailState.polishStatus ==
+                                          FragmentPolishStatus.done &&
+                                      detailState.polishedText.isNotEmpty
+                                  ? () => _acceptPolish(
+                                      fragment, detailState.polishedText)
+                                  : null,
+                              onRetry: detailState.polishStatus ==
+                                      FragmentPolishStatus.error
+                                  ? () => ref
+                                      .read(fragmentDetailControllerProvider
+                                          .notifier)
+                                      .polish(
+                                          contentText: fragment.contentText,
+                                          emotion: fragment.emotion)
+                                  : null,
+                              onDiscard: () => ref
+                                  .read(
+                                      fragmentDetailControllerProvider.notifier)
+                                  .resetPolish(),
+                            ),
+                          if (polishEnabled &&
+                              _contentController.text.trim().isNotEmpty &&
+                              detailState.polishStatus ==
+                                  FragmentPolishStatus.idle) ...[
+                            const SizedBox(height: AppSpacing.s18),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _PolishButton(
+                                onTap: () => ref
                                     .read(fragmentDetailControllerProvider
                                         .notifier)
                                     .polish(
-                                        contentText: fragment.contentText,
-                                        emotion: fragment.emotion)
-                                : null,
-                            onDiscard: () => ref
-                                .read(fragmentDetailControllerProvider.notifier)
-                                .resetPolish(),
-                          ),
-                        const SizedBox(height: AppSpacing.s14),
-                        _MediaPanel(
-                          urls: fragment.mediaUrls,
-                          picking: _pickingImage,
-                          pickingAudio: _pickingAudio,
-                          onPickImages: () => _pickImages(fragment),
-                          onPickAudio: () => _pickAudio(fragment),
-                        ),
-                        const SizedBox(height: AppSpacing.s14),
-                        _WeaveConnectionCard(
-                          fragmentId: fragment.id,
-                          onWeave: () async {
-                            final saved =
-                                await _save(fragment, showSuccess: false);
-                            if (saved && context.mounted) {
-                              context.push('/weave/${fragment.id}');
-                            }
-                          },
-                        ),
-                        const SizedBox(height: AppSpacing.s18),
-                        _ActionDock(
-                          saving: detailState.isSaving,
-                          polishEnabled: polishEnabled &&
-                              _contentController.text.trim().isNotEmpty &&
-                              detailState.polishStatus ==
-                                  FragmentPolishStatus.idle,
-                          onSave: () => _save(fragment),
-                          onPolish: () => ref
-                              .read(fragmentDetailControllerProvider.notifier)
-                              .polish(
-                                  contentText: _contentController.text,
-                                  emotion: _emotion),
-                          onDelete: () => _confirmDelete(fragment),
-                        ),
-                      ],
+                                        contentText: _contentController.text,
+                                        emotion: _emotion),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, __) => const Center(
-              child: Text('暂时无法打开这束光，请稍后再试。', style: AppText.body),
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, __) => const Center(
+                child: Text('暂时无法打开这束光，请稍后再试。', style: AppText.body),
+              ),
             ),
           ),
         ),
-      ),
-    ]);
+      ]),
+    );
   }
 
   void _syncEditors(Fragment fragment) {
@@ -219,22 +260,41 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
     _emotion = fragment.emotion;
   }
 
-  Future<bool> _save(
-    Fragment fragment, {
-    bool showSuccess = true,
-  }) async {
-    if (ref.read(fragmentDetailControllerProvider).isSaving) return false;
-    final text = _contentController.text.trim();
-    if (text.isEmpty) {
-      showOverlaySnackBar(
-        context,
-        const SnackBar(
-          content: Text('至少留下一句话。'),
-          behavior: SnackBarBehavior.floating,
-        ),
+  void _scheduleAutoSave(Fragment fragment) {
+    _autoSaveTimer?.cancel();
+    _editRevision++;
+    _hasPendingChanges = true;
+    setState(() => _autoSaveStatus = _AutoSaveStatus.pending);
+    final revision = _editRevision;
+    _autoSaveTimer = Timer(
+      AppTiming.editorAutoSaveDebounce,
+      () => _startAutoSave(fragment, revision),
+    );
+  }
+
+  void _startAutoSave(Fragment fragment, int revision) {
+    final future = _performAutoSave(fragment, revision);
+    _activeAutoSave = future;
+    unawaited(future.whenComplete(() {
+      if (identical(_activeAutoSave, future)) _activeAutoSave = null;
+    }));
+  }
+
+  Future<bool> _performAutoSave(Fragment fragment, int revision) async {
+    if (revision != _editRevision) return false;
+    if (ref.read(fragmentDetailControllerProvider).isSaving) {
+      _autoSaveTimer = Timer(
+        AppTiming.editorAutoSaveRetry,
+        () => _startAutoSave(fragment, revision),
       );
       return false;
     }
+    final text = _contentController.text.trim();
+    if (text.isEmpty) {
+      if (mounted) setState(() => _autoSaveStatus = _AutoSaveStatus.error);
+      return false;
+    }
+    if (mounted) setState(() => _autoSaveStatus = _AutoSaveStatus.saving);
     try {
       // H5: Use centralized updateText to avoid cascade invalidation
       await ref.read(fragmentDetailControllerProvider.notifier).save(
@@ -244,29 +304,48 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
             tags: _parseTags(_tagController.text),
           );
       if (!mounted) return false;
-      setState(() {
-        _loadedFragmentId = null;
-      });
-      if (showSuccess) {
-        showOverlaySnackBar(
-          context,
-          const SnackBar(
-            content: Text('这束光已经重新放好。'),
-            behavior: SnackBarBehavior.floating,
-          ),
+      if (revision == _editRevision) {
+        _hasPendingChanges = false;
+        setState(() => _autoSaveStatus = _AutoSaveStatus.saved);
+      } else {
+        _autoSaveTimer = Timer(
+          AppTiming.editorAutoSaveDebounce,
+          () => _startAutoSave(fragment, _editRevision),
         );
       }
       return true;
     } catch (_) {
       if (!mounted) return false;
+      setState(() => _autoSaveStatus = _AutoSaveStatus.error);
+      return false;
+    }
+  }
+
+  Future<bool> _flushAutoSave(Fragment fragment) async {
+    _autoSaveTimer?.cancel();
+    final activeSave = _activeAutoSave;
+    if (activeSave != null) await activeSave;
+    if (!_hasPendingChanges) return true;
+    _autoSaveTimer?.cancel();
+    return _performAutoSave(fragment, _editRevision);
+  }
+
+  Future<void> _leavePage(Fragment fragment) async {
+    if (_leaving) return;
+    _leaving = true;
+    final saved = await _flushAutoSave(fragment);
+    if (!mounted) return;
+    if (saved) {
+      context.pop();
+    } else {
+      _leaving = false;
       showOverlaySnackBar(
         context,
         const SnackBar(
-          content: Text('暂时无法保存修改，请稍后再试。'),
+          content: Text('修改还没有保存，请点一下状态提示重试。'),
           behavior: SnackBarBehavior.floating,
         ),
       );
-      return false;
     }
   }
 
@@ -303,7 +382,65 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
       },
     );
     if (confirmed != true || !mounted) return;
+    _autoSaveTimer?.cancel();
+    _hasPendingChanges = false;
     await _delete(fragment);
+  }
+
+  Future<void> _confirmRemoveFromIsland(Fragment fragment) async {
+    final islandRouteId = widget.islandRouteId;
+    if (islandRouteId == null || islandRouteId.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = NightTheme.of(dialogContext);
+        return AlertDialog(
+          backgroundColor: theme.surfaceHigh,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          title: Text(
+            '从「${widget.islandName ?? '小岛'}」移除？',
+            style: AppText.titleMedium.copyWith(color: theme.foreground),
+          ),
+          content: Text(
+            '这束光本身会保留，只是不再放在这座小岛上。',
+            style: AppText.body.copyWith(color: theme.foreground),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('移出小岛'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    final saved = await _flushAutoSave(fragment);
+    if (!saved || !mounted) return;
+    try {
+      await ref
+          .read(islandDetailProvider(islandRouteId).notifier)
+          .removeFragments([fragment.id]);
+      if (mounted) context.pop();
+    } on IslandNotManualException {
+      if (!mounted) return;
+      showOverlaySnackBar(
+        context,
+        const SnackBar(content: Text('自动生长的小岛不能手动移除光片。')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      showOverlaySnackBar(
+        context,
+        const SnackBar(content: Text('暂时无法移出小岛，请稍后再试。')),
+      );
+    }
   }
 
   Future<void> _delete(Fragment fragment) async {
@@ -517,9 +654,15 @@ String _playableAudioSource(String value) {
 }
 
 class _DetailHeader extends StatelessWidget {
-  const _DetailHeader({required this.onBack});
+  const _DetailHeader({
+    required this.onBack,
+    required this.onDelete,
+    this.onRemoveFromIsland,
+  });
 
   final VoidCallback onBack;
+  final VoidCallback onDelete;
+  final VoidCallback? onRemoveFromIsland;
 
   @override
   Widget build(BuildContext context) {
@@ -536,8 +679,49 @@ class _DetailHeader extends StatelessWidget {
           style: AppText.titleLarge.copyWith(color: theme.foreground),
         ),
       ),
-      const SizedBox(width: AppSpacing.s12),
-      const SizedBox(width: 42, height: 42),
+      const SizedBox(width: AppSpacing.s6),
+      if (onRemoveFromIsland != null)
+        Semantics(
+          button: true,
+          label: '从小岛移除',
+          child: ExcludeSemantics(
+            child: SizedBox.square(
+              dimension: 36,
+              child: IconButton(
+                key: const ValueKey('remove-fragment-from-island-button'),
+                tooltip: '从小岛移除',
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints.tightFor(width: 36, height: 36),
+                visualDensity: VisualDensity.compact,
+                onPressed: onRemoveFromIsland,
+                icon: Icon(
+                  Icons.link_off_rounded,
+                  size: 19,
+                  color: theme.accent,
+                ),
+              ),
+            ),
+          ),
+        ),
+      Semantics(
+        button: true,
+        label: '删除这束光',
+        child: ExcludeSemantics(
+          child: SizedBox.square(
+            dimension: 36,
+            child: IconButton(
+              tooltip: '删除这束光',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              visualDensity: VisualDensity.compact,
+              onPressed: onDelete,
+              icon: Icon(Icons.delete_outline_rounded,
+                  size: 19, color: theme.foregroundMuted),
+            ),
+          ),
+        ),
+      ),
     ]);
   }
 }
@@ -548,14 +732,24 @@ class _LightEditCard extends ConsumerWidget {
     required this.contentController,
     required this.tagController,
     required this.emotion,
+    required this.autoSaveStatus,
+    required this.onContentChanged,
+    required this.onTagsChanged,
+    required this.onRetrySave,
     required this.onEmotionChanged,
+    required this.extensions,
   });
 
   final Fragment fragment;
   final TextEditingController contentController;
   final TextEditingController tagController;
   final String emotion;
+  final _AutoSaveStatus autoSaveStatus;
+  final ValueChanged<String> onContentChanged;
+  final ValueChanged<String> onTagsChanged;
+  final VoidCallback onRetrySave;
   final ValueChanged<String> onEmotionChanged;
+  final Widget extensions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -598,8 +792,9 @@ class _LightEditCard extends ConsumerWidget {
         const SizedBox(height: AppSpacing.s14),
         TextField(
           controller: contentController,
-          minLines: 4,
-          maxLines: 10,
+          onChanged: onContentChanged,
+          minLines: 3,
+          maxLines: 8,
           style: AppText.body.copyWith(
             color: theme.foreground,
             fontSize: 16,
@@ -631,20 +826,20 @@ class _LightEditCard extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.s6),
-        Align(
-          alignment: Alignment.centerRight,
-          child: ValueListenableBuilder<TextEditingValue>(
-            valueListenable: contentController,
-            builder: (context, value, _) {
-              final count = value.text.trim().runes.length;
-              return Text(
-                '$count 字',
-                style: AppText.caption.copyWith(color: theme.foregroundMuted),
-              );
-            },
-          ),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: contentController,
+          builder: (context, value, _) {
+            final count = value.text.trim().runes.length;
+            return _AutoSaveLine(
+              status: autoSaveStatus,
+              count: count,
+              onRetry: onRetrySave,
+            );
+          },
         ),
         const SizedBox(height: AppSpacing.s12),
+        extensions,
+        const SizedBox(height: AppSpacing.s14),
         Divider(height: 1, color: theme.border.withValues(alpha: .65)),
         const SizedBox(height: AppSpacing.s14),
         EmotionPicker(
@@ -652,12 +847,7 @@ class _LightEditCard extends ConsumerWidget {
           onSelected: onEmotionChanged,
           dense: true,
         ),
-        const SizedBox(height: AppSpacing.s7),
-        Text(
-          '可以选自己收录的心绪，也可以从“更多”里添一个新词。',
-          style: AppText.caption.copyWith(color: theme.foregroundMuted),
-        ),
-        const SizedBox(height: AppSpacing.s14),
+        const SizedBox(height: AppSpacing.s12),
         Row(children: [
           Text('给光命名',
               style: AppText.titleSmall.copyWith(color: theme.foreground)),
@@ -668,6 +858,7 @@ class _LightEditCard extends ConsumerWidget {
         const SizedBox(height: AppSpacing.sm),
         TextField(
           controller: tagController,
+          onChanged: onTagsChanged,
           style: AppText.body.copyWith(color: theme.foreground),
           decoration: InputDecoration(
             prefixIcon: const Icon(Icons.sell_outlined, size: 18),
@@ -691,84 +882,86 @@ class _LightEditCard extends ConsumerWidget {
   }
 }
 
-class _MediaPanel extends StatelessWidget {
-  const _MediaPanel({
+class _LightExtensionsPanel extends ConsumerWidget {
+  const _LightExtensionsPanel({
     required this.urls,
+    required this.fragmentId,
     required this.picking,
     required this.pickingAudio,
     required this.onPickImages,
     required this.onPickAudio,
+    required this.onWeave,
   });
 
   final List<String> urls;
+  final int fragmentId;
   final bool picking;
   final bool pickingAudio;
   final VoidCallback onPickImages;
   final VoidCallback onPickAudio;
+  final VoidCallback onWeave;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = NightTheme.of(context);
     final visualUrls = urls.where((url) => !_isAudioMedia(url)).toList();
     final audioUrls = urls.where(_isAudioMedia).toList();
-    final hasVisuals = visualUrls.isNotEmpty;
-    final hasAudio = audioUrls.isNotEmpty;
-    return XiguangCard(
-      padding: const EdgeInsets.all(AppSpacing.s18),
+    final relationCount =
+        ref.watch(fragmentRelationsProvider(fragmentId)).asData?.value.length;
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.s12),
+      decoration: BoxDecoration(
+        color: theme.accent.withValues(alpha: theme.isNight ? .10 : .065),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: theme.accent.withValues(alpha: .18)),
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Container(
-            width: 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: theme.accent.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-            child: Icon(Icons.auto_awesome_mosaic_outlined,
-                size: 18, color: theme.accent),
+          Icon(Icons.blur_on_rounded, size: 17, color: theme.accent),
+          const SizedBox(width: AppSpacing.s7),
+          Text(
+            '这束光的余韵',
+            style: AppText.titleSmall.copyWith(color: theme.foreground),
           ),
-          const SizedBox(width: AppSpacing.s10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('画面与声音',
-                    style:
-                        AppText.titleSmall.copyWith(color: theme.foreground)),
-                const SizedBox(height: AppSpacing.s2),
-                Text('有就留下，没有也没关系。',
-                    style:
-                        AppText.caption.copyWith(color: theme.foregroundMuted)),
-              ],
+          const Spacer(),
+          if (visualUrls.isNotEmpty || audioUrls.isNotEmpty)
+            Text(
+              '${visualUrls.length} 幅 · ${audioUrls.length} 段',
+              style: AppText.caption.copyWith(color: theme.foregroundMuted),
             ),
-          ),
         ]),
-        if (hasVisuals) ...[
-          const SizedBox(height: AppSpacing.s14),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            child: ImageGrid(
-              urls: visualUrls,
-              onImageTap: (url) => _showImagePreview(context, url),
+        if (visualUrls.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.s10),
+          SizedBox(
+            height: 92,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: visualUrls.length,
+              separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.s7),
+              itemBuilder: (context, index) => _LightImageThumb(
+                url: visualUrls[index],
+                onTap: () => _showImagePreview(context, visualUrls[index]),
+              ),
             ),
           ),
         ],
-        if (hasAudio) ...[
-          const SizedBox(height: AppSpacing.s12),
+        if (audioUrls.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.s10),
           ...audioUrls.map(
             (url) => Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              padding: const EdgeInsets.only(bottom: AppSpacing.s7),
               child: _AudioAttachmentTile(url: url),
             ),
           ),
         ],
-        const SizedBox(height: AppSpacing.s12),
+        const SizedBox(height: AppSpacing.s10),
         Row(children: [
           Expanded(
             child: _AttachmentAction(
               icon: Icons.add_photo_alternate_outlined,
-              label: hasVisuals ? '再添画面' : '添一幅画面',
+              label: visualUrls.isEmpty ? '画面' : '再添',
               loading: picking,
               onTap: onPickImages,
             ),
@@ -777,12 +970,51 @@ class _MediaPanel extends StatelessWidget {
           Expanded(
             child: _AttachmentAction(
               icon: Icons.graphic_eq_rounded,
-              label: hasAudio ? '再添声音' : '添一段声音',
+              label: audioUrls.isEmpty ? '声音' : '再录',
               loading: pickingAudio,
               onTap: onPickAudio,
             ),
           ),
         ]),
+        const SizedBox(height: AppSpacing.s10),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onWeave,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.s6,
+                vertical: AppSpacing.s7,
+              ),
+              child: Row(children: [
+                _ConnectionGlyph(color: theme.accent, compact: true),
+                const SizedBox(width: AppSpacing.s10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('织向旧光',
+                          style: AppText.bodyStrong
+                              .copyWith(color: theme.foreground)),
+                      Text(
+                        relationCount == null
+                            ? '正在寻找回声…'
+                            : relationCount == 0
+                                ? '找一束有回声的光'
+                                : '已有 $relationCount 条线，继续织线',
+                        style: AppText.caption
+                            .copyWith(color: theme.foregroundMuted),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded,
+                    size: 20, color: theme.foregroundMuted),
+              ]),
+            ),
+          ),
+        ),
       ]),
     );
   }
@@ -792,6 +1024,45 @@ class _MediaPanel extends StatelessWidget {
       context: context,
       barrierColor: Colors.black.withValues(alpha: .86),
       builder: (context) => _ImagePreviewDialog(url: url),
+    );
+  }
+}
+
+class _LightImageThumb extends StatelessWidget {
+  const _LightImageThumb({required this.url, required this.onTap});
+
+  final String url;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return Semantics(
+      button: true,
+      label: '查看画面',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: Ink(
+            width: 112,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: theme.border),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              child: MediaImage(
+                source: url,
+                fit: BoxFit.cover,
+                fallback: Icon(Icons.image_not_supported_outlined,
+                    color: theme.foregroundMuted),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -940,12 +1211,41 @@ class _AudioAttachmentTileState extends State<_AudioAttachmentTile> {
         ),
         const SizedBox(width: AppSpacing.sm),
         Expanded(
-          child: Text(
-            legacy ? '旧声音记录 · 无法回放' : '这一刻的声音',
-            style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted),
+          child: _SoundWaveGlyph(
+            color: legacy ? theme.foregroundMuted : theme.accent,
           ),
         ),
+        const SizedBox(width: AppSpacing.s10),
+        Text(
+          legacy ? '旧声音' : '声音',
+          style: AppText.caption.copyWith(color: theme.foregroundMuted),
+        ),
       ]),
+    );
+  }
+}
+
+class _SoundWaveGlyph extends StatelessWidget {
+  const _SoundWaveGlyph({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    const heights = [8.0, 15.0, 22.0, 12.0, 18.0, 9.0, 16.0, 7.0];
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        for (final height in heights)
+          Container(
+            width: 3,
+            height: height,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .78),
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1018,81 +1318,20 @@ class _ImagePreviewDialog extends StatelessWidget {
   }
 }
 
-class _WeaveConnectionCard extends ConsumerWidget {
-  const _WeaveConnectionCard({
-    required this.fragmentId,
-    required this.onWeave,
-  });
-
-  final int fragmentId;
-  final VoidCallback onWeave;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = NightTheme.of(context);
-    final relations = ref.watch(fragmentRelationsProvider(fragmentId));
-    final count = relations.asData?.value.length;
-
-    return XiguangCard(
-      padding: const EdgeInsets.all(AppSpacing.s18),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          _ConnectionGlyph(color: theme.accent),
-          const SizedBox(width: AppSpacing.s12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('和旧光发生联系',
-                    style:
-                        AppText.titleSmall.copyWith(color: theme.foreground)),
-                const SizedBox(height: AppSpacing.s2),
-                Text(
-                  count == null
-                      ? '正在看看这束光连向哪里…'
-                      : count == 0
-                          ? '它还安静地待在这里。'
-                          : '已经织好 $count 条线。',
-                  style: AppText.caption.copyWith(color: theme.foregroundMuted),
-                ),
-              ],
-            ),
-          ),
-        ]),
-        const SizedBox(height: AppSpacing.s14),
-        Text(
-          '织线，就是从过去选一束光，再说说它们为什么相连。以后回看时，这段联系也会被一起看见。',
-          style: AppText.bodyMuted.copyWith(
-            color: theme.foregroundMuted,
-            height: 1.62,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.s14),
-        XiguangButton(
-          label: count != null && count > 0 ? '继续寻找旧光' : '选择旧光并织线',
-          onPressed: onWeave,
-          variant: XiguangButtonVariant.secondary,
-          leading: const Icon(Icons.call_made_rounded, size: 18),
-          height: 46,
-        ),
-      ]),
-    );
-  }
-}
-
 class _ConnectionGlyph extends StatelessWidget {
-  const _ConnectionGlyph({required this.color});
+  const _ConnectionGlyph({required this.color, this.compact = false});
 
   final Color color;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 58,
-      height: 34,
+      width: compact ? 42 : 58,
+      height: compact ? 28 : 34,
       child: Stack(alignment: Alignment.center, children: [
         Container(
-          width: 38,
+          width: compact ? 28 : 38,
           height: 1,
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -1106,11 +1345,11 @@ class _ConnectionGlyph extends StatelessWidget {
         ),
         Align(
           alignment: Alignment.centerLeft,
-          child: _ConnectionPoint(color: color, size: 13),
+          child: _ConnectionPoint(color: color, size: compact ? 11 : 13),
         ),
         Align(
           alignment: Alignment.centerRight,
-          child: _ConnectionPoint(color: color, size: 9),
+          child: _ConnectionPoint(color: color, size: compact ? 8 : 9),
         ),
       ]),
     );
@@ -1143,77 +1382,56 @@ class _ConnectionPoint extends StatelessWidget {
   }
 }
 
-class _ActionDock extends StatelessWidget {
-  const _ActionDock({
-    required this.saving,
-    required this.polishEnabled,
-    required this.onSave,
-    required this.onPolish,
-    required this.onDelete,
+class _AutoSaveLine extends StatelessWidget {
+  const _AutoSaveLine({
+    required this.status,
+    required this.count,
+    required this.onRetry,
   });
 
-  final bool saving;
-  final bool polishEnabled;
-  final VoidCallback onSave;
-  final VoidCallback onPolish;
-  final VoidCallback onDelete;
+  final _AutoSaveStatus status;
+  final int count;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
-    return Column(children: [
-      // 主操作：保存
-      XiguangButton(
-        label: '保存',
-        onPressed: saving ? null : onSave,
-        leading: const Icon(Icons.check_rounded, size: 20),
-        loading: saving,
-      ),
-      const SizedBox(height: AppSpacing.s10),
-      // 次级操作：柔光润色与危险操作
-      Row(children: [
-        if (polishEnabled) ...[
-          Expanded(child: _PolishButton(onTap: onPolish)),
-          const SizedBox(width: AppSpacing.s10),
-        ],
-        if (!polishEnabled) const Spacer(),
-        PopupMenuButton<String>(
-          tooltip: '更多操作',
-          icon: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              border: Border.all(color: theme.border),
-              borderRadius: BorderRadius.circular(AppRadius.md),
+    final isError = status == _AutoSaveStatus.error;
+    final label = switch (status) {
+      _AutoSaveStatus.saved => '已自动保存',
+      _AutoSaveStatus.pending => '停笔后自动保存',
+      _AutoSaveStatus.saving => '正在保存…',
+      _AutoSaveStatus.error => count == 0 ? '至少留下一句话' : '保存失败，点此重试',
+    };
+    final icon = switch (status) {
+      _AutoSaveStatus.saved => Icons.check_circle_outline_rounded,
+      _AutoSaveStatus.pending => Icons.more_time_rounded,
+      _AutoSaveStatus.saving => Icons.sync_rounded,
+      _AutoSaveStatus.error => Icons.error_outline_rounded,
+    };
+    final color = isError ? theme.danger : theme.foregroundMuted;
+
+    return Semantics(
+      button: isError,
+      child: InkWell(
+        onTap: isError ? onRetry : null,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
+          child: Row(children: [
+            AnimatedSwitcher(
+              duration: AppMotion.fast,
+              child: Icon(icon, key: ValueKey(status), size: 14, color: color),
             ),
-            child: Icon(Icons.more_horiz_rounded,
-                size: 20, color: theme.foregroundMuted),
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-          ),
-          onSelected: (value) {
-            switch (value) {
-              case 'delete':
-                onDelete();
-                break;
-            }
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'delete',
-              child: Row(children: [
-                Icon(Icons.delete_outline_rounded,
-                    size: 18, color: AppColors.sunsetCoral),
-                const SizedBox(width: AppSpacing.s10),
-                Text('删除这束光',
-                    style: AppText.body.copyWith(color: AppColors.sunsetCoral)),
-              ]),
-            ),
-          ],
+            const SizedBox(width: AppSpacing.s5),
+            Text(label, style: AppText.caption.copyWith(color: color)),
+            const Spacer(),
+            Text('$count 字',
+                style: AppText.caption.copyWith(color: theme.foregroundMuted)),
+          ]),
         ),
-      ]),
-    ]);
+      ),
+    );
   }
 }
 
@@ -1270,18 +1488,25 @@ class _PolishButtonState extends State<_PolishButton>
 
   @override
   Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
     // 动画受 TickerMode 控制 — 父级关闭 TickerMode 时自动暂停
     return AnimatedBuilder(
       animation: _breathe,
       builder: (_, __) {
         final alpha = 0.14 + _breathe.value * 0.08;
-        return FilledButton.icon(
-          onPressed: widget.onTap,
-          icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-          label: const Text('润色', maxLines: 1),
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.lilac.withValues(alpha: alpha),
-            foregroundColor: AppColors.ink,
+        return SizedBox(
+          height: 44,
+          child: FilledButton.icon(
+            onPressed: widget.onTap,
+            icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+            label: const Text('润色', maxLines: 1),
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.accent.withValues(alpha: alpha + .08),
+              foregroundColor: theme.foreground,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+            ),
           ),
         );
       },

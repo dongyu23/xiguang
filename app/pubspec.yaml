@@ -41,6 +41,10 @@ dependencies:
   record: ^7.0.0
   path_provider: ^2.1.5
   path: ^1.9.0
+  archive: ^4.0.9
+  crypto: ^3.0.7
+  uuid: ^4.5.3
+  share_plus: ^12.0.2
 
   # 音频播放
   just_audio: ^0.9.0
@@ -56,6 +60,9 @@ dependencies:
   # 崩溃上报
   sentry_flutter: ^9.21.0
   shared_preferences: ^2.5.5
+  connectivity_plus: ^6.1.5
+  flutter_local_notifications: ^22.0.1
+  timezone: ^0.11.1
 
 dev_dependencies:
   flutter_test:
@@ -82,5 +89,11 @@ flutter:
     - assets/nav_icons/nav_island.png
     - assets/nav_icons/nav_mine.png
     - assets/audio/
+    - assets/islands/family_0/
+    - assets/islands/family_1/
+    - assets/islands/family_2/
+    - assets/islands/family_3/
+    - assets/islands/family_4/
+    - assets/islands/family_5/
     - assets/picture/
     - assets/sounds/day_night_switch.m4a

@@ -10,6 +10,7 @@ import (
 
 	"xiguang/backend/internal/ai"
 	"xiguang/backend/internal/app_release"
+	"xiguang/backend/internal/archiveimport"
 	"xiguang/backend/internal/asr"
 	"xiguang/backend/internal/auth"
 	"xiguang/backend/internal/emotion"
@@ -72,6 +73,7 @@ func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 			private.Mount("/starmap", starmap.New(pool).Routes())
 			private.Mount("/islands", island.New(pool).Routes())
 			private.Mount("/media", media.New(pool, cfg).Routes())
+			private.Mount("/archive/imports", archiveimport.New(pool, cfg).Routes())
 			private.Mount("/space", space.Routes())
 			private.Mount("/whitenoise", whitenoise.Routes())
 			private.Mount("/sync", sync.New(pool).Routes())

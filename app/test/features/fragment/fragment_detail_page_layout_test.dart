@@ -27,12 +27,13 @@ void main() {
       tags: const ['雨夜'],
       createdAt: DateTime(2026, 7, 10, 18, 44),
     );
+    final fragmentsNotifier = _FakeFragmentsNotifier(fragment);
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           fragmentsProvider.overrideWith(
-            () => _FakeFragmentsNotifier(fragment),
+            () => fragmentsNotifier,
           ),
           emotionRepositoryProvider.overrideWithValue(
             const _FakeEmotionRepository(),
@@ -44,7 +45,13 @@ void main() {
         child: MaterialApp(
           theme: xiguangTheme(),
           home: const Scaffold(
-            body: FragmentDetailPage(id: '42'),
+            body: FragmentDetailPage(
+              id: '42',
+              islandId: 7,
+              islandRouteId: '7',
+              islandName: '雨夜岛',
+              islandManual: true,
+            ),
           ),
         ),
       ),
@@ -54,10 +61,28 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('雨后空空'), findsOneWidget);
-    expect(find.text('画面与声音'), findsOneWidget);
-    expect(find.text('和旧光发生联系'), findsOneWidget);
-    expect(find.text('选择旧光并织线'), findsOneWidget);
+    expect(find.text('这束光的余韵'), findsOneWidget);
+    expect(find.text('织向旧光'), findsOneWidget);
+    expect(find.text('找一束有回声的光'), findsOneWidget);
+    expect(find.text('已自动保存'), findsOneWidget);
+    expect(find.byTooltip('删除这束光'), findsOneWidget);
+    expect(find.byTooltip('从小岛移除'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '删除'), findsNothing);
+    expect(find.byType(PopupMenuButton<String>), findsNothing);
     expect(find.text('附着的画面'), findsNothing);
+
+    await tester.enterText(find.byType(TextField).first, '雨后有一束新的光。');
+    await tester.pump();
+    expect(find.text('停笔后自动保存'), findsOneWidget);
+    expect(fragmentsNotifier.savedText, isNull);
+
+    await tester.pump(const Duration(milliseconds: 799));
+    expect(fragmentsNotifier.savedText, isNull);
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump();
+
+    expect(fragmentsNotifier.savedText, '雨后有一束新的光。');
+    expect(find.text('已自动保存'), findsOneWidget);
   });
 }
 
@@ -65,9 +90,29 @@ class _FakeFragmentsNotifier extends FragmentsNotifier {
   _FakeFragmentsNotifier(this.fragment);
 
   final Fragment fragment;
+  String? savedText;
 
   @override
   Future<List<Fragment>> build() async => [fragment];
+
+  @override
+  Future<void> updateText(
+    int id,
+    String newText, {
+    String emotion = '说不清',
+    List<String> tags = const [],
+    List<String>? mediaUrls,
+  }) async {
+    savedText = newText;
+    state = AsyncData([
+      fragment.copyWith(
+        contentText: newText,
+        emotion: emotion,
+        tags: tags,
+        mediaUrls: mediaUrls ?? fragment.mediaUrls,
+      ),
+    ]);
+  }
 }
 
 class _FakeEmotionRepository implements EmotionRepositoryPort {
@@ -158,7 +203,6 @@ class _FakeEmotionRepository implements EmotionRepositoryPort {
   Future<void> update(UserEmotion emotion) async {}
 
   @override
-
   @override
   Future<void> setHidden(int id, bool hidden) async {}
 

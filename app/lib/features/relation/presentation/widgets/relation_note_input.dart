@@ -19,18 +19,18 @@ class RelationNoteInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
-      minLines: 3,
-      maxLines: 4,
+      minLines: 1,
+      maxLines: 2,
       maxLength: maxLength,
       style: AppText.body,
       decoration: InputDecoration(
         filled: true,
         fillColor: AppColors.white.withValues(alpha: .72),
-        hintText: '它们都像是被一句话轻轻击中的时刻。',
+        hintText: '可选：比如“从开学一路走到考试”。',
         hintStyle: AppText.placeholder,
-        counterStyle: AppText.caption,
+        counterText: '',
         contentPadding: const EdgeInsets.fromLTRB(
-            AppSpacing.md, AppSpacing.s15, AppSpacing.md, AppSpacing.s12),
+            AppSpacing.s12, AppSpacing.s11, AppSpacing.s12, AppSpacing.s9),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide(color: AppColors.white.withValues(alpha: .76)),

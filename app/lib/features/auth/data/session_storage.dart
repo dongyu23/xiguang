@@ -83,6 +83,7 @@ class SessionStorage {
       'n': value.session.nickname,
       'ak': value.session.avatarKey,
       'ai': value.session.aiEnabled,
+      'aca': value.session.aiConsentAcceptedAt,
       'pm': value.session.privacyMode,
     });
     await _writeBundle(bundle);
@@ -137,6 +138,7 @@ class SessionStorage {
           nickname: decoded['n'] as String? ?? '试光者',
           avatarKey: decoded['ak'] as String? ?? '',
           aiEnabled: decoded['ai'] as bool? ?? false,
+          aiConsentAcceptedAt: decoded['aca'] as String?,
           privacyMode: decoded['pm'] as String? ?? 'private',
         ),
       );

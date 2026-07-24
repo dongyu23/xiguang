@@ -57,16 +57,21 @@ class RelationTypePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: options
-          .map((type) => _RelationChip(
-                option: type,
-                selected: selectedType == type.value,
-                onTap: () => onSelected(type.value),
-              ))
-          .toList(),
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: options.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: AppSpacing.sm,
+        mainAxisSpacing: AppSpacing.sm,
+        mainAxisExtent: 40,
+      ),
+      itemBuilder: (context, index) => _RelationChip(
+        option: options[index],
+        selected: selectedType == options[index].value,
+        onTap: () => onSelected(options[index].value),
+      ),
     );
   }
 }
@@ -87,55 +92,51 @@ class _RelationChip extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: AppMotion.quick,
-        curve: AppMotion.easeOut,
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s14, vertical: AppSpacing.s11),
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.white.withValues(alpha: .96)
-              : AppColors.white.withValues(alpha: .58),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(
+      child: SizedBox.expand(
+        child: AnimatedContainer(
+          duration: AppMotion.quick,
+          curve: AppMotion.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s9),
+          decoration: BoxDecoration(
             color: selected
-                ? AppColors.lilac
-                : AppColors.white.withValues(alpha: .72),
-            width: selected ? 1.4 : 1,
+                ? AppColors.white.withValues(alpha: .96)
+                : AppColors.white.withValues(alpha: .58),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color: selected
+                  ? AppColors.lilac
+                  : AppColors.white.withValues(alpha: .72),
+              width: selected ? 1.4 : 1,
+            ),
           ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: AppColors.lilac.withValues(alpha: .34),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ]
-              : null,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Container(
+              width: 18,
+              height: 18,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: option.color.withValues(alpha: selected ? .78 : .34),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                option.icon,
+                color: selected ? AppColors.white : AppColors.inkMuted,
+                size: 11,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s6),
+            Flexible(
+              child: Text(
+                option.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.chip.copyWith(
+                  color: selected ? AppColors.ink : AppColors.inkMuted,
+                ),
+              ),
+            ),
+          ]),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 22,
-            height: 22,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: option.color.withValues(alpha: selected ? .78 : .34),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              option.icon,
-              color: selected ? AppColors.white : AppColors.inkMuted,
-              size: 13,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Text(
-            option.label,
-            style: AppText.chip.copyWith(
-              color: selected ? AppColors.ink : AppColors.inkMuted,
-            ),
-          ),
-        ]),
       ),
     );
   }

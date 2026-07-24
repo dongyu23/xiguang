@@ -31,7 +31,8 @@ class AIRepositoryImpl implements AIRepositoryPort {
   }
 
   @override
-  Future<Map<String, dynamic>> buildIslands() => _api.buildIslands();
+  Future<Map<String, dynamic>> buildIslands({int rangeDays = 0}) =>
+      _api.buildIslands(rangeDays: rangeDays);
 
   @override
   Future<Map<String, dynamic>> polishFragment(

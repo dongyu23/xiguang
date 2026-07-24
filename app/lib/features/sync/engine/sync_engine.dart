@@ -23,6 +23,7 @@ class SyncEngine {
   final AppDatabase _db;
   SyncConfig _config;
   final List<OpLog> _pendingOps = [];
+  Future<void> _pendingPersistence = Future<void>.value();
   int _seq = 0;
 
   SyncStatus _status = const SyncStatus(
@@ -38,6 +39,9 @@ class SyncEngine {
   bool get hasPending => _pendingOps.isNotEmpty;
 
   void Function()? onStatusChanged;
+
+  /// 新的本地操作入队后调用；恢复历史队列时不触发。
+  void Function()? onOperationEnqueued;
 
   /// Pull 完成后调用（有新数据时），供上层刷新本地缓存
   void Function()? onRemoteChangesApplied;
@@ -65,6 +69,7 @@ class SyncEngine {
             'SYNC: compacted UPDATE ${op.entityType}#${op.entityPublicId}');
         _notifyStatus();
         _persistPendingOps();
+        onOperationEnqueued?.call();
         return;
       }
     }
@@ -81,6 +86,7 @@ class SyncEngine {
     );
     _notifyStatus();
     _persistPendingOps();
+    onOperationEnqueued?.call();
   }
 
   /// 应用启动时调用，从本地存储恢复未推送的 OpLog 和 lastServerRev。
@@ -122,9 +128,9 @@ class SyncEngine {
       isSyncing: true,
       connected: _status.connected,
     );
-
     var hasRemoteChanges = false;
     try {
+      await _pendingPersistence;
       // 1. Push 本地待推送的 OpLog
       if (_pendingOps.isNotEmpty) {
         final ops = _pendingOps.toList();
@@ -151,10 +157,7 @@ class SyncEngine {
         developer
             .log('SYNC: accepted=${acceptedIds.length}, failed=$failedCount');
         _pendingOps.removeWhere((op) => acceptedIds.contains(op.clientOpId));
-        // C3: Delete accepted ops from drift individually (not full clear+reinsert)
-        for (final id in acceptedIds) {
-          await _db.deleteOpLog(id);
-        }
+        await _persistPendingOps();
         developer.log('SYNC: after push, pendingCount=${_pendingOps.length}');
 
         _status = _status.copyWith(lastServerRev: newRev);
@@ -236,21 +239,23 @@ class SyncEngine {
   static const _lastServerRevKey = 'xiguang.sync.last_server_rev';
   static const _lastSyncAtKey = 'xiguang.sync.last_sync_at';
 
-  Future<void> _persistPendingOps() async {
-    // C3: Write to drift instead of SharedPreferences (no more JSON serialization per enqueue)
-    // Clear all existing ops and re-insert the current list
-    await _db.clearOpLogs();
-    for (final op in _pendingOps) {
-      await _db.insertOpLog(OpLogsCompanion.insert(
-        clientOpId: op.clientOpId,
-        entityType: op.entityType,
-        opType: op.opType,
-        entityPublicId: op.entityPublicId,
-        payload: Value(jsonEncode(op.payload)),
-        clientSeq: Value(op.clientSeq),
-        baseServerVersion: Value(op.baseServerVersion),
-      ));
-    }
+  Future<void> _persistPendingOps() {
+    final snapshot = List<OpLog>.of(_pendingOps);
+    _pendingPersistence = _pendingPersistence.then((_) async {
+      await _db.clearOpLogs();
+      for (final op in snapshot) {
+        await _db.insertOpLog(OpLogsCompanion.insert(
+          clientOpId: op.clientOpId,
+          entityType: op.entityType,
+          opType: op.opType,
+          entityPublicId: op.entityPublicId,
+          payload: Value(jsonEncode(op.payload)),
+          clientSeq: Value(op.clientSeq),
+          baseServerVersion: Value(op.baseServerVersion),
+        ));
+      }
+    });
+    return _pendingPersistence;
   }
 
   Future<void> _persistSyncMeta() async {

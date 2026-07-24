@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../auth/domain/auth_repository.dart';
 import '../../relation/domain/relation.dart';
@@ -77,6 +78,69 @@ class FragmentRepositoryImpl implements FragmentRepositoryContract {
     }
   }
 
+  @override
+  Future<List<Fragment>> searchFragments(String query) async {
+    final value = query.trim();
+    if (value.isEmpty) return const [];
+    await _auth.ensureSession();
+    if (_api.hasToken) {
+      try {
+        final body = await _api.get('/fragments/search', query: {
+          'q': value,
+          'limit': 200,
+        });
+        final items = body['value'] is List
+            ? body['value'] as List<dynamic>
+            : body['items'] as List<dynamic>? ?? const [];
+        return items
+            .map((item) => FragmentMapper.fromApi(item as Map<String, dynamic>))
+            .toList();
+      } on DioException catch (error) {
+        developer.log('searchFragments remote failed, using local',
+            error: error);
+      }
+    }
+    return _localDs.search(value);
+  }
+
+  @override
+  Future<List<Fragment>> listDeletedFragments() async {
+    await _auth.ensureSession();
+    if (_api.hasToken) {
+      try {
+        final body = await _api.get('/fragments/trash', query: {'limit': 200});
+        final items = body['value'] is List
+            ? body['value'] as List<dynamic>
+            : body['items'] as List<dynamic>? ?? const [];
+        return items
+            .map((item) => FragmentMapper.fromApi(item as Map<String, dynamic>))
+            .toList();
+      } on DioException catch (error) {
+        developer.log('listDeletedFragments remote failed, using local',
+            error: error);
+      }
+    }
+    return _localDs.getDeleted();
+  }
+
+  @override
+  Future<void> restoreFragment(int id) async {
+    await _auth.ensureSession();
+    if (_api.hasToken) {
+      await _api.post('/fragments/$id/restore', const <String, dynamic>{});
+    }
+    await _localDs.restore(id);
+  }
+
+  @override
+  Future<void> permanentlyDeleteFragment(int id) async {
+    await _auth.ensureSession();
+    if (_api.hasToken) {
+      await _api.delete('/fragments/$id/permanent');
+    }
+    await _localDs.permanentlyDelete(id);
+  }
+
   /// 游标分页加载光片 — 支持增量加载
   @override
   Future<CursorPage<Fragment>> listFragmentsPaged({
@@ -150,6 +214,7 @@ class FragmentRepositoryImpl implements FragmentRepositoryContract {
       mediaUrls: mediaUrls,
     );
     onFragmentChanged?.call('fragment', 'INSERT', local.id, {
+      'public_id': local.publicId,
       'content_text': text,
       'emotion': emotion,
       'tag_names': tags,
@@ -165,9 +230,10 @@ class FragmentRepositoryImpl implements FragmentRepositoryContract {
     required List<String> mediaUrls,
   }) async {
     final now = DateTime.now();
+    final publicId = const Uuid().v4();
     final model = Fragment(
       id: 0, // DB will assign
-      publicId: '',
+      publicId: publicId,
       userId: 0,
       contentText: text,
       emotion: emotion,
@@ -180,7 +246,7 @@ class FragmentRepositoryImpl implements FragmentRepositoryContract {
     final dbId = await _localDs.insert(model);
     return Fragment(
       id: dbId,
-      publicId: '',
+      publicId: publicId,
       userId: 0,
       contentText: text,
       emotion: emotion,

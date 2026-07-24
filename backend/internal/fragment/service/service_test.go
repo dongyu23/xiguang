@@ -13,6 +13,16 @@ type fakeRepo struct {
 	confirmed map[string]bool
 }
 
+type recordingRepo struct {
+	fakeRepo
+	query domain.ListQuery
+}
+
+func (f *recordingRepo) List(ctx context.Context, userID int64, query domain.ListQuery) ([]domain.Fragment, error) {
+	f.query = query
+	return []domain.Fragment{{ID: 9, ContentText: "找到的旧光"}}, nil
+}
+
 func (f fakeRepo) Create(ctx context.Context, userID int64, text, emotion, status string, tags, media []string) (domain.Fragment, error) {
 	return domain.Fragment{ID: 1, UserID: userID, ContentText: text, Emotion: emotion, Status: status, Tags: tags, MediaURLs: media, CreatedAt: time.Now()}, nil
 }
@@ -23,7 +33,17 @@ func (f fakeRepo) Update(ctx context.Context, userID int64, id int64, text, emot
 
 func (f fakeRepo) Delete(ctx context.Context, userID, id int64) (bool, error) { return false, nil }
 
+func (f fakeRepo) Restore(ctx context.Context, userID, id int64) (bool, error) { return false, nil }
+
+func (f fakeRepo) DeletePermanently(ctx context.Context, userID, id int64) (bool, error) {
+	return false, nil
+}
+
 func (f fakeRepo) List(ctx context.Context, userID int64, query domain.ListQuery) ([]domain.Fragment, error) {
+	return nil, nil
+}
+
+func (f fakeRepo) ListDeleted(ctx context.Context, userID int64, limit int) ([]domain.Fragment, error) {
 	return nil, nil
 }
 
@@ -110,5 +130,17 @@ func TestCreateAcceptsConfirmedUserMedia(t *testing.T) {
 	}
 	if len(dto.MediaURLs) != 1 || dto.MediaURLs[0] != "users/7/media/ok.jpg" {
 		t.Fatalf("unexpected media urls: %+v", dto.MediaURLs)
+	}
+}
+
+func TestSearchUsesTrimmedFullTextQuery(t *testing.T) {
+	repo := &recordingRepo{}
+	svc := New(repo, nil)
+	items, err := svc.Search(context.Background(), 7, "  考试周  ", "200")
+	if err != nil {
+		t.Fatalf("search failed: %v", err)
+	}
+	if len(items) != 1 || repo.query.Search != "考试周" || repo.query.Limit != 200 {
+		t.Fatalf("unexpected search query/result: query=%+v items=%+v", repo.query, items)
 	}
 }

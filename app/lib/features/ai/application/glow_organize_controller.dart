@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/app_state.dart';
 import '../../../app/providers.dart';
 import '../domain/ai_request.dart';
 import '../domain/ai_response.dart';
@@ -9,6 +10,10 @@ class GlowOrganizeController extends AutoDisposeAsyncNotifier<AIResponse?> {
   Future<AIResponse?> build() async => null;
 
   Future<AIResponse> request(AIRequest request) async {
+    if (!ref.read(aiEnabledProvider)) {
+      state = const AsyncData(null);
+      return const AIResponse();
+    }
     if (state.isLoading) throw StateError('glow_request_in_progress');
     state = const AsyncLoading();
     try {

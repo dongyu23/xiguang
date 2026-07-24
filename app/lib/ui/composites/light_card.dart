@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../design/themes/extensions/night_theme.dart';
 import '../../design/tokens/colors.dart';
 import '../../design/tokens/motion.dart';
@@ -35,7 +36,7 @@ class LightFragment {
 }
 
 /// 光片卡片 — 时间河流中使用
-class LightFragmentCard extends StatelessWidget {
+class LightFragmentCard extends StatefulWidget {
   const LightFragmentCard(
       {super.key,
       required this.fragment,
@@ -65,146 +66,233 @@ class LightFragmentCard extends StatelessWidget {
   final Key? tapKey;
 
   @override
+  State<LightFragmentCard> createState() => _LightFragmentCardState();
+}
+
+class _LightFragmentCardState extends State<LightFragmentCard> {
+  bool _pressing = false;
+  bool _longPressActive = false;
+
+  void _setPressing(bool value) {
+    if (_pressing == value || !mounted) return;
+    setState(() => _pressing = value);
+  }
+
+  void _handleLongPressStart(LongPressStartDetails details) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _pressing = true;
+      _longPressActive = true;
+    });
+  }
+
+  void _handleLongPressEnd(LongPressEndDetails details) {
+    if (!mounted) return;
+    setState(() {
+      _pressing = false;
+      _longPressActive = false;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final fragment = widget.fragment;
+    final compact = widget.compact;
+    final dense = widget.dense;
+    final showTitle = widget.showTitle;
+    final showAttachmentBadge = widget.showAttachmentBadge;
+    final onTap = widget.onTap;
+    final onLongPress = widget.onLongPress;
+    final onSelectionTap = widget.onSelectionTap;
+    final selected = widget.selected;
+    final selectionMode = widget.selectionMode;
+    final showSelectionControl = widget.showSelectionControl;
+    final selectionVisible = selectionMode || showSelectionControl;
+    final tapKey = widget.tapKey;
     final theme = NightTheme.of(context);
     final hasImageAttachment = fragment.mediaUrls.any(_isImageMedia);
-    return Semantics(
-      key: tapKey,
-      button: onTap != null,
-      label: fragment.title,
-      child: XiguangCard(
-        margin: EdgeInsets.only(
-          bottom: compact
-              ? AppSpacing.s9
-              : (dense ? AppSpacing.s9 : AppSpacing.s12),
-        ),
-        padding: EdgeInsets.fromLTRB(
-          compact ? AppSpacing.s10 : (dense ? AppSpacing.s12 : AppSpacing.md),
-          compact ? AppSpacing.s10 : (dense ? AppSpacing.s12 : AppSpacing.md),
-          compact ? AppSpacing.s10 : (dense ? AppSpacing.s12 : AppSpacing.md),
-          compact ? AppSpacing.s10 : (dense ? AppSpacing.s11 : AppSpacing.md),
-        ),
-        selected: selected,
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (selectionMode || showSelectionControl) ...[
-              _SelectionMark(
-                selected: selected,
-                onTap: onSelectionTap,
-              ),
-              SizedBox(width: compact ? AppSpacing.sm : AppSpacing.s10),
-            ],
-            // 左侧色块
-            _MediaThumb(
-              urls: fragment.mediaUrls,
-              color: fragment.color,
-              size: compact ? 42 : (dense ? 42 : 58),
-              circular: dense,
-            ),
-            SizedBox(
-              width: compact
-                  ? AppSpacing.s10
-                  : (dense ? AppSpacing.s10 : AppSpacing.s14),
-            ),
-            // 右侧内容
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!showTitle)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            fragment.text,
-                            maxLines: dense ? 3 : 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: (dense
-                                    ? AppText.bodyStrong.copyWith(height: 1.42)
-                                    : AppText.body)
-                                .copyWith(color: theme.foreground),
+    final interactionEnabled = onTap != null || onLongPress != null;
+    return AnimatedScale(
+      key: const ValueKey('light-card-press-scale'),
+      scale: _longPressActive
+          ? .972
+          : _pressing
+              ? .988
+              : 1,
+      duration: _pressing ? AppMotion.quick : AppMotion.normal,
+      curve: _pressing ? AppMotion.easeOut : AppMotion.microMovement,
+      child: Semantics(
+        key: tapKey,
+        button: onTap != null,
+        label: fragment.title,
+        child: XiguangCard(
+          margin: EdgeInsets.only(
+            bottom: compact
+                ? AppSpacing.s9
+                : (dense ? AppSpacing.s9 : AppSpacing.s12),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            compact ? AppSpacing.s10 : (dense ? AppSpacing.s12 : AppSpacing.md),
+            compact ? AppSpacing.s10 : (dense ? AppSpacing.s12 : AppSpacing.md),
+            compact ? AppSpacing.s10 : (dense ? AppSpacing.s12 : AppSpacing.md),
+            compact ? AppSpacing.s10 : (dense ? AppSpacing.s11 : AppSpacing.md),
+          ),
+          selected: selected,
+          highlighted: _longPressActive,
+          onTap: onTap,
+          onLongPress: onLongPress,
+          onTapDown: interactionEnabled ? (_) => _setPressing(true) : null,
+          onTapUp: interactionEnabled ? (_) => _setPressing(false) : null,
+          onTapCancel: interactionEnabled ? () => _setPressing(false) : null,
+          onLongPressStart: onLongPress != null ? _handleLongPressStart : null,
+          onLongPressEnd: onLongPress != null ? _handleLongPressEnd : null,
+          child: Row(
+            key: const ValueKey('light-card-content-row'),
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              AnimatedContainer(
+                key: const ValueKey('light-card-selection-slot'),
+                duration: AppMotion.normal,
+                curve: AppMotion.microMovement,
+                width: selectionVisible
+                    ? 24 + (compact ? AppSpacing.sm : AppSpacing.s10)
+                    : 0,
+                child: ClipRect(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: IgnorePointer(
+                      ignoring: !selectionVisible,
+                      child: AnimatedOpacity(
+                        opacity: selectionVisible ? 1 : 0,
+                        duration: AppMotion.quick,
+                        curve: AppMotion.easeOut,
+                        child: AnimatedScale(
+                          scale: selectionVisible ? 1 : .82,
+                          duration: AppMotion.normal,
+                          curve: AppMotion.easeOut,
+                          child: _SelectionMark(
+                            selected: selected,
+                            onTap: onSelectionTap,
                           ),
                         ),
-                        const SizedBox(width: AppSpacing.s10),
-                        if (showAttachmentBadge && hasImageAttachment) ...[
-                          const _AttachmentBadge(),
-                          const SizedBox(width: AppSpacing.s6),
-                        ],
-                        Text(
-                          fragment.time,
-                          maxLines: 1,
-                          style: AppText.caption
-                              .copyWith(color: theme.foregroundMuted),
-                        ),
-                      ],
-                    )
-                  else ...[
-                    Row(
-                      children: [
-                        Expanded(
-                            child: Text(fragment.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppText.titleSmall
-                                    .copyWith(color: theme.foreground))),
-                        const SizedBox(width: AppSpacing.s10),
-                        if (showAttachmentBadge && hasImageAttachment) ...[
-                          const _AttachmentBadge(),
-                          const SizedBox(width: AppSpacing.s6),
-                        ],
-                        Text(fragment.time,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // 左侧色块
+              KeyedSubtree(
+                key: const ValueKey('light-card-media-thumb'),
+                child: _MediaThumb(
+                  urls: fragment.mediaUrls,
+                  color: fragment.color,
+                  size: compact ? 42 : (dense ? 42 : 58),
+                  circular: dense,
+                ),
+              ),
+              SizedBox(
+                width: compact
+                    ? AppSpacing.s10
+                    : (dense ? AppSpacing.s10 : AppSpacing.s14),
+              ),
+              // 右侧内容
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!showTitle)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              fragment.text,
+                              maxLines: dense ? 3 : 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: (dense
+                                      ? AppText.bodyStrong
+                                          .copyWith(height: 1.42)
+                                      : AppText.body)
+                                  .copyWith(color: theme.foreground),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.s10),
+                          if (showAttachmentBadge && hasImageAttachment) ...[
+                            const _AttachmentBadge(),
+                            const SizedBox(width: AppSpacing.s6),
+                          ],
+                          Text(
+                            fragment.time,
                             maxLines: 1,
                             style: AppText.caption
-                                .copyWith(color: theme.foregroundMuted)),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(fragment.text,
-                        style: AppText.body.copyWith(color: theme.foreground),
-                        maxLines: compact ? 1 : 3,
-                        overflow: TextOverflow.ellipsis),
-                  ],
-                  if (!compact) ...[
-                    SizedBox(height: dense ? AppSpacing.sm : AppSpacing.s10),
-                    Wrap(
-                      spacing: dense ? AppSpacing.s5 : AppSpacing.s6,
-                      runSpacing: dense ? AppSpacing.s5 : AppSpacing.s6,
-                      children: [
-                        MiniTag(
-                            label: fragment.emotion,
-                            filled: true,
-                            compact: dense),
-                        if (_relationLabel(fragment.relation) != null)
-                          _RelationBadge(
-                            label: _relationLabel(fragment.relation)!,
-                            compact: dense,
+                                .copyWith(color: theme.foregroundMuted),
                           ),
-                        ...fragment.tags.take(3).map((tag) => MiniTag(
-                              label: tag,
+                        ],
+                      )
+                    else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                              child: Text(fragment.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppText.titleSmall
+                                      .copyWith(color: theme.foreground))),
+                          const SizedBox(width: AppSpacing.s10),
+                          if (showAttachmentBadge && hasImageAttachment) ...[
+                            const _AttachmentBadge(),
+                            const SizedBox(width: AppSpacing.s6),
+                          ],
+                          Text(fragment.time,
+                              maxLines: 1,
+                              style: AppText.caption
+                                  .copyWith(color: theme.foregroundMuted)),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(fragment.text,
+                          style: AppText.body.copyWith(color: theme.foreground),
+                          maxLines: compact ? 1 : 3,
+                          overflow: TextOverflow.ellipsis),
+                    ],
+                    if (!compact) ...[
+                      SizedBox(height: dense ? AppSpacing.sm : AppSpacing.s10),
+                      Wrap(
+                        spacing: dense ? AppSpacing.s5 : AppSpacing.s6,
+                        runSpacing: dense ? AppSpacing.s5 : AppSpacing.s6,
+                        children: [
+                          MiniTag(
+                              label: fragment.emotion,
+                              filled: true,
+                              compact: dense),
+                          if (_relationLabel(fragment.relation) != null)
+                            _RelationBadge(
+                              label: _relationLabel(fragment.relation)!,
                               compact: dense,
-                            )),
-                      ],
-                    ),
+                            ),
+                          ...fragment.tags.take(3).map((tag) => MiniTag(
+                                label: tag,
+                                compact: dense,
+                              )),
+                        ],
+                      ),
+                    ],
+                    if (compact) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Row(children: [
+                        Icon(Icons.alt_route_rounded,
+                            size: 15, color: theme.accent),
+                        const SizedBox(width: AppSpacing.s5),
+                        Text('点开织线',
+                            style: AppText.caption
+                                .copyWith(color: theme.foregroundMuted)),
+                      ]),
+                    ],
                   ],
-                  if (compact) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    Row(children: [
-                      Icon(Icons.alt_route_rounded,
-                          size: 15, color: theme.accent),
-                      const SizedBox(width: AppSpacing.s5),
-                      Text('点开织线',
-                          style: AppText.caption
-                              .copyWith(color: theme.foregroundMuted)),
-                    ]),
-                  ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -345,9 +433,21 @@ class _SelectionMark extends StatelessWidget {
               color: selected ? theme.accent : theme.border,
             ),
           ),
-          child: selected
-              ? Icon(Icons.check_rounded, size: 16, color: theme.background)
-              : null,
+          child: AnimatedSwitcher(
+            duration: AppMotion.quick,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(scale: animation, child: child),
+            ),
+            child: selected
+                ? Icon(
+                    Icons.check_rounded,
+                    key: const ValueKey('selected'),
+                    size: 16,
+                    color: theme.background,
+                  )
+                : const SizedBox(key: ValueKey('unselected')),
+          ),
         ),
       ),
     );

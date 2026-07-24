@@ -1,25 +1,24 @@
-// PAGE_SIZE_EXEMPT: migration in progress; candidate selection and relation sections will be extracted.
+// PAGE_SIZE_EXEMPT: sequence composition and submission form one focused flow.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../fragment/presentation/providers/fragment_providers.dart';
-import '../../application/weave_controller.dart';
-import '../providers/relation_providers.dart';
 import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
-import '../../../../ui/primitives/night_background.dart';
-import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../design/tokens/typography.dart';
 import '../../../../ui/composites/xiguang_button.dart';
 import '../../../../ui/composites/xiguang_card.dart';
 import '../../../../ui/composites/xiguang_empty_state.dart';
+import '../../../../ui/primitives/night_background.dart';
+import '../../../../ui/primitives/page_back_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../../fragment/domain/fragment.dart';
-import '../../../relation/domain/relation.dart';
+import '../../../fragment/presentation/providers/fragment_providers.dart';
+import '../../application/weave_controller.dart';
+import '../providers/relation_providers.dart';
 import '../widgets/relation_note_input.dart';
 import '../widgets/relation_type_picker.dart';
 
@@ -34,12 +33,17 @@ class WeavePage extends ConsumerStatefulWidget {
 
 class _WeavePageState extends ConsumerState<WeavePage> {
   final _noteController = TextEditingController();
-  int? _targetId;
+  late final List<int> _chainIds;
   String _relationType = 'reminds_me';
-  _CandidateSort _candidateSort = _CandidateSort.newest;
   bool _isSubmitting = false;
   bool _completed = false;
   String? _submitNotice;
+
+  @override
+  void initState() {
+    super.initState();
+    _chainIds = [widget.sourceId];
+  }
 
   @override
   void dispose() {
@@ -54,7 +58,6 @@ class _WeavePageState extends ConsumerState<WeavePage> {
     return Stack(children: [
       const Positioned.fill(child: NightBackgroundPlaceholder()),
       const Positioned.fill(child: AtmosphereBackground()),
-      const Positioned.fill(child: _ThreadMist()),
       Scaffold(
         backgroundColor: Colors.transparent,
         body: SafeArea(
@@ -62,10 +65,9 @@ class _WeavePageState extends ConsumerState<WeavePage> {
             data: (items) => _buildContent(context, items),
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (_, __) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: Text('暂时无法展开这些光，请稍后再试。',
-                    style: AppText.body.copyWith(color: theme.foreground)),
+              child: Text(
+                '暂时无法展开这些光，请稍后再试。',
+                style: AppText.body.copyWith(color: theme.foreground),
               ),
             ),
           ),
@@ -74,266 +76,168 @@ class _WeavePageState extends ConsumerState<WeavePage> {
     ]);
   }
 
-  Widget _buildContent(
-    BuildContext context,
-    List<Fragment> items,
-  ) {
+  Widget _buildContent(BuildContext context, List<Fragment> items) {
     final source =
         items.where((item) => item.id == widget.sourceId).firstOrNull;
-    if (source == null) {
-      return _NotFoundState(onBack: () => context.pop());
+    if (source == null) return _NotFoundState(onBack: () => context.pop());
+
+    final fragmentsById = {for (final fragment in items) fragment.id: fragment};
+    final chain =
+        _chainIds.map((id) => fragmentsById[id]).whereType<Fragment>().toList();
+    final candidates = [...items]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final relations = ref.watch(relationsProvider).valueOrNull ?? const [];
+    final existingPairs = {
+      for (final relation in relations)
+        _pairKey(relation.sourceFragmentId, relation.targetFragmentId),
+    };
+    final directlyWovenIds = <int>{};
+    for (final relation in relations) {
+      if (relation.sourceFragmentId == source.id) {
+        directlyWovenIds.add(relation.targetFragmentId);
+      } else if (relation.targetFragmentId == source.id) {
+        directlyWovenIds.add(relation.sourceFragmentId);
+      }
     }
 
-    final candidates = _sortedCandidates(
-      items.where((item) => item.id != widget.sourceId).toList(),
-      source,
-    );
-    final hasSelectedTarget =
-        candidates.any((fragment) => fragment.id == _targetId);
-    final effectiveTargetId =
-        hasSelectedTarget ? _targetId : candidates.firstOrNull?.id;
-    final selected =
-        candidates.where((item) => item.id == effectiveTargetId).firstOrNull;
-
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(AppSpacing.s22, AppSpacing.s10,
-          AppSpacing.s22, AppSpacing.pageBottomNav),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _Header(onBack: () => context.pop()),
-            const SizedBox(height: AppSpacing.s18),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const _StepThread(),
-              const SizedBox(width: AppSpacing.s14),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _SectionLabel(
-                        icon: Icons.wb_twilight_rounded,
-                        label: '当前这束光',
-                      ),
-                      const SizedBox(height: AppSpacing.s10),
-                      _CurrentLightCard(fragment: source),
-                      const SizedBox(height: AppSpacing.s12),
-                      _ExistingRelations(
-                        sourceId: source.id,
-                        fragments: items,
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      _SectionLabel(
-                        icon: Icons.blur_circular_rounded,
-                        label: '选择另一束光',
-                        trailing: _SortPill(
-                          value: _candidateSort,
-                          onChanged: (value) =>
-                              setState(() => _candidateSort = value),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.s10),
-                      if (candidates.isEmpty)
-                        _EmptyCandidatesCard()
-                      else
-                        ...candidates.map(
-                          (fragment) => Padding(
-                            padding:
-                                const EdgeInsets.only(bottom: AppSpacing.s10),
-                            child: _CandidateLightTile(
-                              fragment: fragment,
-                              selected: fragment.id == effectiveTargetId,
-                              onTap: () =>
-                                  setState(() => _targetId = fragment.id),
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: AppSpacing.s14),
-                      _SectionLabel(
-                        icon: Icons.hub_rounded,
-                        label: '关系类型',
-                      ),
-                      const SizedBox(height: AppSpacing.s12),
-                      RelationTypePicker(
-                        selectedType: _relationType,
-                        onSelected: (type) =>
-                            setState(() => _relationType = type),
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      _SectionLabel(
-                        icon: Icons.short_text_rounded,
-                        label: '写一句关系说明',
-                        suffix: '可选',
-                      ),
-                      const SizedBox(height: AppSpacing.s10),
-                      RelationNoteInput(controller: _noteController),
-                      const SizedBox(height: AppSpacing.s18),
-                      _SubmitButton(
-                        enabled: selected != null && !_isSubmitting,
-                        isSubmitting: _isSubmitting,
-                        onPressed: selected == null
-                            ? null
-                            : () => _submit(source, selected),
-                      ),
-                      AnimatedSwitcher(
-                        duration: AppMotion.normal,
-                        child: _completed || _submitNotice != null
-                            ? Padding(
-                                key: ValueKey(
-                                  _completed
-                                      ? 'weave-complete-toast'
-                                      : 'weave-submit-notice',
-                                ),
-                                padding:
-                                    const EdgeInsets.only(top: AppSpacing.s10),
-                                child: _completed
-                                    ? const _CompleteToast()
-                                    : _SubmitNotice(text: _submitNotice!),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
-                    ]),
+    return Column(children: [
+      Expanded(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.s18,
+            AppSpacing.sm,
+            AppSpacing.s18,
+            AppSpacing.s18,
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _Header(onBack: () => context.pop()),
+                  const SizedBox(height: AppSpacing.s14),
+                  _DevelopmentRail(
+                    chain: chain,
+                    onReorder: (oldIndex, newIndex) {
+                      setState(() {
+                        final id = _chainIds.removeAt(oldIndex);
+                        _chainIds.insert(newIndex, id);
+                        _resetNotice();
+                      });
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.s12),
+                  _CandidatePanel(
+                    fragments: candidates,
+                    sourceId: source.id,
+                    selectedIds: _chainIds.toSet(),
+                    directlyWovenIds: directlyWovenIds,
+                    onToggle: (id) {
+                      setState(() {
+                        if (_chainIds.contains(id)) {
+                          _chainIds.remove(id);
+                        } else {
+                          _chainIds.add(id);
+                        }
+                        _resetNotice();
+                      });
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.s14),
+                  Text(
+                    '它们为什么接着发生',
+                    style: AppText.titleSmall
+                        .copyWith(color: NightTheme.of(context).foreground),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  RelationTypePicker(
+                    selectedType: _relationType,
+                    onSelected: (type) => setState(() => _relationType = type),
+                  ),
+                  const SizedBox(height: AppSpacing.s12),
+                  RelationNoteInput(controller: _noteController),
+                  AnimatedSwitcher(
+                    duration: AppMotion.normal,
+                    child: _completed || _submitNotice != null
+                        ? Padding(
+                            key: ValueKey(
+                                _completed ? 'complete' : 'submit-notice'),
+                            padding: const EdgeInsets.only(top: AppSpacing.s10),
+                            child: _completed
+                                ? _CompleteToast(eventCount: chain.length)
+                                : _SubmitNotice(text: _submitNotice!),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
               ),
-            ]),
-          ]),
+            ),
+          ),
         ),
       ),
-    );
+      _BottomWeaveBar(
+        eventCount: chain.length,
+        isSubmitting: _isSubmitting,
+        onPressed: chain.length < 2 || _isSubmitting
+            ? null
+            : () => _submit(chain, existingPairs),
+      ),
+    ]);
   }
 
-  List<Fragment> _sortedCandidates(
-    List<Fragment> candidates,
-    Fragment source,
-  ) {
-    final sorted = [...candidates];
-    sorted.sort((a, b) {
-      return switch (_candidateSort) {
-        _CandidateSort.newest => b.createdAt.compareTo(a.createdAt),
-        _CandidateSort.oldest => a.createdAt.compareTo(b.createdAt),
-        _CandidateSort.nearSourceTime => (a.createdAt
-            .difference(source.createdAt)
-            .abs()
-            .compareTo(b.createdAt.difference(source.createdAt).abs())),
-      };
-    });
-    return sorted;
+  void _resetNotice() {
+    _completed = false;
+    _submitNotice = null;
   }
 
-  Future<void> _submit(
-    Fragment source,
-    Fragment selected,
-  ) async {
-    if (_isSubmitting) return;
+  Future<void> _submit(List<Fragment> chain, Set<String> existingPairs) async {
+    if (_isSubmitting || chain.length < 2) return;
     setState(() {
       _isSubmitting = true;
-      _completed = false;
-      _submitNotice = null;
+      _resetNotice();
     });
+    var createdCount = 0;
     try {
-      final relation = await ref.read(weaveControllerProvider.notifier).submit(
-            sourceFragmentId: source.id,
-            targetFragmentId: selected.id,
-            relationType: _relationType,
-            note: _noteController.text,
-          );
+      for (var index = 0; index < chain.length - 1; index++) {
+        final from = chain[index];
+        final to = chain[index + 1];
+        if (existingPairs.contains(_pairKey(from.id, to.id))) continue;
+        final relation =
+            await ref.read(weaveControllerProvider.notifier).submit(
+                  sourceFragmentId: from.id,
+                  targetFragmentId: to.id,
+                  relationType: _relationType,
+                  note: _noteController.text,
+                );
+        if (relation == null) throw StateError('weave_failed');
+        createdCount++;
+      }
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
-        _completed = relation != null;
-        _submitNotice = relation == null ? '后端暂时没有回应，这条线还没有写入。' : null;
+        _completed = createdCount > 0;
+        _submitNotice = createdCount == 0 ? '这些事件已经在同一条线上了。' : null;
       });
+      ref.invalidate(relationsProvider);
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
         _completed = false;
-        _submitNotice = '后端暂时没有回应，这条线还没有写入。';
+        _submitNotice = createdCount == 0
+            ? '后端暂时没有回应，这条线还没有写入。'
+            : '已织好前 $createdCount 段，剩下的暂时没有写入。';
       });
     }
   }
 }
 
-enum _CandidateSort { newest, oldest, nearSourceTime }
-
-class _ExistingRelations extends ConsumerWidget {
-  const _ExistingRelations({required this.sourceId, required this.fragments});
-
-  final int sourceId;
-  final List<Fragment> fragments;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final relations = ref.watch(fragmentRelationsProvider(sourceId));
-    final theme = NightTheme.of(context);
-    return relations.when(
-      data: (items) {
-        if (items.isEmpty) {
-          return Text('还没有织好的线。',
-              style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted));
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '已经织好的线',
-              style: AppText.caption.copyWith(color: theme.foregroundMuted),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            ...items.take(4).map((relation) {
-              final other = _otherFragment(relation);
-              return Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.s6),
-                child: Row(children: [
-                  Icon(Icons.blur_circular_rounded,
-                      size: 16, color: theme.accent),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      '${_relationLabel(relation.relationType)} · ${other?.title ?? '另一束光'}',
-                      style: AppText.bodyMuted
-                          .copyWith(color: theme.foregroundMuted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ]),
-              );
-            }),
-          ],
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => Text('织线暂时无法读取。',
-          style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted)),
-    );
-  }
-
-  Fragment? _otherFragment(Relation relation) {
-    final otherId = relation.sourceFragmentId == sourceId
-        ? relation.targetFragmentId
-        : relation.sourceFragmentId;
-    return fragments.where((fragment) => fragment.id == otherId).firstOrNull;
-  }
-
-  String _relationLabel(String value) {
-    return switch (value) {
-      'reminds_me' => '回声',
-      'inspiration' => '伏笔',
-      'emotion_continue' => '余震',
-      'same_phase' => '平行宇宙',
-      'cause' => '小小救命',
-      'custom' => '旧光',
-      'echo' => '回声',
-      'foreshadow' => '伏笔',
-      'aftershock' => '余震',
-      'parallel' => '平行宇宙',
-      'lifeline' => '小小救命',
-      'old_light' => '旧光',
-      _ => '旧光',
-    };
-  }
+String _pairKey(int first, int second) {
+  final low = first < second ? first : second;
+  final high = first < second ? second : first;
+  return '$low:$high';
 }
 
 class _Header extends StatelessWidget {
@@ -344,319 +248,365 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
-    return Stack(alignment: Alignment.center, children: [
-      Align(
-        alignment: Alignment.centerLeft,
-        child: PageBackButton(
-          onTap: onBack,
-        ),
+    return Row(children: [
+      PageBackButton(onTap: onBack),
+      const SizedBox(width: AppSpacing.s12),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('织线',
+              style: AppText.titleLarge.copyWith(color: theme.foreground)),
+          const SizedBox(height: AppSpacing.s2),
+          Text(
+            '按事情发展的顺序，把片刻接起来。',
+            style: AppText.caption.copyWith(color: theme.foregroundMuted),
+          ),
+        ]),
       ),
-      Column(mainAxisSize: MainAxisSize.min, children: [
-        Text(
-          '织线',
-          style: AppText.hero.copyWith(color: theme.foreground),
-        ),
-        const SizedBox(height: AppSpacing.s6),
-        Text(
-          '让两束光轻轻靠近。',
-          style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted),
-        ),
-      ]),
     ]);
   }
 }
 
-class _CurrentLightCard extends StatelessWidget {
-  const _CurrentLightCard({required this.fragment});
+class _DevelopmentRail extends StatelessWidget {
+  const _DevelopmentRail({required this.chain, required this.onReorder});
 
-  final Fragment fragment;
+  final List<Fragment> chain;
+  final ReorderCallback onReorder;
 
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
     return XiguangCard(
-      child: Row(children: [
-        _LightGlyph(color: fragment.color, icon: Icons.graphic_eq_rounded),
-        const SizedBox(width: AppSpacing.md),
-        Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(
-              fragment.contentText,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style:
-                  AppText.body.copyWith(color: theme.foreground, height: 1.46),
+      padding: const EdgeInsets.all(AppSpacing.s12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.route_rounded, size: 18, color: theme.accent),
+          const SizedBox(width: AppSpacing.s7),
+          Text('发展顺序',
+              style: AppText.bodyStrong.copyWith(color: theme.foreground)),
+          const Spacer(),
+          Text('长按拖动',
+              style: AppText.caption.copyWith(color: theme.foregroundMuted)),
+        ]),
+        const SizedBox(height: AppSpacing.s10),
+        SizedBox(
+          height: 82,
+          child: ReorderableListView.builder(
+            scrollDirection: Axis.horizontal,
+            buildDefaultDragHandles: false,
+            onReorderItem: onReorder,
+            itemCount: chain.length,
+            proxyDecorator: (child, _, animation) => FadeTransition(
+              opacity: animation.drive(Tween(begin: .72, end: 1.0)),
+              child: child,
             ),
-            const SizedBox(height: AppSpacing.s10),
-            Text('${fragment.dateLabel} · ${fragment.emotion}',
-                style:
-                    AppText.bodyMuted.copyWith(color: theme.foregroundMuted)),
-          ]),
+            itemBuilder: (context, index) {
+              final fragment = chain[index];
+              return ReorderableDragStartListener(
+                key: ValueKey('chain-${fragment.id}'),
+                index: index,
+                child: _ChainEventCard(
+                  fragment: fragment,
+                  order: index + 1,
+                  showArrow: index < chain.length - 1,
+                ),
+              );
+            },
+          ),
         ),
       ]),
     );
   }
 }
 
-class _CandidateLightTile extends StatelessWidget {
-  const _CandidateLightTile({
+class _ChainEventCard extends StatelessWidget {
+  const _ChainEventCard({
     required this.fragment,
-    required this.selected,
-    required this.onTap,
+    required this.order,
+    required this.showArrow,
   });
 
   final Fragment fragment;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = NightTheme.of(context);
-    return XiguangCard(
-      onTap: onTap,
-      selected: selected,
-      padding: const EdgeInsets.all(AppSpacing.s12),
-      child: AnimatedContainer(
-        duration: AppMotion.quick,
-        curve: AppMotion.easeOut,
-        child: Row(children: [
-          _MiniImage(fragment: fragment),
-          const SizedBox(width: AppSpacing.s13),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                fragment.contentText,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.body
-                    .copyWith(color: theme.foreground, height: 1.42),
-              ),
-              const SizedBox(height: AppSpacing.s7),
-              Text('${fragment.dateLabel} · ${fragment.emotion}',
-                  style:
-                      AppText.bodyMuted.copyWith(color: theme.foregroundMuted)),
-            ]),
-          ),
-          const SizedBox(width: AppSpacing.s10),
-          AnimatedContainer(
-            duration: AppMotion.quick,
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: selected ? AppColors.lilac : Colors.transparent,
-              border: Border.all(
-                color: selected ? AppColors.lilac : theme.border,
-                width: 1.4,
-              ),
-            ),
-            child: selected
-                ? const Icon(Icons.check_rounded,
-                    color: AppColors.white, size: 18)
-                : null,
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-class _MiniImage extends StatelessWidget {
-  const _MiniImage({required this.fragment});
-
-  final Fragment fragment;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 66,
-      height: 56,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            fragment.color.withValues(alpha: .72),
-            AppColors.white.withValues(alpha: .92),
-            AppColors.sunsetCoral.withValues(alpha: .34),
-          ],
-        ),
-      ),
-      child: CustomPaint(painter: _LightSketchPainter(fragment.color)),
-    );
-  }
-}
-
-class _LightGlyph extends StatelessWidget {
-  const _LightGlyph({required this.color, required this.icon});
-
-  final Color color;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 54,
-      height: 54,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color.withValues(alpha: .18),
-      ),
-      child: Icon(icon, color: color, size: 28),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({
-    required this.icon,
-    required this.label,
-    this.trailing,
-    this.suffix,
-  });
-
-  final IconData icon;
-  final String label;
-  final Widget? trailing;
-  final String? suffix;
+  final int order;
+  final bool showArrow;
 
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
     return Row(children: [
-      Icon(icon, size: 18, color: theme.accent),
-      const SizedBox(width: AppSpacing.sm),
-      Text(
-        label,
-        style: AppText.titleSmall.copyWith(color: theme.foreground),
-      ),
-      if (suffix != null) ...[
-        const SizedBox(width: AppSpacing.s6),
-        Text(
-          suffix!,
-          style: AppText.caption.copyWith(color: theme.foregroundMuted),
+      Container(
+        width: 104,
+        height: 74,
+        padding: const EdgeInsets.all(AppSpacing.s9),
+        decoration: BoxDecoration(
+          color: fragment.color.withValues(alpha: theme.isNight ? .16 : .1),
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: fragment.color.withValues(alpha: .32)),
         ),
-      ],
-      if (trailing != null) ...[
-        const Spacer(),
-        trailing!,
-      ],
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              width: 20,
+              height: 20,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: fragment.color,
+                shape: BoxShape.circle,
+              ),
+              child: Text('$order',
+                  style: AppText.caption
+                      .copyWith(color: AppColors.white, fontSize: 10)),
+            ),
+            const Spacer(),
+            Icon(Icons.drag_indicator_rounded,
+                size: 17, color: theme.foregroundMuted),
+          ]),
+          const SizedBox(height: AppSpacing.s6),
+          Text(
+            fragment.contentText,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppText.caption.copyWith(
+              color: theme.foreground,
+              height: 1.25,
+            ),
+          ),
+        ]),
+      ),
+      if (showArrow) ...[
+        const SizedBox(width: AppSpacing.s3),
+        Icon(Icons.arrow_forward_rounded, size: 14, color: theme.accent),
+        const SizedBox(width: AppSpacing.s3),
+      ] else
+        const SizedBox(width: AppSpacing.sm),
     ]);
   }
 }
 
-class _SortPill extends StatelessWidget {
-  const _SortPill({required this.value, required this.onChanged});
-
-  final _CandidateSort value;
-  final ValueChanged<_CandidateSort> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = NightTheme.of(context);
-    return PopupMenuButton<_CandidateSort>(
-      tooltip: '选择排序方式',
-      initialValue: value,
-      onSelected: onChanged,
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: _CandidateSort.newest, child: Text('按时间：最新')),
-        PopupMenuItem(value: _CandidateSort.oldest, child: Text('按时间：最早')),
-        PopupMenuItem(
-            value: _CandidateSort.nearSourceTime, child: Text('靠近当前光片时间')),
-      ],
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s10, vertical: AppSpacing.s6),
-        decoration: BoxDecoration(
-          color: theme.surfaceHigh.withValues(alpha: .5),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(_label,
-              style: AppText.caption.copyWith(color: theme.foreground)),
-          const SizedBox(width: AppSpacing.xs),
-          Icon(Icons.expand_more_rounded, size: 16, color: theme.foreground),
-        ]),
-      ),
-    );
-  }
-
-  String get _label {
-    return switch (value) {
-      _CandidateSort.newest => '最新',
-      _CandidateSort.oldest => '最早',
-      _CandidateSort.nearSourceTime => '近当前',
-    };
-  }
-}
-
-class _StepThread extends StatelessWidget {
-  const _StepThread();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 16,
-      height: 650,
-      child: CustomPaint(painter: _StepThreadPainter()),
-    );
-  }
-}
-
-class _SubmitButton extends StatelessWidget {
-  const _SubmitButton({
-    required this.enabled,
-    required this.isSubmitting,
-    required this.onPressed,
+class _CandidatePanel extends StatelessWidget {
+  const _CandidatePanel({
+    required this.fragments,
+    required this.sourceId,
+    required this.selectedIds,
+    required this.directlyWovenIds,
+    required this.onToggle,
   });
 
-  final bool enabled;
-  final bool isSubmitting;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return XiguangButton(
-      label: '织好这条线',
-      leading: const Icon(Icons.auto_awesome_rounded, size: 19),
-      onPressed: enabled ? onPressed : null,
-      loading: isSubmitting,
-    );
-  }
-}
-
-class _CompleteToast extends StatelessWidget {
-  const _CompleteToast();
+  final List<Fragment> fragments;
+  final int sourceId;
+  final Set<int> selectedIds;
+  final Set<int> directlyWovenIds;
+  final ValueChanged<int> onToggle;
 
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
     return XiguangCard(
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s18, vertical: AppSpacing.s13),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-          width: 24,
-          height: 24,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.teaGreen.withValues(alpha: .18),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s10,
+        AppSpacing.s12,
+        AppSpacing.s10,
+        AppSpacing.sm,
+      ),
+      child: Column(children: [
+        Row(children: [
+          Icon(Icons.add_circle_outline_rounded, size: 18, color: theme.accent),
+          const SizedBox(width: AppSpacing.s7),
+          Text('挑选事件',
+              style: AppText.bodyStrong.copyWith(color: theme.foreground)),
+          const Spacer(),
+          Text('按时间查找',
+              style: AppText.caption.copyWith(color: theme.foregroundMuted)),
+        ]),
+        const SizedBox(height: AppSpacing.sm),
+        for (final fragment in fragments)
+          _CandidateEventTile(
+            fragment: fragment,
+            isSource: fragment.id == sourceId,
+            selected: selectedIds.contains(fragment.id),
+            alreadyWoven: directlyWovenIds.contains(fragment.id),
+            onTap: fragment.id == sourceId ? null : () => onToggle(fragment.id),
           ),
-          child: const Icon(Icons.check_rounded,
-              size: 16, color: AppColors.teaGreen),
+      ]),
+    );
+  }
+}
+
+class _CandidateEventTile extends StatelessWidget {
+  const _CandidateEventTile({
+    required this.fragment,
+    required this.isSource,
+    required this.selected,
+    required this.alreadyWoven,
+    required this.onTap,
+  });
+
+  final Fragment fragment;
+  final bool isSource;
+  final bool selected;
+  final bool alreadyWoven;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    final local = fragment.createdAt.toLocal();
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: SizedBox(
+          height: 52,
+          child: Row(children: [
+            SizedBox(
+              width: 48,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('${local.month}/${local.day}',
+                      style: AppText.chip.copyWith(color: theme.foreground)),
+                  Text(fragment.time,
+                      style: AppText.caption
+                          .copyWith(color: theme.foregroundMuted)),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s10),
+            Container(
+              width: 8,
+              height: 8,
+              decoration:
+                  BoxDecoration(color: fragment.color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: AppSpacing.s10),
+            Expanded(
+              child: Text(
+                fragment.contentText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.body.copyWith(color: theme.foreground),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            SizedBox(
+              width: 48,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: isSource
+                    ? _CompactStatus(label: '当前', color: fragment.color)
+                    : selected
+                        ? _CompactStatus(label: '已选', color: fragment.color)
+                        : alreadyWoven
+                            ? _CompactStatus(label: '已织', color: theme.accent)
+                            : Icon(Icons.add_rounded,
+                                size: 20, color: theme.foregroundMuted),
+              ),
+            ),
+          ]),
         ),
-        const SizedBox(width: AppSpacing.s10),
-        Flexible(
+      ),
+    );
+  }
+}
+
+class _CompactStatus extends StatelessWidget {
+  const _CompactStatus({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .14),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Text(label, style: AppText.caption.copyWith(color: color)),
+    );
+  }
+}
+
+class _BottomWeaveBar extends StatelessWidget {
+  const _BottomWeaveBar({
+    required this.eventCount,
+    required this.isSubmitting,
+    required this.onPressed,
+  });
+
+  final int eventCount;
+  final bool isSubmitting;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return SafeArea(
+      top: false,
+      child: Container(
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s18),
+        decoration: BoxDecoration(
+          color: theme.surfaceHigh.withValues(alpha: .96),
+          border: Border(top: BorderSide(color: theme.border)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.ink.withValues(alpha: .08),
+              blurRadius: 18,
+              offset: const Offset(0, -5),
+            ),
+          ],
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Text(
+              eventCount < 2 ? '再选一个事件' : '$eventCount 个事件依次发展',
+              style: AppText.caption.copyWith(color: theme.foregroundMuted),
+            ),
+          ),
+          SizedBox(
+            width: 148,
+            child: XiguangButton(
+              label: eventCount < 2 ? '织线' : '织起这条线',
+              leading: const Icon(Icons.route_rounded, size: 18),
+              onPressed: onPressed,
+              loading: isSubmitting,
+              height: 42,
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _CompleteToast extends StatelessWidget {
+  const _CompleteToast({required this.eventCount});
+
+  final int eventCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s12),
+      decoration: BoxDecoration(
+        color: AppColors.teaGreen.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Row(children: [
+        const Icon(Icons.check_circle_outline_rounded,
+            size: 18, color: AppColors.teaGreen),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
           child: Text(
-            '这两束光之间，有了一条细细的线。',
+            '$eventCount 个事件已经按发展顺序织在一起。',
             style: AppText.body.copyWith(color: theme.foreground),
-            textAlign: TextAlign.center,
           ),
         ),
       ]),
@@ -673,40 +623,15 @@ class _SubmitNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.s14, AppSpacing.s12, AppSpacing.s14, AppSpacing.s12),
-      decoration: BoxDecoration(
-        color: AppColors.sunsetCoral.withValues(alpha: .10),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
-          color: AppColors.sunsetCoral.withValues(alpha: .22),
-        ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s12,
+        vertical: AppSpacing.s10,
       ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(
-          Icons.wifi_off_rounded,
-          size: 18,
-          color: AppColors.sunsetCoral.withValues(alpha: .94),
-        ),
-        const SizedBox(width: AppSpacing.s9),
-        Expanded(
-          child: Text(
-            text,
-            style: AppText.bodyMuted.copyWith(height: 1.4),
-          ),
-        ),
-      ]),
-    );
-  }
-}
-
-class _EmptyCandidatesCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return const XiguangEmptyState(
-      icon: Icons.blur_circular_rounded,
-      title: '还没有另一束旧光',
-      description: '先去捕下一束光，线会在这里等你。',
+      decoration: BoxDecoration(
+        color: AppColors.sunsetCoral.withValues(alpha: .1),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Text(text, style: AppText.bodyMuted),
     );
   }
 }
@@ -729,128 +654,4 @@ class _NotFoundState extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ThreadMist extends StatelessWidget {
-  const _ThreadMist();
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: CustomPaint(painter: _ThreadMistPainter()),
-    );
-  }
-}
-
-class _ThreadMistPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.white.withValues(alpha: .28)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    for (var i = 0; i < 5; i++) {
-      final y = size.height * (.16 + i * .17);
-      final path = Path()..moveTo(-20, y);
-      path.cubicTo(
-        size.width * .28,
-        y - 34,
-        size.width * .56,
-        y + 32,
-        size.width + 24,
-        y - 8,
-      );
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _StepThreadPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..color = AppColors.lilac.withValues(alpha: .58)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
-    final path = Path()
-      ..moveTo(size.width / 2, 4)
-      ..cubicTo(
-        -2,
-        120,
-        size.width + 6,
-        250,
-        size.width / 2,
-        360,
-      )
-      ..cubicTo(
-        -2,
-        450,
-        size.width + 4,
-        550,
-        size.width / 2,
-        size.height - 6,
-      );
-    canvas.drawPath(path, linePaint);
-
-    final positions = [0.02, .2, .42, .67, .88];
-    for (var i = 0; i < positions.length; i++) {
-      final dy = size.height * positions[i];
-      final fill = Paint()
-        ..color = i.isEven ? AppColors.emotionHappy : AppColors.white
-        ..style = PaintingStyle.fill;
-      final stroke = Paint()
-        ..color = AppColors.lilac.withValues(alpha: .72)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2;
-      canvas.drawCircle(Offset(size.width / 2, dy), i.isEven ? 5.2 : 4.4, fill);
-      canvas.drawCircle(
-          Offset(size.width / 2, dy), i.isEven ? 5.2 : 4.4, stroke);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _LightSketchPainter extends CustomPainter {
-  const _LightSketchPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final sunPaint = Paint()
-      ..color = AppColors.white.withValues(alpha: .7)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(
-        Offset(size.width * .72, size.height * .28), 10, sunPaint);
-
-    final linePaint = Paint()
-      ..color = AppColors.ink.withValues(alpha: .18)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    for (var i = 0; i < 4; i++) {
-      final y = size.height * (.48 + i * .11);
-      final path = Path()..moveTo(0, y);
-      path.quadraticBezierTo(size.width * .45, y - 10, size.width, y + 2);
-      canvas.drawPath(path, linePaint);
-    }
-
-    final boatPaint = Paint()
-      ..color = color.withValues(alpha: .6)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6;
-    final boat = Path()
-      ..moveTo(size.width * .18, size.height * .68)
-      ..lineTo(size.width * .45, size.height * .74)
-      ..lineTo(size.width * .68, size.height * .66);
-    canvas.drawPath(boat, boatPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _LightSketchPainter oldDelegate) =>
-      oldDelegate.color != color;
 }

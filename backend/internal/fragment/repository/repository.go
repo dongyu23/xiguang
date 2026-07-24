@@ -17,7 +17,10 @@ type Repository interface {
 	Create(ctx context.Context, userID int64, text, emotion, status string, tags, media []string) (domain.Fragment, error)
 	Update(ctx context.Context, userID int64, id int64, text, emotion, status string, tags []string, media *[]string) (domain.Fragment, error)
 	Delete(ctx context.Context, userID, id int64) (bool, error)
+	Restore(ctx context.Context, userID, id int64) (bool, error)
+	DeletePermanently(ctx context.Context, userID, id int64) (bool, error)
 	List(ctx context.Context, userID int64, query domain.ListQuery) ([]domain.Fragment, error)
+	ListDeleted(ctx context.Context, userID int64, limit int) ([]domain.Fragment, error)
 	FindByID(ctx context.Context, userID, id int64) (domain.Fragment, error)
 	LogCreate(ctx context.Context, userID int64, clientOpID string, dto domain.Fragment) error
 	FindConfirmedMedia(ctx context.Context, userID int64, objectKeys []string) (map[string]bool, error)
@@ -100,6 +103,25 @@ func (r *PG) Delete(ctx context.Context, userID, id int64) (bool, error) {
 	return tag.RowsAffected() > 0, nil
 }
 
+func (r *PG) Restore(ctx context.Context, userID, id int64) (bool, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE fragments
+		SET is_deleted=FALSE, deleted_at=NULL, updated_at=now()
+		WHERE user_id=$1 AND id=$2 AND is_deleted=TRUE`, userID, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (r *PG) DeletePermanently(ctx context.Context, userID, id int64) (bool, error) {
+	tag, err := r.db.Exec(ctx, `DELETE FROM fragments
+		WHERE user_id=$1 AND id=$2 AND is_deleted=TRUE`, userID, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func (r *PG) List(ctx context.Context, userID int64, query domain.ListQuery) ([]domain.Fragment, error) {
 	rows, err := r.db.Query(ctx, fragmentSelectSQL+`
 		WHERE f.user_id=$1 AND f.is_deleted=FALSE
@@ -109,13 +131,40 @@ func (r *PG) List(ctx context.Context, userID int64, query domain.ListQuery) ([]
 		    JOIN tags t2 ON t2.id=ft2.tag_id AND t2.deleted_at IS NULL
 		    WHERE ft2.fragment_id=f.id AND t2.name=$3
 		  ))
+		  AND ($4='' OR f.content_text ILIKE '%' || $4 || '%'
+		    OR f.emotion ILIKE '%' || $4 || '%'
+		    OR EXISTS (
+		      SELECT 1 FROM fragment_tags ft3
+		      JOIN tags t3 ON t3.id=ft3.tag_id AND t3.deleted_at IS NULL
+		      WHERE ft3.fragment_id=f.id AND t3.name ILIKE '%' || $4 || '%'
+		    ))
 		GROUP BY f.id
-		ORDER BY f.created_at DESC, f.id DESC LIMIT $4`, userID, query.Emotion, query.Tag, query.Limit)
+		ORDER BY f.created_at DESC, f.id DESC LIMIT $5`, userID, query.Emotion, query.Tag, query.Search, query.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	items := []domain.Fragment{}
+	for rows.Next() {
+		var dto domain.Fragment
+		if err := scanFragment(rows, &dto); err != nil {
+			return nil, err
+		}
+		items = append(items, dto)
+	}
+	return items, rows.Err()
+}
+
+func (r *PG) ListDeleted(ctx context.Context, userID int64, limit int) ([]domain.Fragment, error) {
+	rows, err := r.db.Query(ctx, fragmentSelectSQL+`
+		WHERE f.user_id=$1 AND f.is_deleted=TRUE
+		GROUP BY f.id
+		ORDER BY f.deleted_at DESC NULLS LAST, f.id DESC LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 	items := []domain.Fragment{}
 	for rows.Next() {
 		var dto domain.Fragment

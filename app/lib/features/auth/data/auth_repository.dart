@@ -1,7 +1,13 @@
+import 'dart:io';
+
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
+
 import '../../../design/tokens/motion.dart';
 import '../../shared/data/api_client.dart';
 import '../domain/auth_session.dart';
 import '../domain/auth_repository.dart';
+import '../domain/device_session.dart';
 import 'session_storage.dart';
 
 export '../domain/auth_session.dart';
@@ -50,9 +56,12 @@ class AuthRepository implements AuthRepositoryContract {
     required String username,
     required String password,
   }) async {
+    final device = await _deviceIdentity();
     final body = await _api.post('/auth/login', {
       'username': username,
       'password': password,
+      'device_id': device.$1,
+      'device_name': device.$2,
     });
     return _saveSession(body);
   }
@@ -63,10 +72,13 @@ class AuthRepository implements AuthRepositoryContract {
     required String password,
     required String nickname,
   }) async {
+    final device = await _deviceIdentity();
     final body = await _api.post('/auth/register', {
       'username': username,
       'password': password,
       'nickname': nickname,
+      'device_id': device.$1,
+      'device_name': device.$2,
     });
     return _saveSession(body);
   }
@@ -93,6 +105,7 @@ class AuthRepository implements AuthRepositoryContract {
     required String nickname,
     required String avatarKey,
     required bool aiEnabled,
+    bool aiConsentAccepted = false,
     required String privacyMode,
   }) async {
     await _ensureFreshAccessToken();
@@ -100,6 +113,7 @@ class AuthRepository implements AuthRepositoryContract {
       'nickname': nickname.trim(),
       'avatar_key': avatarKey.trim(),
       'ai_enabled': aiEnabled,
+      if (aiConsentAccepted) 'ai_consent_accepted': true,
       'privacy_mode': privacyMode,
     });
     _session = _parseUser(body);
@@ -118,6 +132,79 @@ class AuthRepository implements AuthRepositoryContract {
       'new_password': newPassword,
     });
   }
+
+  @override
+  Future<void> deleteAccount({required String password}) async {
+    await _ensureFreshAccessToken();
+    await _api.delete('/users/me', body: {'password': password});
+    await logout();
+  }
+
+  @override
+  Future<List<DeviceSession>> listDevices() async {
+    await _ensureFreshAccessToken();
+    final body = await _api.get('/users/devices');
+    final values = body['value'] is List
+        ? body['value'] as List<dynamic>
+        : body['items'] as List<dynamic>? ?? const [];
+    final devices = <DeviceSession>[];
+    var historicalDeviceNumber = 0;
+    for (var index = 0; index < values.length; index++) {
+      final raw = values[index];
+      final json = raw as Map<String, dynamic>;
+      final info = (json['device_info'] as String? ?? '').split('|');
+      final isCurrent = json['is_current'] as bool? ?? false;
+      final savedName = info.length < 2 ? '' : info[1].trim();
+      if (savedName.isEmpty && !isCurrent) historicalDeviceNumber++;
+      devices.add(DeviceSession(
+        id: (json['id'] as num?)?.toInt() ?? 0,
+        deviceId: info.isEmpty ? '' : info.first,
+        deviceName: savedName.isNotEmpty
+            ? savedName
+            : isCurrent
+                ? _platformDeviceName()
+                : '历史登录设备 $historicalDeviceNumber',
+        isCurrent: isCurrent,
+        createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+            DateTime.now(),
+        expiresAt: DateTime.tryParse(json['expires_at'] as String? ?? '') ??
+            DateTime.now(),
+      ));
+    }
+    devices.sort((a, b) {
+      if (a.isCurrent != b.isCurrent) return a.isCurrent ? -1 : 1;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return devices;
+  }
+
+  @override
+  Future<void> revokeDevice(int id) async {
+    await _ensureFreshAccessToken();
+    await _api.delete('/users/devices/$id');
+  }
+
+  @override
+  Future<String> currentDeviceId() async => (await _deviceIdentity()).$1;
+
+  Future<(String, String)> _deviceIdentity() async {
+    const key = 'xiguang.device_id';
+    final prefs = await SharedPreferences.getInstance();
+    var id = prefs.getString(key);
+    if (id == null || id.isEmpty) {
+      id = const Uuid().v4();
+      await prefs.setString(key, id);
+    }
+    return (id, _platformDeviceName());
+  }
+
+  String _platformDeviceName() => Platform.isMacOS
+      ? 'Mac'
+      : Platform.isIOS
+          ? 'iPhone / iPad'
+          : Platform.isAndroid
+              ? 'Android 设备'
+              : Platform.operatingSystem;
 
   Future<void> _ensureFreshAccessToken() async {
     if (_api.hasToken &&
@@ -202,6 +289,7 @@ class AuthRepository implements AuthRepositoryContract {
       nickname: user['nickname'] as String? ?? '试光者',
       avatarKey: user['avatar_key'] as String? ?? '',
       aiEnabled: user['ai_enabled'] as bool? ?? false,
+      aiConsentAcceptedAt: user['ai_consent_accepted_at'] as String?,
       privacyMode: user['privacy_mode'] as String? ?? 'private',
     );
   }

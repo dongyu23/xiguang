@@ -13,7 +13,28 @@ type Repository interface {
 	Confirm(ctx context.Context, userID int64, req domain.ConfirmRequest) (domain.MediaFile, error)
 	Create(ctx context.Context, userID int64, req domain.CreateMediaRequest) (domain.MediaFile, error)
 	Get(ctx context.Context, userID, mediaID int64) (domain.MediaFile, error)
+	FindByObjectKeys(ctx context.Context, userID int64, objectKeys []string) ([]domain.MediaFile, error)
 	Delete(ctx context.Context, userID, mediaID int64) (bool, error)
+}
+
+func (r *PG) FindByObjectKeys(ctx context.Context, userID int64, objectKeys []string) ([]domain.MediaFile, error) {
+	rows, err := r.db.Query(ctx, `SELECT object_key, file_name, mime_type, file_size
+		FROM media_files
+		WHERE user_id=$1 AND object_key=ANY($2) AND deleted_at IS NULL`, userID, objectKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]domain.MediaFile, 0, len(objectKeys))
+	for rows.Next() {
+		var item domain.MediaFile
+		if err := rows.Scan(&item.ObjectKey, &item.FileName, &item.MimeType, &item.FileSize); err != nil {
+			return nil, err
+		}
+		item.FileURL = "/media/" + item.ObjectKey
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 type PG struct {

@@ -26,9 +26,13 @@ func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Post("/", h.create)
 	r.Get("/", h.list)
+	r.Get("/search", h.search)
+	r.Get("/trash", h.trash)
 	r.Get("/{id}", h.get)
 	r.Put("/{id}", h.update)
 	r.Delete("/{id}", h.delete)
+	r.Post("/{id}/restore", h.restore)
+	r.Delete("/{id}/permanent", h.deletePermanently)
 	r.Post("/{id}/weave", h.weave)
 	return r
 }
@@ -83,6 +87,26 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	items, err := h.service.List(r.Context(), userID, r.URL.Query().Get("emotion"), r.URL.Query().Get("tag"), r.URL.Query().Get("limit"))
 	if err != nil {
 		shared.WriteError(w, http.StatusInternalServerError, "list_failed", "暂时无法读取光片。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) search(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	items, err := h.service.Search(r.Context(), userID, r.URL.Query().Get("q"), r.URL.Query().Get("limit"))
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "search_failed", "暂时无法查找旧光。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) trash(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	items, err := h.service.ListDeleted(r.Context(), userID, r.URL.Query().Get("limit"))
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "trash_failed", "暂时无法打开回收站。")
 		return
 	}
 	shared.WriteJSON(w, http.StatusOK, items)
@@ -162,6 +186,36 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 	if !deleted {
 		shared.WriteError(w, http.StatusNotFound, "not_found", "没有找到这束光。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+func (h *Handler) restore(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	restored, err := h.service.Restore(r.Context(), userID, id)
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "restore_failed", "暂时无法恢复这束光。")
+		return
+	}
+	if !restored {
+		shared.WriteError(w, http.StatusNotFound, "not_found", "回收站里没有找到这束光。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, map[string]bool{"restored": true})
+}
+
+func (h *Handler) deletePermanently(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	deleted, err := h.service.DeletePermanently(r.Context(), userID, id)
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "delete_failed", "暂时无法彻底删除这束光。")
+		return
+	}
+	if !deleted {
+		shared.WriteError(w, http.StatusNotFound, "not_found", "回收站里没有找到这束光。")
 		return
 	}
 	shared.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})

@@ -37,6 +37,12 @@ class AppMotion {
   /// 开屏/Hero 入场
   static const Duration linger = Duration(milliseconds: 1500);
 
+  /// 岛屿跨越生长阶段时的压缩、跃起与回弹。
+  static const Duration islandGrowth = Duration(milliseconds: 920);
+
+  /// 从群岛进入岛上时，岛体平移并放大的连续旅程。
+  static const Duration islandTravel = Duration(milliseconds: 520);
+
   /// shimmer 高光扫过周期
   static const Duration shimmer = Duration(milliseconds: 1800);
 
@@ -70,12 +76,17 @@ class AppMotion {
 
   /// 呼吸/波动专用（正弦缓动）
   static const Curve sine = Curves.easeInOutSine;
+
+  /// 岛屿生长阶段跃迁的弹性回落。
+  static const Curve growthSpring = Curves.elasticOut;
 }
 
 /// 非视觉流程的时间配置。业务代码不得直接创建 Duration。
 class AppTiming {
   AppTiming._();
 
+  static const Duration editorAutoSaveDebounce = Duration(milliseconds: 800);
+  static const Duration editorAutoSaveRetry = Duration(milliseconds: 250);
   static const Duration audioMeterTick = Duration(seconds: 1);
   static const Duration backendConnectionTimeout = Duration(seconds: 5);
 
@@ -94,6 +105,11 @@ class AppTiming {
   static const Duration updateConnectTimeout = Duration(seconds: 15);
   static const Duration updateReceiveTimeout = Duration(minutes: 5);
   static const Duration aiRequestTimeout = Duration(seconds: 70);
+  static const Duration captureReminderDelay = Duration(days: 7);
+  static const Duration oldLightAge = Duration(days: 30);
+  static const Duration oldLightReminderDelay = Duration(days: 3);
+  static const Duration islandQuietReminderDelay = Duration(days: 30);
+  static const Duration reminderMinimumLead = Duration(minutes: 2);
 
   static Duration retryBackoff(int attempts) {
     final milliseconds = (200 * (1 << attempts)).clamp(0, 3000);

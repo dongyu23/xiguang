@@ -23,10 +23,18 @@ import '../features/timeline/presentation/pages/time_river_page.dart';
 import '../features/island/presentation/pages/island_detail_page.dart';
 import '../features/island/presentation/pages/island_create_page.dart';
 import '../features/island/presentation/pages/universe_page.dart';
+import '../features/island/presentation/pages/branch_detail_page.dart';
+import '../features/island/domain/universe_overview.dart';
 import '../features/space/presentation/pages/space_page.dart';
-import '../features/starmap/presentation/widgets/starmap_page.dart';
 import '../features/whitenoise/presentation/pages/whitenoise_page.dart';
 import '../features/profile/presentation/pages/mine_page.dart';
+import '../features/profile/presentation/pages/data_archive_page.dart';
+import '../features/profile/presentation/pages/trash_page.dart';
+import '../features/profile/presentation/pages/about_page.dart';
+import '../features/profile/presentation/pages/privacy_settings_page.dart';
+import '../features/profile/presentation/pages/storage_settings_page.dart';
+import '../features/profile/presentation/pages/device_management_page.dart';
+import '../features/profile/presentation/pages/reminder_settings_page.dart';
 import '../features/relation/presentation/pages/relation_ledger_page.dart';
 import '../features/relation/presentation/pages/weave_page.dart';
 import '../features/sync/presentation/pages/sync_settings_page.dart';
@@ -112,17 +120,46 @@ GoRouter createRouter(WidgetRef ref, [Listenable? refreshListenable]) {
           // Tab 3: 小宇宙
           StatefulShellBranch(routes: [
             GoRoute(
-                path: '/universe', builder: (_, __) => const UniversePage()),
+                path: '/universe',
+                builder: (_, state) => UniversePage(
+                      showBranches:
+                          state.uri.queryParameters['view'] == 'branches',
+                      revealIslandKey: state.uri.queryParameters['reveal'],
+                    )),
             GoRoute(
                 path: '/islands/create',
                 builder: (_, __) => const IslandCreatePage()),
             GoRoute(
                 path: '/islands/:id',
-                builder: (_, state) =>
-                    IslandDetailPage(id: state.pathParameters['id']!)),
+                pageBuilder: (_, state) => CustomTransitionPage<void>(
+                      key: state.pageKey,
+                      transitionDuration: AppMotion.islandTravel,
+                      reverseTransitionDuration: AppMotion.slow,
+                      transitionsBuilder:
+                          (context, animation, secondaryAnimation, child) {
+                        final fade = CurvedAnimation(
+                          parent: animation,
+                          curve:
+                              const Interval(0, .42, curve: AppMotion.easeOut),
+                          reverseCurve: AppMotion.easeIn,
+                        );
+                        return FadeTransition(opacity: fade, child: child);
+                      },
+                      child: IslandDetailPage(
+                        id: state.pathParameters['id']!,
+                        initialIsland: state.extra is IslandVisualNode
+                            ? state.extra! as IslandVisualNode
+                            : null,
+                      ),
+                    )),
             GoRoute(
                 path: '/relations/ledger',
                 builder: (_, __) => const RelationLedgerPage()),
+            GoRoute(
+                path: '/branches/:id',
+                builder: (_, state) => BranchDetailPage(
+                      id: state.pathParameters['id']!,
+                    )),
           ]),
           // Tab 4: 我的
           StatefulShellBranch(routes: [
@@ -133,18 +170,42 @@ GoRouter createRouter(WidgetRef ref, [Listenable? refreshListenable]) {
             GoRoute(
                 path: '/emotions/manage',
                 builder: (_, __) => const EmotionManagePage()),
+            GoRoute(
+                path: '/data-archive',
+                builder: (_, __) => const DataArchivePage()),
+            GoRoute(path: '/trash', builder: (_, __) => const TrashPage()),
+            GoRoute(
+                path: '/privacy-settings',
+                builder: (_, __) => const PrivacySettingsPage()),
+            GoRoute(
+                path: '/storage-settings',
+                builder: (_, __) => const StorageSettingsPage()),
+            GoRoute(path: '/about', builder: (_, __) => const AboutPage()),
+            GoRoute(
+                path: '/devices',
+                builder: (_, __) => const DeviceManagementPage()),
+            GoRoute(
+                path: '/reminders',
+                builder: (_, __) => const ReminderSettingsPage()),
           ]),
         ],
       ),
       // 非 Tab 页面（全屏）
       GoRoute(path: '/space', builder: (_, __) => const SpacePage()),
-      GoRoute(path: '/starmap', builder: (_, __) => const StarmapPage()),
+      GoRoute(path: '/starmap', redirect: (_, __) => '/universe?view=branches'),
       GoRoute(path: '/whitenoise', builder: (_, __) => const WhiteNoisePage()),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
         path: '/fragments/:id',
-        builder: (_, state) =>
-            FragmentDetailPage(id: state.pathParameters['id']!),
+        builder: (_, state) => FragmentDetailPage(
+          id: state.pathParameters['id']!,
+          islandId: int.tryParse(
+            state.uri.queryParameters['islandId'] ?? '',
+          ),
+          islandRouteId: state.uri.queryParameters['islandRouteId'],
+          islandName: state.uri.queryParameters['islandName'],
+          islandManual: state.uri.queryParameters['islandManual'] == '1',
+        ),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
@@ -267,8 +328,8 @@ class _AppShellState extends ConsumerState<_AppShell> {
                       if (i == currentIndex) {
                         ref.read(scrollToTopSignalProvider.notifier).state++;
                       } else {
-                        widget.navigationShell.goBranch(i,
-                            initialLocation: true);
+                        widget.navigationShell
+                            .goBranch(i, initialLocation: true);
                       }
                     },
                   ),

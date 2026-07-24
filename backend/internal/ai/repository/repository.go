@@ -10,12 +10,15 @@ import (
 
 type Repository interface {
 	LogGlowSummary(ctx context.Context, userID int64, req domain.GlowSummaryRequest, response string) error
-	LogBuildIslands(ctx context.Context, userID int64, input, response string) error
+	LogBuildIslands(ctx context.Context, userID int64, fragmentIDs []int64, inputSummary, response string) error
+	LogPolish(ctx context.Context, userID int64, inputSummary, response string) error
 	ListRequests(ctx context.Context, userID int64) ([]domain.RequestLog, error)
 	DailyBuildCount(ctx context.Context, userID int64) (int, error)
+	DailyPolishCount(ctx context.Context, userID int64) (int, error)
 }
 
-const MaxDailyBuilds = 3
+const MaxDailyBuilds = 50
+const MaxDailyPolish = 50
 
 type PG struct {
 	db *pgxpool.Pool
@@ -31,9 +34,9 @@ func (r *PG) LogGlowSummary(ctx context.Context, userID int64, req domain.GlowSu
 	return err
 }
 
-func (r *PG) LogBuildIslands(ctx context.Context, userID int64, input, output string) error {
+func (r *PG) LogBuildIslands(ctx context.Context, userID int64, fragmentIDs []int64, inputSummary, output string) error {
 	_, err := r.db.Exec(ctx, `INSERT INTO ai_requests(user_id, mode, fragment_ids, status, input_prompt, output_raw)
-		VALUES($1,'build_islands','{}','completed',$2,$3)`, userID, input, output)
+		VALUES($1,'build_islands',$2,'completed',$3,$4)`, userID, fragmentIDs, inputSummary, output)
 	return err
 }
 
@@ -62,4 +65,18 @@ func (r *PG) DailyBuildCount(ctx context.Context, userID int64) (int, error) {
 		WHERE user_id=$1 AND mode='build_islands' AND created_at > now() - INTERVAL '1 day'`,
 		userID).Scan(&count)
 	return count, err
+}
+
+func (r *PG) DailyPolishCount(ctx context.Context, userID int64) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM ai_requests
+		WHERE user_id=$1 AND mode='polish' AND created_at > now() - INTERVAL '1 day'`,
+		userID).Scan(&count)
+	return count, err
+}
+
+func (r *PG) LogPolish(ctx context.Context, userID int64, inputSummary, response string) error {
+	_, err := r.db.Exec(ctx, `INSERT INTO ai_requests(user_id, mode, fragment_ids, status, input_prompt, output_raw)
+		VALUES($1,'polish','{}','completed',$2,$3)`, userID, inputSummary, response)
+	return err
 }

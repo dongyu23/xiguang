@@ -12,11 +12,14 @@ import '../features/emotion/domain/emotion_repository.dart';
 import '../features/fragment/data/fragment_repository_impl.dart';
 import '../features/fragment/domain/fragment_repository.dart';
 import '../features/island/data/island_repository.dart';
+import '../features/island/domain/island_repository.dart';
 import '../features/profile/data/local_archive_exporter.dart';
 import '../features/profile/domain/local_archive_repository.dart';
 import '../features/relation/data/relation_api.dart';
 import '../features/relation/data/relation_repository_impl.dart';
 import '../features/relation/domain/relation_repository.dart';
+import '../features/reminder/data/local_reminder_service.dart';
+import '../features/reminder/domain/local_reminder_port.dart';
 import '../features/space/data/space_api.dart';
 import '../features/space/data/space_repository_impl.dart';
 import '../features/starmap/data/starmap_api.dart';
@@ -138,21 +141,28 @@ final fragmentRepositoryProvider = Provider<FragmentRepositoryContract>((ref) {
   );
 });
 
-final islandRepositoryProvider = Provider<IslandRepository>((ref) {
+final islandRepositoryProvider = Provider<IslandRepositoryPort>((ref) {
   return IslandRepository(
     ref.watch(apiClientProvider),
     ref.watch(authRepositoryProvider),
     ref.watch(fragmentRepositoryProvider),
+    ref.watch(appDatabaseProvider),
   );
 });
 
 final localArchiveRepositoryProvider =
     Provider<LocalArchiveRepositoryPort>((ref) {
-  return const LocalArchiveExporter();
+  return LocalArchiveExporter(
+    database: ref.watch(appDatabaseProvider),
+    api: ref.watch(apiClientProvider),
+  );
 });
 
 final relationRepositoryProvider = Provider<RelationRepositoryContract>((ref) {
-  return RelationRepositoryImpl(RelationApi(ref.watch(apiClientProvider)));
+  return RelationRepositoryImpl(
+    RelationApi(ref.watch(apiClientProvider)),
+    ref.watch(appDatabaseProvider),
+  );
 });
 
 final statsRepositoryProvider = Provider<StatsRepositoryImpl>((ref) {
@@ -174,4 +184,8 @@ final appUpdateRepositoryProvider = Provider<AppUpdateRepository>((ref) {
 
 final syncApiProvider = Provider<SyncApi>((ref) {
   return SyncApi(ref.watch(apiClientProvider));
+});
+
+final localReminderServiceProvider = Provider<LocalReminderPort>((ref) {
+  return LocalReminderService();
 });
