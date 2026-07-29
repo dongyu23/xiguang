@@ -1,4 +1,4 @@
-name: Flutter Quality
+name: Flutter CI
 
 on:
   pull_request:
@@ -15,26 +15,39 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FLUTTER_VERSION: 3.44.8
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
-    name: Analyze and test Flutter
-    runs-on: ubuntu-latest
+    name: Flutter quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: app
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      - name: Resolve dependencies
-        run: flutter pub get
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate Freezed, JSON, Riverpod, and Drift sources
+        run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed lib test
@@ -42,5 +55,8 @@ jobs:
       - name: Analyze with fatal diagnostics
         run: flutter analyze --fatal-infos --fatal-warnings
 
-      - name: Run architecture and widget tests
-        run: flutter test
+      - name: Run architecture, unit, widget, and golden tests
+        run: flutter test --coverage
+
+      - name: Build Android debug artifact
+        run: flutter build apk --debug

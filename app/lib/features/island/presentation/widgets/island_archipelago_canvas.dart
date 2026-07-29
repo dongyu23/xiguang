@@ -62,13 +62,9 @@ void paintIslandSeaAtmosphere(
     Paint()
       ..shader = RadialGradient(
         colors: [
-          (theme.isNight
-                  ? const Color(0xFF6FA395)
-                  : const Color(0xFF9FC5B9))
+          (theme.isNight ? const Color(0xFF6FA395) : const Color(0xFF9FC5B9))
               .withValues(alpha: .13 * alpha),
-          (theme.isNight
-                  ? const Color(0xFF8196B0)
-                  : const Color(0xFFB8CBD0))
+          (theme.isNight ? const Color(0xFF8196B0) : const Color(0xFFB8CBD0))
               .withValues(alpha: .065 * alpha),
           Colors.transparent,
         ],
@@ -90,8 +86,7 @@ void paintIslandSeaAtmosphere(
       final y = baseY +
           sin(x / (54 + layer * 5) + phase * pi * 2 * direction + layer) *
               amplitude +
-          cos(x / (116 + layer * 7) - phase * pi * .8 + layer * .43) *
-              1.7;
+          cos(x / (116 + layer * 7) - phase * pi * .8 + layer * .43) * 1.7;
       if (x == startX) {
         path.moveTo(x, y);
       } else {
