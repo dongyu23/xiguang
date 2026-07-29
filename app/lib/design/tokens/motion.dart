@@ -40,6 +40,12 @@ class AppMotion {
   /// 岛屿跨越生长阶段时的压缩、跃起与回弹。
   static const Duration islandGrowth = Duration(milliseconds: 920);
 
+  /// 新建小岛预览从雾中浮现的时长。
+  static const Duration islandCreationReveal = Duration(milliseconds: 720);
+
+  /// 进入群岛后选中岛屿的落点动画。
+  static const Duration islandArrival = Duration(milliseconds: 760);
+
   /// 从群岛进入岛上时，岛体平移并放大的连续旅程。
   static const Duration islandTravel = Duration(milliseconds: 520);
 
@@ -87,6 +93,7 @@ class AppTiming {
 
   static const Duration editorAutoSaveDebounce = Duration(milliseconds: 800);
   static const Duration editorAutoSaveRetry = Duration(milliseconds: 250);
+  static const Duration timelineSearchDebounce = Duration(milliseconds: 280);
   static const Duration audioMeterTick = Duration(seconds: 1);
   static const Duration backendConnectionTimeout = Duration(seconds: 5);
 
@@ -107,6 +114,8 @@ class AppTiming {
   static const Duration aiRequestTimeout = Duration(seconds: 70);
   static const Duration captureReminderDelay = Duration(days: 7);
   static const Duration oldLightAge = Duration(days: 30);
+  static const Duration fragmentPickerWeek = Duration(days: 7);
+  static const Duration fragmentPickerMonth = Duration(days: 30);
   static const Duration oldLightReminderDelay = Duration(days: 3);
   static const Duration islandQuietReminderDelay = Duration(days: 30);
   static const Duration reminderMinimumLead = Duration(minutes: 2);

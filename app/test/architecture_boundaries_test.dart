@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('domain code never imports a feature data implementation', () {
     for (final file in _dartFiles('lib/features')) {
-      if (!file.path.contains('/domain/')) continue;
+      if (!_normalizedPath(file).contains('/domain/')) continue;
       expect(
         file.readAsStringSync(),
         isNot(contains('/data/')),
@@ -16,7 +16,7 @@ void main() {
 
   test('application code depends on contracts, never data or presentation', () {
     for (final file in _dartFiles('lib/features')) {
-      if (!file.path.contains('/application/')) continue;
+      if (!_normalizedPath(file).contains('/application/')) continue;
       final source = file.readAsStringSync();
       expect(source, isNot(contains('/data/')),
           reason:
@@ -28,7 +28,7 @@ void main() {
 
   test('presentation code never imports a data implementation', () {
     for (final file in _dartFiles('lib/features')) {
-      if (!file.path.contains('/presentation/')) continue;
+      if (!_normalizedPath(file).contains('/presentation/')) continue;
       expect(
         file.readAsStringSync(),
         isNot(contains('/data/')),
@@ -42,7 +42,7 @@ void main() {
     final nightFlagField = RegExp(r'final\s+bool\s+nightMode\b');
     final nightFlagArgument = RegExp(r'\bnightMode\s*:');
     for (final file in _dartFiles('lib/features')) {
-      if (!file.path.contains('/presentation/')) continue;
+      if (!_normalizedPath(file).contains('/presentation/')) continue;
       final source = file.readAsStringSync();
       expect(
         source,
@@ -62,7 +62,7 @@ void main() {
       r'ref\.(?:read|watch)\([^\n]*RepositoryProvider',
     );
     for (final file in _dartFiles('lib/features')) {
-      if (!file.path.contains('/presentation/')) continue;
+      if (!_normalizedPath(file).contains('/presentation/')) continue;
       expect(
         file.readAsStringSync(),
         isNot(matches(repositoryCall)),
@@ -109,7 +109,7 @@ void main() {
 
   test('oversized pages must declare their extraction plan', () {
     for (final file in _dartFiles('lib/features')) {
-      if (!file.path.contains('/presentation/pages/')) continue;
+      if (!_normalizedPath(file).contains('/presentation/pages/')) continue;
       final source = file.readAsStringSync();
       final lineCount = '\n'.allMatches(source).length + 1;
       if (lineCount <= 300) continue;
@@ -123,7 +123,9 @@ void main() {
 
   test('raw colors are confined to the color token catalog', () {
     for (final file in _dartFiles('lib')) {
-      if (file.path.endsWith('/design/tokens/colors.dart')) continue;
+      if (_normalizedPath(file).endsWith('/design/tokens/colors.dart')) {
+        continue;
+      }
       expect(
         file.readAsStringSync(),
         isNot(matches(RegExp(r'Color\(0x[0-9A-Fa-f]+\)'))),
@@ -134,7 +136,9 @@ void main() {
 
   test('raw durations are confined to the timing token catalog', () {
     for (final file in _dartFiles('lib')) {
-      if (file.path.endsWith('/design/tokens/motion.dart')) continue;
+      if (_normalizedPath(file).endsWith('/design/tokens/motion.dart')) {
+        continue;
+      }
       expect(
         file.readAsStringSync(),
         isNot(contains('Duration(')),
@@ -189,3 +193,5 @@ Iterable<File> _dartFiles(String root) sync* {
     if (entity is File && entity.path.endsWith('.dart')) yield entity;
   }
 }
+
+String _normalizedPath(File file) => file.path.replaceAll('\\', '/');

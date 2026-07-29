@@ -72,7 +72,7 @@ void main() {
           contentText: const Value('一束测试的光'),
           emotion: const Value('平静'),
           tags: const Value('["归档"]'),
-          mediaUrls: Value('["${media.path}"]'),
+          mediaUrls: Value(jsonEncode([media.path])),
           createdAt: Value(DateTime.utc(2026, 7, 11, 1, 15)),
           updatedAt: Value(DateTime.utc(2026, 7, 11, 1, 20)),
         ));
@@ -115,7 +115,7 @@ void main() {
     final file = File('${root.path}/unknown-version.zip');
     await _writeContractZip(file, version: 99);
 
-    expect(
+    await expectLater(
       _exporter(database, root).verifyArchive(file.path),
       throwsA(isA<ArchiveIntegrityException>()),
     );
@@ -125,7 +125,7 @@ void main() {
     final file = File('${root.path}/unsafe.zip');
     await _writeContractZip(file, version: 1, unsafeEntry: '../outside.txt');
 
-    expect(
+    await expectLater(
       _exporter(database, root).verifyArchive(file.path),
       throwsA(isA<ArchiveIntegrityException>()),
     );

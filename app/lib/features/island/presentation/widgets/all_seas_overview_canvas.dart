@@ -729,10 +729,9 @@ class _OceanDepthPainter extends CustomPainter {
         radius,
         Paint()
           ..shader = RadialGradient(colors: [
-            (index.isEven ? theme.accent : theme.foregroundMuted)
-                .withValues(
-                  alpha: (theme.isNight ? .055 : .05) * overviewAlpha,
-                ),
+            (index.isEven ? theme.accent : theme.foregroundMuted).withValues(
+              alpha: (theme.isNight ? .055 : .05) * overviewAlpha,
+            ),
             theme.background.withValues(alpha: 0),
           ]).createShader(Rect.fromCircle(center: center, radius: radius)),
       );

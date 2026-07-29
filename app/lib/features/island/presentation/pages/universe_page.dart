@@ -23,6 +23,9 @@ import '../widgets/all_seas_overview_canvas.dart';
 import '../widgets/island_archipelago_canvas.dart';
 import '../widgets/island_sprite_visual.dart';
 
+// PAGE_SIZE_EXEMPT: split the all-seas scene, island scene and branch scene
+// into dedicated widgets after the current visual-regression baseline settles.
+
 enum _UniverseMode { islands, branches }
 
 enum IslandSceneMode { currentSea, allSeas }
@@ -253,8 +256,8 @@ class _UniversePageState extends ConsumerState<UniversePage> {
                     alignment: Alignment.bottomCenter,
                     child: AnimatedSwitcher(
                       key: const ValueKey('island-focus-switcher'),
-                      duration: const Duration(milliseconds: 360),
-                      reverseDuration: const Duration(milliseconds: 260),
+                      duration: AppMotion.vinylSettle,
+                      reverseDuration: AppMotion.normal,
                       switchInCurve: Curves.easeOutCubic,
                       switchOutCurve: Curves.easeInCubic,
                       layoutBuilder: (currentChild, previousChildren) => Stack(
@@ -481,9 +484,7 @@ class _UniversePageState extends ConsumerState<UniversePage> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await ref.read(islandRepositoryProvider).deleteIsland(islandId);
-      ref.invalidate(universeOverviewProvider);
-      ref.invalidate(islandsProvider);
+      await ref.read(islandsProvider.notifier).deleteIsland(islandId);
       if (!mounted) return;
       setState(() => _selectedIsland = null);
       _showNotice('小岛已删除，里面的光仍然保留。');
@@ -1155,20 +1156,22 @@ class _UniverseList extends StatelessWidget {
           0,
           AppSpacing.s6,
           0,
-          76,
+          AppSpacing.universeCompactListBottom,
         ),
         itemCount: seas.length,
-        itemBuilder: (context, seaIndex) => Padding(
-          padding: EdgeInsets.only(
-            bottom: seaIndex == seas.length - 1 ? 0 : AppSpacing.s14,
-          ),
-          child: _IslandSeaList(
-            seaIndex: seaIndex,
-            islands: seas[seaIndex],
-            favoriteKeys: favoriteKeys,
-            onTap: onIslandTap,
-          ),
-        ),
+        itemBuilder: (context, seaIndex) {
+          final bottomSpacing =
+              seaIndex == seas.length - 1 ? 0.0 : AppSpacing.s14;
+          return Padding(
+            padding: EdgeInsets.only(bottom: bottomSpacing),
+            child: _IslandSeaList(
+              seaIndex: seaIndex,
+              islands: seas[seaIndex],
+              favoriteKeys: favoriteKeys,
+              onTap: onIslandTap,
+            ),
+          );
+        },
       );
     }
     if (branches.isEmpty) {
@@ -1179,7 +1182,12 @@ class _UniverseList extends StatelessWidget {
     }
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(0, AppSpacing.s10, 0, 76),
+      padding: const EdgeInsets.fromLTRB(
+        0,
+        AppSpacing.s10,
+        0,
+        AppSpacing.universeCompactListBottom,
+      ),
       itemCount: branches.length,
       itemBuilder: (_, index) {
         final item = branches[index];

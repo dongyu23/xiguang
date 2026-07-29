@@ -22,6 +22,23 @@ class AppColors {
   static const sunsetCoral = Color(0xFFE9A18B); // 珊瑚 — 被击中、期待
   static const lilac = Color(0xFFD9CCE8); // 淡紫 — 说不清、氛围
 
+  // 群岛海面语义色。集中在色板中，避免自绘组件散落原始色值。
+  static const islandSeaNightDeep = Color(0xFF112725);
+  static const islandSeaNightMid = Color(0xFF1B3531);
+  static const islandSeaNightMist = Color(0xFF26323A);
+  static const islandSeaNightDusk = Color(0xFF201F2B);
+  static const islandSeaDayWarm = Color(0xFFF5F0E5);
+  static const islandSeaDayMint = Color(0xFFDCEAE4);
+  static const islandSeaDayMist = Color(0xFFE4EBE7);
+  static const islandSeaDayDusk = Color(0xFFF2E8DC);
+  static const islandSeaGlowNight = Color(0xFF6FA395);
+  static const islandSeaGlowDay = Color(0xFF9FC5B9);
+  static const islandSeaHazeNight = Color(0xFF8196B0);
+  static const islandSeaHazeDay = Color(0xFFB8CBD0);
+  static const islandTideNight = Color(0xFF8DB4AB);
+  static const islandTideDay = Color(0xFF718F88);
+  static const islandRelit = Color(0xFFD7BC7C);
+
   // 夜间文字/图标色 - 统一入口（AppText.nightInk 等保留向后兼容）
   // 其余夜间表面色（nightBackground/nightSurface 等）见下方夜间色板
   static const nightInk = Color(0xFFF4EFE4); // 夜间主文字/图标

@@ -6,6 +6,7 @@ import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
 import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/radius.dart';
+import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../features/fragment/domain/fragment.dart';
@@ -90,7 +91,7 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
                       ),
                     ),
                     AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
+                      duration: AppMotion.fast,
                       child: _selected.isEmpty
                           ? const SizedBox(width: 36)
                           : Container(
@@ -257,7 +258,7 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
           ],
         ),
         AnimatedSize(
-          duration: const Duration(milliseconds: 260),
+          duration: AppMotion.normal,
           curve: Curves.easeOutCubic,
           alignment: Alignment.topCenter,
           child: !_filtersExpanded
@@ -335,9 +336,10 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
       _TimeFilter.today => local.year == now.year &&
           local.month == now.month &&
           local.day == now.day,
-      _TimeFilter.week => local.isAfter(now.subtract(const Duration(days: 7))),
+      _TimeFilter.week =>
+        local.isAfter(now.subtract(AppTiming.fragmentPickerWeek)),
       _TimeFilter.month =>
-        local.isAfter(now.subtract(const Duration(days: 30))),
+        local.isAfter(now.subtract(AppTiming.fragmentPickerMonth)),
       _TimeFilter.year => local.year == now.year,
     };
   }
@@ -664,7 +666,7 @@ class _SelectableFragmentRow extends StatelessWidget {
       label: '$title，${fragment.emotion}，${fragment.dateLabel}',
       child: AnimatedContainer(
         key: ValueKey('fragment-picker-row-${fragment.id}'),
-        duration: const Duration(milliseconds: 220),
+        duration: AppMotion.fast,
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           color: selected
@@ -726,7 +728,7 @@ class _SelectableFragmentRow extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.s10),
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
+                  duration: AppMotion.quick,
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(

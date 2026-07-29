@@ -16,6 +16,7 @@ class AuthSession {
   final String nickname;
   final String avatarKey;
   final bool aiEnabled;
+
   /// 用户首次开启星图管理员时记录的同意时间（ISO 字符串）。null = 未同意。
   /// 一旦设置不清空，关闭 AI 只置 aiEnabled=false。
   final String? aiConsentAcceptedAt;

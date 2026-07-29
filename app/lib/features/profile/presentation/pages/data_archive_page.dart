@@ -9,7 +9,6 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
-import '../../../../app/providers.dart';
 import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/radius.dart';
@@ -17,7 +16,11 @@ import '../../../../design/tokens/spacing.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../ui/composites/xiguang_page.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../application/export_local_archive.dart';
 import '../../domain/archive_models.dart';
+
+// PAGE_SIZE_EXEMPT: extract export status, import preview and archive actions
+// into dedicated widgets after the archive workflow completes desktop QA.
 
 class DataArchivePage extends ConsumerStatefulWidget {
   const DataArchivePage({super.key});
@@ -52,7 +55,7 @@ class _DataArchivePageState extends ConsumerState<DataArchivePage> {
   Future<void> _loadPreflight() async {
     try {
       final result =
-          await ref.read(localArchiveRepositoryProvider).preflightExport();
+          await ref.read(localArchiveActionsProvider).preflightExport();
       if (mounted) setState(() => _preflight = result);
     } catch (error) {
       if (mounted) setState(() => _error = '无法读取本地数据：$error');
@@ -72,7 +75,7 @@ class _DataArchivePageState extends ConsumerState<DataArchivePage> {
         message: '准备完整归档',
       );
     });
-    final stream = ref.read(localArchiveRepositoryProvider).exportArchive(
+    final stream = ref.read(localArchiveActionsProvider).exportArchive(
           ArchiveExportRequest(
             sourceAccountPublicId: session.publicId,
             username: session.username,
@@ -118,7 +121,7 @@ class _DataArchivePageState extends ConsumerState<DataArchivePage> {
     });
     try {
       final preview =
-          await ref.read(localArchiveRepositoryProvider).inspectArchive(path);
+          await ref.read(localArchiveActionsProvider).inspectArchive(path);
       if (!mounted) return;
       setState(() => _preview = preview);
       await _confirmImport(path, preview);
@@ -156,7 +159,7 @@ class _DataArchivePageState extends ConsumerState<DataArchivePage> {
 
   void _startImport(String path) {
     final stream = ref
-        .read(localArchiveRepositoryProvider)
+        .read(localArchiveActionsProvider)
         .importArchive(ArchiveImportRequest(zipPath: path));
     late final StreamSubscription<ArchiveProgress> subscription;
     subscription = stream.listen(
@@ -233,7 +236,7 @@ class _DataArchivePageState extends ConsumerState<DataArchivePage> {
     final path = _exportResult?.zipPath;
     if (path == null) return;
     try {
-      await ref.read(localArchiveRepositoryProvider).verifyArchive(path);
+      await ref.read(localArchiveActionsProvider).verifyArchive(path);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('归档完整性校验通过')));
