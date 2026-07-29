@@ -15,7 +15,7 @@ dependencies:
   riverpod_annotation: ^2.3.0
 
   # 路由
-  go_router: ^14.0.0
+  go_router: ^17.3.0
 
   # 本地数据库
   drift: ^2.16.0
