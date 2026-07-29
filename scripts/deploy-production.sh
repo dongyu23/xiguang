@@ -14,6 +14,7 @@ HTTP_PORT="${HTTP_PORT:-8088}"
 HTTPS_PORT="${HTTPS_PORT:-8443}"
 READY_RETRIES="${DEPLOY_READY_RETRIES:-30}"
 READY_INTERVAL="${DEPLOY_READY_INTERVAL:-4}"
+SKIP_IMAGE_PULL="${DEPLOY_SKIP_IMAGE_PULL:-false}"
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -63,9 +64,14 @@ wait_url() {
 
 start_image() {
   local image="$1"
-  BACKEND_IMAGE="$image" "${compose[@]}" pull app payment-init
+  if [[ "$SKIP_IMAGE_PULL" == "true" ]]; then
+    docker image inspect "$image" >/dev/null
+    log "using preloaded image $image"
+  else
+    BACKEND_IMAGE="$image" "${compose[@]}" pull app payment-init
+  fi
   BACKEND_IMAGE="$image" "${compose[@]}" up -d --no-build postgres redis minio
-  BACKEND_IMAGE="$image" "${compose[@]}" up -d --no-build app nginx
+  BACKEND_IMAGE="$image" "${compose[@]}" up -d --no-build --pull never app nginx
 }
 
 rollback() {
@@ -97,7 +103,7 @@ start_image "$TARGET_IMAGE"
 wait_url "$health_url" "application health"
 
 # 初始化任务幂等执行：迁移商品目录、核验渠道映射和生产支付配置。
-BACKEND_IMAGE="$TARGET_IMAGE" "${compose[@]}" run --rm --no-deps payment-init
+BACKEND_IMAGE="$TARGET_IMAGE" "${compose[@]}" run --rm --no-deps --pull never payment-init
 wait_url "$ready_url" "application readiness"
 
 revision="$(docker image inspect "$TARGET_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2>/dev/null || true)"
