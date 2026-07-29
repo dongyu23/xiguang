@@ -58,7 +58,7 @@ dependencies:
   open_filex: ^4.5.0
 
   # 崩溃上报
-  sentry_flutter: ^9.21.0
+  sentry_flutter: ^9.25.0
   shared_preferences: ^2.5.5
   connectivity_plus: ^6.1.5
   flutter_local_notifications: ^22.0.1
