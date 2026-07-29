@@ -34,7 +34,16 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || die "another deployment is already running"
 
 cd "$ROOT_DIR"
-compose=(docker compose --env-file .env -f "$COMPOSE_FILE")
+PULL_OVERRIDE_FILE="$STATE_DIR/compose-pull-never.yml"
+cat > "$PULL_OVERRIDE_FILE" <<'EOF'
+services:
+  app:
+    pull_policy: never
+  payment-init:
+    pull_policy: never
+EOF
+base_compose=(docker compose --env-file .env -f "$COMPOSE_FILE")
+compose=(docker compose --env-file .env -f "$COMPOSE_FILE" -f "$PULL_OVERRIDE_FILE")
 previous_image=""
 previous_runtime_image=""
 if [[ -f "$STATE_FILE" ]]; then
@@ -77,10 +86,10 @@ start_image() {
     docker image inspect "$image" >/dev/null
     log "using preloaded image $image"
   else
-    BACKEND_IMAGE="$image" "${compose[@]}" pull app payment-init
+    BACKEND_IMAGE="$image" "${base_compose[@]}" pull app payment-init
   fi
   BACKEND_IMAGE="$image" "${compose[@]}" up -d --no-build postgres redis minio
-  BACKEND_IMAGE="$image" "${compose[@]}" up -d --no-build --pull never app nginx
+  BACKEND_IMAGE="$image" "${compose[@]}" up -d --no-build app nginx
 }
 
 rollback() {
@@ -113,7 +122,7 @@ start_image "$RUNTIME_IMAGE"
 wait_url "$health_url" "application health"
 
 # 初始化任务幂等执行：迁移商品目录、核验渠道映射和生产支付配置。
-BACKEND_IMAGE="$RUNTIME_IMAGE" "${compose[@]}" run --rm --no-deps --pull never payment-init
+BACKEND_IMAGE="$RUNTIME_IMAGE" "${compose[@]}" run --rm --no-deps payment-init
 wait_url "$ready_url" "application readiness"
 
 revision="$(docker image inspect "$RUNTIME_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2>/dev/null || true)"
