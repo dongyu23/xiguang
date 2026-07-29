@@ -18,4 +18,8 @@ func New(db *pgxpool.Pool) *Handler {
 	return handler.New(service.New(repository.NewPG(db)))
 }
 
+func NewGroups(db *pgxpool.Pool) http.Handler {
+	return handler.New(service.New(repository.NewPG(db))).GroupRoutes()
+}
+
 var _ http.Handler = (*Handler)(nil)

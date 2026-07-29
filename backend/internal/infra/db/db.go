@@ -23,7 +23,13 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	_, err := pool.Exec(ctx, schema)
+	if _, err := pool.Exec(ctx, schema); err != nil {
+		return err
+	}
+	if _, err := pool.Exec(ctx, billingSchema); err != nil {
+		return err
+	}
+	_, err := pool.Exec(ctx, aiAssistanceSchema)
 	return err
 }
 
@@ -243,4 +249,34 @@ CREATE INDEX IF NOT EXISTS idx_app_releases_latest ON app_releases(channel, plat
 
 -- 管理员角色字段：内部使用，初始化时手动 UPDATE users SET is_admin=TRUE WHERE id=1。
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- AI 数据外发同意标记（migration 003）：用户首次开启星图管理员时记录同意时间。
+-- NULL = 未同意；非 NULL = 已同意的时间戳。
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_consent_accepted_at TIMESTAMPTZ;
+
+-- 归档导入（migration 004）：用户从其他账号导入归档数据的记录。
+CREATE TABLE IF NOT EXISTS archive_imports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_account_public_id TEXT NOT NULL DEFAULT '',
+  manifest JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  report JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + INTERVAL '24 hours',
+  CONSTRAINT ck_archive_import_status CHECK (status IN ('pending','committing','committed','cancelled','failed'))
+);
+CREATE INDEX IF NOT EXISTS idx_archive_imports_expiry
+  ON archive_imports(expires_at) WHERE status IN ('pending','failed');
+
+CREATE TABLE IF NOT EXISTS archive_import_media (
+  import_id UUID NOT NULL REFERENCES archive_imports(id) ON DELETE CASCADE,
+  sha256 CHAR(64) NOT NULL,
+  object_key TEXT NOT NULL,
+  mime_type VARCHAR(128) NOT NULL,
+  file_size BIGINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(import_id, sha256)
+);
 `

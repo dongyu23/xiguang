@@ -15,7 +15,7 @@ func TestStaticModulesUseCLAUDELayeredStructure(t *testing.T) {
 }
 
 func TestRepositoryBackedModulesUseCLAUDELayeredStructure(t *testing.T) {
-	for _, module := range []string{"ai", "auth", "fragment", "island", "media", "relation", "starmap", "stats", "sync", "tag", "timeline"} {
+	for _, module := range []string{"ai", "auth", "billing", "fragment", "island", "media", "relation", "starmap", "stats", "sync", "tag", "timeline"} {
 		for _, layer := range []string{"domain", "repository", "service", "handler"} {
 			assertModuleLayer(t, module, layer)
 		}

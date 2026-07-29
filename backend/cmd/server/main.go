@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"xiguang/backend/internal/billing"
 	"xiguang/backend/internal/infra/config"
 	"xiguang/backend/internal/infra/db"
 	"xiguang/backend/internal/infra/router"
@@ -23,6 +25,14 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "payment-init" {
+		if err := runPaymentInit(cfg); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println("payment catalog verified")
 		return
 	}
 
@@ -59,6 +69,24 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown failed", "error", err)
 	}
+}
+
+func runPaymentInit(cfg config.Config) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	module := billing.NewInitializer(pool, cfg)
+	if err := module.Service.Initialize(ctx); err != nil {
+		return err
+	}
+	report := module.Service.Readiness(ctx)
+	encoded, _ := json.Marshal(report)
+	fmt.Printf("payment-init diagnostics: %s\n", encoded)
+	return nil
 }
 
 func runHealthcheck(port string) error {

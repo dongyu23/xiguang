@@ -18,6 +18,8 @@ type fakeAuthRepo struct {
 	lastUpdate    domain.UpdateUserParams
 	revokedIDs    map[int64]bool
 	user          domain.User
+	mediaKeys     []string
+	mediaListErr  error
 	deletedUserID int64
 }
 
@@ -53,6 +55,10 @@ func (f *fakeAuthRepo) UpdatePassword(ctx context.Context, userID int64, passwor
 func (f *fakeAuthRepo) DeleteUser(ctx context.Context, userID int64) error {
 	f.deletedUserID = userID
 	return nil
+}
+
+func (f *fakeAuthRepo) MediaObjectKeys(context.Context, int64) ([]string, error) {
+	return f.mediaKeys, f.mediaListErr
 }
 
 func (f *fakeAuthRepo) InsertRefreshToken(ctx context.Context, userID int64, tokenHash, deviceInfo string, expiresAt time.Time) (int64, error) {
@@ -198,5 +204,59 @@ func TestDeleteAccountRequiresCurrentPassword(t *testing.T) {
 	}
 	if repo.deletedUserID != 42 {
 		t.Fatalf("deleted user id = %d, want 42", repo.deletedUserID)
+	}
+}
+
+type fakeObjectDeleter struct {
+	deleted []string
+	err     error
+}
+
+func (d *fakeObjectDeleter) DeleteObject(_ context.Context, key string) error {
+	if d.err != nil {
+		return d.err
+	}
+	d.deleted = append(d.deleted, key)
+	return nil
+}
+
+func TestDeleteAccountCleansMediaObjectsBeforeDeletingUser(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := &fakeAuthRepo{
+		refreshTokens: map[string]int64{},
+		user:          domain.User{ID: 42, Username: "user", PasswordHash: string(hash)},
+		mediaKeys:     []string{"users/42/a.jpg", "users/42/b.m4a"},
+	}
+	objects := &fakeObjectDeleter{}
+	service := New(repo, config.Config{}, objects)
+
+	if err = service.DeleteAccount(t.Context(), 42, "current-password"); err != nil {
+		t.Fatal(err)
+	}
+	if len(objects.deleted) != 2 || repo.deletedUserID != 42 {
+		t.Fatalf("deleted objects=%#v user=%d", objects.deleted, repo.deletedUserID)
+	}
+}
+
+func TestDeleteAccountFailsClosedWhenObjectCleanupIsUnavailable(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := &fakeAuthRepo{
+		refreshTokens: map[string]int64{},
+		user:          domain.User{ID: 42, Username: "user", PasswordHash: string(hash)},
+		mediaKeys:     []string{"users/42/a.jpg"},
+	}
+	service := New(repo, config.Config{})
+
+	if err = service.DeleteAccount(t.Context(), 42, "current-password"); !errors.Is(err, ErrObjectCleanupUnavailable) {
+		t.Fatalf("DeleteAccount() error = %v", err)
+	}
+	if repo.deletedUserID != 0 {
+		t.Fatal("user was deleted while media cleanup was unavailable")
 	}
 }

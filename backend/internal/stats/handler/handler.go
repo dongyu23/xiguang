@@ -1,28 +1,55 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"xiguang/backend/internal/auth"
+	billingdomain "xiguang/backend/internal/billing/domain"
 	"xiguang/backend/internal/shared"
 	"xiguang/backend/internal/stats/service"
 )
 
 type Handler struct {
-	service *service.Service
+	service      *service.Service
+	entitlements EntitlementService
 }
 
-func New(service *service.Service) *Handler {
-	return &Handler{service: service}
+type EntitlementService interface {
+	Entitlement(context.Context, int64) (billingdomain.Entitlement, error)
+}
+
+func New(service *service.Service, entitlements EntitlementService) *Handler {
+	return &Handler{service: service, entitlements: entitlements}
 }
 
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/emotion-density", h.emotionDensity)
 	r.Get("/freq-words", h.freqWords)
+	r.Get("/tide", h.tide)
 	return r
+}
+
+func (h *Handler) tide(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	entitlement, err := h.entitlements.Entitlement(r.Context(), userID)
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "stats_failed", "暂时无法确认潮汐提示权益。")
+		return
+	}
+	if !billingdomain.TierAllows(entitlement.Tier, "starlight") {
+		shared.WriteError(w, http.StatusForbidden, "entitlement_required", "潮汐提示需要星光会员。")
+		return
+	}
+	result, err := h.service.Tide(r.Context(), userID)
+	if err != nil {
+		shared.WriteError(w, http.StatusInternalServerError, "stats_failed", "暂时无法读取潮汐提示。")
+		return
+	}
+	shared.WriteJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

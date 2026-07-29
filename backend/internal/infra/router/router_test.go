@@ -15,6 +15,8 @@ func TestRouterMountsCLAUDEMVPModules(t *testing.T) {
 
 	requiredSnippets := []string{
 		`r.Get("/healthz"`,
+		`r.Get("/readyz"`,
+		`r.Get("/metrics"`,
 		`r.Route("/api/v1"`,
 		`api.Mount("/auth"`,
 		`api.Mount("/emotions"`,
@@ -32,6 +34,7 @@ func TestRouterMountsCLAUDEMVPModules(t *testing.T) {
 		`private.Mount("/sync"`,
 		`private.Mount("/ai"`,
 		`private.Mount("/asr"`,
+		`private.Mount("/billing"`,
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(source, snippet) {

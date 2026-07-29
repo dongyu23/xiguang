@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"xiguang/backend/internal/auth"
+	billingservice "xiguang/backend/internal/billing/service"
 	"xiguang/backend/internal/infra/config"
 	"xiguang/backend/internal/infra/storage"
 	"xiguang/backend/internal/shared"
@@ -23,16 +24,32 @@ import (
 
 const uploadTTL = 30 * time.Minute
 
+const (
+	maxArchiveImageSize = 10 << 20
+	maxArchiveAudioSize = 50 << 20
+)
+
 var shaPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type Handler struct {
 	db       *pgxpool.Pool
 	provider storage.Provider
+	quota    QuotaService
 }
 
-func New(db *pgxpool.Pool, cfg config.Config) *Handler {
+type QuotaService interface {
+	ReserveStorageFor(ctx context.Context, userID int64, objectKey string, bytes int64, ttl time.Duration) error
+	ConsumeStorage(ctx context.Context, userID int64, objectKey string) error
+	ReleaseStorage(ctx context.Context, userID int64, objectKey string)
+}
+
+func New(db *pgxpool.Pool, cfg config.Config, quotas ...QuotaService) *Handler {
+	var quota QuotaService
+	if len(quotas) > 0 {
+		quota = quotas[0]
+	}
 	provider, _ := storage.NewMinIOProvider(cfg)
-	h := &Handler{db: db, provider: provider}
+	h := &Handler{db: db, provider: provider, quota: quota}
 	go h.cleanupLoop()
 	return h
 }
@@ -95,7 +112,7 @@ func (h *Handler) uploadURLs(w http.ResponseWriter, r *http.Request) {
 	result := make([]map[string]any, 0, len(req.Items))
 	for _, item := range req.Items {
 		ext := strings.ToLower(item.Ext)
-		if !shaPattern.MatchString(item.SHA256) || item.FileSize < 0 || len(ext) > 9 || strings.ContainsAny(ext, `/\\`) {
+		if !shaPattern.MatchString(item.SHA256) || !validMediaSize(item.MIME, item.FileSize) || len(ext) > 9 || strings.ContainsAny(ext, `/\\`) {
 			shared.WriteError(w, http.StatusBadRequest, "archive_media_invalid", "媒体描述不正确。")
 			return
 		}
@@ -161,6 +178,25 @@ func (h *Handler) commit(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, http.StatusBadRequest, "bad_request", "恢复内容格式不正确。")
 		return
 	}
+	if !h.pending(r.Context(), userID, id) {
+		shared.WriteError(w, http.StatusNotFound, "archive_not_found", "恢复会话不存在或已过期。")
+		return
+	}
+	reserved, err := h.prepareMedia(r.Context(), userID, id, req)
+	if err != nil {
+		if errors.Is(err, billingservice.ErrStorageQuota) {
+			shared.WriteError(w, http.StatusForbidden, "storage_quota_exceeded", "云端空间不足，无法恢复这些媒体。")
+		} else {
+			shared.WriteError(w, http.StatusBadRequest, "archive_media_invalid", "归档媒体缺失、过大或类型不受支持。")
+		}
+		return
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			h.releaseReservations(r.Context(), userID, reserved)
+		}
+	}()
 	tx, err := h.db.BeginTx(r.Context(), pgx.TxOptions{})
 	if err != nil {
 		shared.WriteError(w, http.StatusInternalServerError, "archive_failed", "暂时无法开始恢复。")
@@ -247,7 +283,85 @@ func (h *Handler) commit(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, http.StatusInternalServerError, "archive_failed", "恢复提交失败，未写入任何数据。")
 		return
 	}
+	committed = true
+	for _, key := range reserved {
+		if h.quota != nil {
+			if err := h.quota.ConsumeStorage(r.Context(), userID, key); err != nil {
+				h.quota.ReleaseStorage(r.Context(), userID, key)
+			}
+		}
+	}
 	shared.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "status": "committed", "report": report})
+}
+
+func (h *Handler) prepareMedia(ctx context.Context, userID int64, importID string, req commitRequest) ([]string, error) {
+	if h.provider == nil {
+		for _, fragment := range req.Fragments {
+			if len(fragment.MediaSHA) > 0 {
+				return nil, errors.New("storage unavailable")
+			}
+		}
+		return nil, nil
+	}
+	hashes := make(map[string]struct{})
+	for _, fragment := range req.Fragments {
+		for _, hash := range fragment.MediaSHA {
+			if !shaPattern.MatchString(hash) {
+				return nil, errors.New("invalid media hash")
+			}
+			hashes[hash] = struct{}{}
+		}
+	}
+	reserved := make([]string, 0, len(hashes))
+	for hash := range hashes {
+		var key string
+		if err := h.db.QueryRow(ctx, `SELECT object_key FROM archive_import_media WHERE import_id=$1 AND sha256=$2`, importID, hash).Scan(&key); err != nil {
+			h.releaseReservations(ctx, userID, reserved)
+			return nil, err
+		}
+		info, err := h.provider.StatObject(ctx, key)
+		if err != nil || !validMediaSize(info.ContentType, info.Size) {
+			_ = h.provider.DeleteObject(ctx, key)
+			h.releaseReservations(ctx, userID, reserved)
+			return nil, errors.New("invalid stored media")
+		}
+		if h.quota != nil {
+			if err = h.quota.ReserveStorageFor(ctx, userID, key, info.Size, uploadTTL); err != nil {
+				h.releaseReservations(ctx, userID, reserved)
+				return nil, err
+			}
+			reserved = append(reserved, key)
+		}
+		if _, err = h.db.Exec(ctx, `UPDATE archive_import_media SET mime_type=$3,file_size=$4 WHERE import_id=$1 AND sha256=$2`, importID, hash, info.ContentType, info.Size); err != nil {
+			h.releaseReservations(ctx, userID, reserved)
+			return nil, err
+		}
+	}
+	return reserved, nil
+}
+
+func (h *Handler) releaseReservations(ctx context.Context, userID int64, keys []string) {
+	if h.quota == nil {
+		return
+	}
+	for _, key := range keys {
+		h.quota.ReleaseStorage(ctx, userID, key)
+	}
+}
+
+func validMediaSize(contentType string, size int64) bool {
+	if size <= 0 {
+		return false
+	}
+	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch {
+	case strings.HasPrefix(contentType, "image/"):
+		return size <= maxArchiveImageSize
+	case strings.HasPrefix(contentType, "audio/"):
+		return size <= maxArchiveAudioSize
+	default:
+		return false
+	}
 }
 
 func mergeTags(ctx context.Context, tx pgx.Tx, userID, fragmentID int64, tags []string) error {
@@ -384,6 +498,7 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request) {
 			_ = h.provider.DeleteObject(r.Context(), key)
 		}
 	}
+	h.releaseReservations(r.Context(), userID, keys)
 	shared.WriteJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
@@ -403,23 +518,30 @@ func (h *Handler) cleanupLoop() {
 }
 
 func (h *Handler) cleanupExpired(ctx context.Context) {
-	rows, err := h.db.Query(ctx, `SELECT aim.object_key
+	rows, err := h.db.Query(ctx, `SELECT ai.user_id,aim.object_key
 		FROM archive_import_media aim
 		JOIN archive_imports ai ON ai.id=aim.import_id
 		WHERE ai.expires_at<=now() AND ai.status<>'committed'`)
 	if err == nil {
-		keys := []string{}
+		type expiredObject struct {
+			userID int64
+			key    string
+		}
+		keys := []expiredObject{}
 		for rows.Next() {
-			var key string
-			if rows.Scan(&key) == nil {
-				keys = append(keys, key)
+			var item expiredObject
+			if rows.Scan(&item.userID, &item.key) == nil {
+				keys = append(keys, item)
 			}
 		}
 		rows.Close()
 		if h.provider != nil {
-			for _, key := range keys {
-				_ = h.provider.DeleteObject(ctx, key)
+			for _, item := range keys {
+				_ = h.provider.DeleteObject(ctx, item.key)
 			}
+		}
+		for _, item := range keys {
+			h.releaseReservations(ctx, item.userID, []string{item.key})
 		}
 	}
 	_, _ = h.db.Exec(ctx, `DELETE FROM archive_imports WHERE expires_at<=now() AND status<>'committed'`)

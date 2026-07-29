@@ -22,3 +22,12 @@ type FreqWord struct {
 type FreqWords struct {
 	Words []FreqWord `json:"words"`
 }
+
+type TideInsight struct {
+	Period      string    `json:"period"`
+	Title       string    `json:"title"`
+	Message     string    `json:"message"`
+	Emotion     string    `json:"emotion,omitempty"`
+	Occurrences int       `json:"occurrences"`
+	GeneratedAt time.Time `json:"generated_at"`
+}

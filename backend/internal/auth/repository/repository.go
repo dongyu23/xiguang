@@ -191,6 +191,26 @@ func (r *PG) DeleteUser(ctx context.Context, userID int64) error {
 	return tx.Commit(ctx)
 }
 
+func (r *PG) MediaObjectKeys(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := r.db.Query(ctx, `SELECT object_key FROM media_files WHERE user_id=$1
+		UNION SELECT thumbnail_key FROM media_files WHERE user_id=$1 AND thumbnail_key IS NOT NULL AND thumbnail_key<>''
+		UNION SELECT avatar_key FROM users WHERE id=$1 AND avatar_key<>''
+		UNION SELECT aim.object_key FROM archive_import_media aim JOIN archive_imports ai ON ai.id=aim.import_id WHERE ai.user_id=$1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err = rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
+}
+
 func (r *PG) InsertRefreshToken(ctx context.Context, userID int64, tokenHash, deviceInfo string, expiresAt time.Time) (int64, error) {
 	var tokenID int64
 	err := r.db.QueryRow(ctx, `INSERT INTO refresh_tokens(user_id, token_hash, device_info, expires_at)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	billingrepo "xiguang/backend/internal/billing/repository"
 	"xiguang/backend/internal/infra/config"
 	"xiguang/backend/internal/infra/storage"
 	"xiguang/backend/internal/media/domain"
@@ -26,6 +27,13 @@ var (
 const presignTTL = 5 * time.Minute
 const exportTTL = 10 * time.Minute
 
+const (
+	maxImageSize = 10 << 20
+	maxAudioSize = 50 << 20
+)
+
+var ErrQuotaExceeded = billingrepo.ErrStorageQuota
+
 type ExportURL struct {
 	ObjectKey        string `json:"object_key"`
 	DownloadURL      string `json:"download_url"`
@@ -38,14 +46,25 @@ type Service struct {
 	repo     repository.Repository
 	cfg      config.Config
 	provider storage.Provider
+	quota    QuotaService
 }
 
-func New(repo repository.Repository, cfg config.Config, provider storage.Provider) *Service {
-	return &Service{repo: repo, cfg: cfg, provider: provider}
+type QuotaService interface {
+	ReserveStorage(ctx context.Context, userID int64, objectKey string, bytes int64) error
+	ConsumeStorage(ctx context.Context, userID int64, objectKey string) error
+	ReleaseStorage(ctx context.Context, userID int64, objectKey string)
 }
 
-func (s *Service) Presign(userID int64, req domain.PresignRequest) (domain.PresignResponse, error) {
-	if req.FileName == "" {
+func New(repo repository.Repository, cfg config.Config, provider storage.Provider, quotas ...QuotaService) *Service {
+	var quota QuotaService
+	if len(quotas) > 0 {
+		quota = quotas[0]
+	}
+	return &Service{repo: repo, cfg: cfg, provider: provider, quota: quota}
+}
+
+func (s *Service) Presign(ctx context.Context, userID int64, req domain.PresignRequest) (domain.PresignResponse, error) {
+	if req.FileName == "" || !validMediaSize(req.ContentType, req.FileSize) || s.provider == nil {
 		return domain.PresignResponse{}, ErrInvalidPresign
 	}
 	ext := strings.ToLower(filepath.Ext(req.FileName))
@@ -60,18 +79,21 @@ func (s *Service) Presign(userID int64, req domain.PresignRequest) (domain.Presi
 		ObjectKey:        objectKey,
 		ExpiresInSeconds: int(presignTTL.Seconds()),
 	}
-
-	if s.provider != nil {
-		uploadURL, err := s.provider.PresignedPutObject(context.Background(), objectKey, req.ContentType, presignTTL)
-		if err != nil {
-			return domain.PresignResponse{}, fmt.Errorf("presign: %w", err)
+	if s.quota != nil {
+		if err := s.quota.ReserveStorage(ctx, userID, objectKey, req.FileSize); err != nil {
+			return domain.PresignResponse{}, err
 		}
-		resp.UploadURL = uploadURL
-		resp.DirectUploadEnabled = true
-	} else {
-		resp.UploadURL = "/api/v1/media/direct-upload/" + objectKey
-		resp.DirectUploadEnabled = false
 	}
+
+	uploadURL, err := s.provider.PresignedPutObject(ctx, objectKey, req.ContentType, presignTTL)
+	if err != nil {
+		if s.quota != nil {
+			s.quota.ReleaseStorage(ctx, userID, objectKey)
+		}
+		return domain.PresignResponse{}, fmt.Errorf("presign: %w", err)
+	}
+	resp.UploadURL = uploadURL
+	resp.DirectUploadEnabled = true
 
 	return resp, nil
 }
@@ -88,24 +110,44 @@ func (s *Service) Confirm(ctx context.Context, userID int64, req domain.ConfirmR
 		strings.Contains(req.ObjectKey, "../") {
 		return domain.MediaFile{}, ErrInvalidConfirm
 	}
-	return s.repo.Confirm(ctx, userID, req)
+	if existing, err := s.repo.GetByObjectKey(ctx, userID, req.ObjectKey); err == nil {
+		return existing, nil
+	}
+	if s.provider == nil {
+		return domain.MediaFile{}, ErrInvalidConfirm
+	}
+	info, err := s.provider.StatObject(ctx, req.ObjectKey)
+	if err != nil || !validMediaSize(info.ContentType, info.Size) {
+		return domain.MediaFile{}, ErrInvalidConfirm
+	}
+	req.FileSize = info.Size
+	req.MimeType = info.ContentType
+	if s.quota != nil {
+		if err := s.quota.ReserveStorage(ctx, userID, req.ObjectKey, info.Size); err != nil {
+			return domain.MediaFile{}, err
+		}
+	}
+	item, err := s.repo.Confirm(ctx, userID, req)
+	if err != nil && s.quota != nil {
+		s.quota.ReleaseStorage(ctx, userID, req.ObjectKey)
+		return item, err
+	}
+	if s.quota != nil {
+		if err = s.quota.ConsumeStorage(ctx, userID, req.ObjectKey); err != nil {
+			return domain.MediaFile{}, err
+		}
+	}
+	return item, err
 }
 
 func (s *Service) Upload(ctx context.Context, userID, fragmentID int64, fileName string, data []byte) (domain.MediaFile, error) {
-	const maxImageSize = 10 << 20 // 10MB
-	const maxAudioSize = 50 << 20 // 50MB
-
 	if len(data) == 0 || fileName == "" {
 		return domain.MediaFile{}, fmt.Errorf("upload: empty file")
 	}
 
 	contentType := sniffMIME(fileName, data)
-	maxSize := maxImageSize
-	if strings.HasPrefix(contentType, "audio/") {
-		maxSize = maxAudioSize
-	}
-	if len(data) > maxSize {
-		return domain.MediaFile{}, fmt.Errorf("upload: file too large (%d > %d)", len(data), maxSize)
+	if !validMediaSize(contentType, int64(len(data))) {
+		return domain.MediaFile{}, fmt.Errorf("upload: unsupported or oversized media")
 	}
 
 	ext := strings.ToLower(filepath.Ext(fileName))
@@ -115,20 +157,40 @@ func (s *Service) Upload(ctx context.Context, userID, fragmentID int64, fileName
 	ts := time.Now().UTC().Format("20060102T150405")
 	objectKey := fmt.Sprintf("users/%d/media/%s/%s_%d%s",
 		userID, time.Now().UTC().Format("2006/01"), ts, time.Now().UnixNano()%100000, ext)
+	if s.quota != nil {
+		if err := s.quota.ReserveStorage(ctx, userID, objectKey, int64(len(data))); err != nil {
+			return domain.MediaFile{}, err
+		}
+	}
 
 	if s.provider != nil {
 		if err := s.provider.PutObject(ctx, objectKey, contentType, data); err != nil {
+			if s.quota != nil {
+				s.quota.ReleaseStorage(ctx, userID, objectKey)
+			}
 			return domain.MediaFile{}, fmt.Errorf("upload: store: %w", err)
 		}
 	}
 
-	return s.repo.Create(ctx, userID, domain.CreateMediaRequest{
+	item, err := s.repo.Create(ctx, userID, domain.CreateMediaRequest{
 		FragmentID: fragmentID,
 		ObjectKey:  objectKey,
 		FileName:   fileName,
 		MimeType:   contentType,
 		FileSize:   int64(len(data)),
 	})
+	if err != nil {
+		if s.quota != nil {
+			s.quota.ReleaseStorage(ctx, userID, objectKey)
+		}
+		return item, err
+	}
+	if s.quota != nil {
+		if err = s.quota.ConsumeStorage(ctx, userID, objectKey); err != nil {
+			return domain.MediaFile{}, err
+		}
+	}
+	return item, nil
 }
 
 func sniffMIME(fileName string, data []byte) string {
@@ -160,7 +222,52 @@ func sniffMIME(fileName string, data []byte) string {
 }
 
 func (s *Service) Get(ctx context.Context, userID, mediaID int64) (domain.MediaFile, error) {
-	return s.repo.Get(ctx, userID, mediaID)
+	item, err := s.repo.Get(ctx, userID, mediaID)
+	if err != nil {
+		return item, err
+	}
+	if s.provider != nil {
+		signed, signErr := s.provider.PresignedGetObject(ctx, item.ObjectKey, presignTTL)
+		if signErr != nil {
+			return item, signErr
+		}
+		item.FileURL = signed
+	}
+	return item, nil
+}
+
+func validMediaSize(contentType string, size int64) bool {
+	if size <= 0 {
+		return false
+	}
+	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch {
+	case strings.HasPrefix(contentType, "image/"):
+		return size <= maxImageSize
+	case strings.HasPrefix(contentType, "audio/"):
+		return size <= maxAudioSize
+	default:
+		return false
+	}
+}
+
+func (s *Service) GetByObjectKey(ctx context.Context, userID int64, objectKey string) (domain.MediaFile, error) {
+	prefix := "users/" + strconv.FormatInt(userID, 10) + "/media/"
+	if !strings.HasPrefix(objectKey, prefix) || strings.Contains(objectKey, "..") || strings.Contains(objectKey, "\\") {
+		return domain.MediaFile{}, ErrMediaOwnership
+	}
+	item, err := s.repo.GetByObjectKey(ctx, userID, objectKey)
+	if err != nil {
+		return item, err
+	}
+	if s.provider != nil {
+		signed, signErr := s.provider.PresignedGetObject(ctx, item.ObjectKey, presignTTL)
+		if signErr != nil {
+			return item, signErr
+		}
+		item.FileURL = signed
+	}
+	return item, nil
 }
 
 func (s *Service) Delete(ctx context.Context, userID, mediaID int64) (bool, error) {

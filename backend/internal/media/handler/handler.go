@@ -28,9 +28,14 @@ func (h *Handler) Routes() http.Handler {
 	r.Post("/presign-upload", h.presign)
 	r.Post("/confirm-upload", h.confirm)
 	r.Post("/export-urls", h.exportURLs)
+	r.Get("/object",h.getByObjectKey)
 	r.Get("/{id}", h.get)
 	r.Delete("/{id}", h.delete)
 	return r
+}
+
+func (h *Handler)getByObjectKey(w http.ResponseWriter,r *http.Request){
+	userID,_:=auth.UserID(r.Context());item,err:=h.service.GetByObjectKey(r.Context(),userID,r.URL.Query().Get("key"));if err!=nil{shared.WriteError(w,http.StatusNotFound,"not_found","没有找到这个媒体文件。");return};http.Redirect(w,r,item.FileURL,http.StatusTemporaryRedirect)
 }
 
 func (h *Handler) exportURLs(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +88,10 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.service.Upload(r.Context(), userID, fragmentID, header.Filename, data)
+	if errors.Is(err, service.ErrQuotaExceeded) {
+		shared.WriteError(w, http.StatusForbidden, "storage_quota_exceeded", "云端空间已满，仍可查看、导出或删除已有内容。")
+		return
+	}
 	if err != nil {
 		shared.WriteError(w, http.StatusInternalServerError, "media_failed", "上传失败，请稍后再试。")
 		return
@@ -102,12 +111,16 @@ func (h *Handler) presign(w http.ResponseWriter, r *http.Request) {
 		shared.WriteError(w, http.StatusBadRequest, "bad_request", "文件信息不完整。")
 		return
 	}
-	result, err := h.service.Presign(userID, domain.PresignRequest{
+	result, err := h.service.Presign(r.Context(), userID, domain.PresignRequest{
 		FragmentID:  req.FragmentID,
 		FileName:    req.FileName,
 		ContentType: req.ContentType,
 		FileSize:    req.FileSize,
 	})
+	if errors.Is(err, service.ErrQuotaExceeded) {
+		shared.WriteError(w, http.StatusForbidden, "storage_quota_exceeded", "云端空间已满，仍可查看、导出或删除已有内容。")
+		return
+	}
 	if errors.Is(err, service.ErrInvalidPresign) {
 		shared.WriteError(w, http.StatusBadRequest, "bad_request", "文件信息不完整。")
 		return
@@ -139,6 +152,10 @@ func (h *Handler) confirm(w http.ResponseWriter, r *http.Request) {
 		MimeType:   req.MimeType,
 		FileSize:   req.FileSize,
 	})
+	if errors.Is(err, service.ErrQuotaExceeded) {
+		shared.WriteError(w, http.StatusForbidden, "storage_quota_exceeded", "上传预留已过期，请重新选择文件。")
+		return
+	}
 	if errors.Is(err, service.ErrInvalidConfirm) {
 		shared.WriteError(w, http.StatusBadRequest, "bad_request", "确认上传的信息不完整。")
 		return

@@ -22,20 +22,33 @@ import (
 )
 
 var (
-	ErrInvalidAccount   = errors.New("invalid_account")
-	ErrLoginFailed      = errors.New("login_failed")
-	ErrRefreshFailed    = errors.New("refresh_failed")
-	ErrWrongPassword    = errors.New("wrong_password")
-	ErrPasswordTooShort = errors.New("password_too_short")
+	ErrInvalidAccount           = errors.New("invalid_account")
+	ErrLoginFailed              = errors.New("login_failed")
+	ErrRefreshFailed            = errors.New("refresh_failed")
+	ErrWrongPassword            = errors.New("wrong_password")
+	ErrPasswordTooShort         = errors.New("password_too_short")
+	ErrObjectCleanupUnavailable = errors.New("object_cleanup_unavailable")
 )
 
 type Service struct {
-	repo repository.Repository
-	cfg  config.Config
+	repo    repository.Repository
+	cfg     config.Config
+	objects ObjectDeleter
 }
 
-func New(repo repository.Repository, cfg config.Config) *Service {
-	return &Service{repo: repo, cfg: cfg}
+type ObjectDeleter interface {
+	DeleteObject(context.Context, string) error
+}
+type mediaObjectLister interface {
+	MediaObjectKeys(context.Context, int64) ([]string, error)
+}
+
+func New(repo repository.Repository, cfg config.Config, deleters ...ObjectDeleter) *Service {
+	var objects ObjectDeleter
+	if len(deleters) > 0 {
+		objects = deleters[0]
+	}
+	return &Service{repo: repo, cfg: cfg, objects: objects}
 }
 
 func (s *Service) Register(ctx context.Context, params domain.RegisterParams) (domain.User, domain.TokenPair, error) {
@@ -128,6 +141,20 @@ func (s *Service) DeleteAccount(ctx context.Context, userID int64, password stri
 	}
 	if bcrypt.CompareHashAndPassword([]byte(fullUser.PasswordHash), []byte(password)) != nil {
 		return ErrWrongPassword
+	}
+	if lister, ok := s.repo.(mediaObjectLister); ok {
+		keys, listErr := lister.MediaObjectKeys(ctx, userID)
+		if listErr != nil {
+			return listErr
+		}
+		if len(keys) > 0 && s.objects == nil {
+			return ErrObjectCleanupUnavailable
+		}
+		for _, key := range keys {
+			if err := s.objects.DeleteObject(ctx, key); err != nil {
+				return err
+			}
+		}
 	}
 	return s.repo.DeleteUser(ctx, userID)
 }

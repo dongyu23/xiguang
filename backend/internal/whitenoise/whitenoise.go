@@ -6,6 +6,6 @@ import (
 	"xiguang/backend/internal/whitenoise/handler"
 )
 
-func Routes() http.Handler {
-	return handler.New().Routes()
+func Routes(entitlements ...handler.EntitlementService) http.Handler {
+	return handler.New(entitlements...).Routes()
 }

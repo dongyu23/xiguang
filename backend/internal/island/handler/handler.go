@@ -34,6 +34,18 @@ func (h *Handler) Routes() http.Handler {
 	return r
 }
 
+func (h *Handler) GroupRoutes() http.Handler {
+	r := chi.NewRouter()
+	r.Get("/", h.listGroups)
+	r.Post("/", h.createGroup)
+	r.Get("/{id}", h.getGroup)
+	r.Put("/{id}", h.updateGroup)
+	r.Delete("/{id}", h.deleteGroup)
+	r.Post("/{id}/islands", h.addGroupIslands)
+	r.Delete("/{id}/islands", h.removeGroupIslands)
+	return r
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Routes().ServeHTTP(w, r)
 }
@@ -183,4 +195,94 @@ func decodeUpsert(w http.ResponseWriter, r *http.Request) (domain.UpsertParams, 
 		return domain.UpsertParams{}, false
 	}
 	return domain.UpsertParams{Name: req.Name, Description: req.Description}, true
+}
+
+func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
+	uid, _ := auth.UserID(r.Context())
+	items, err := h.service.ListGroups(r.Context(), uid)
+	if err != nil {
+		shared.WriteError(w, 500, "island_group_failed", "暂时无法读取岛群。")
+		return
+	}
+	shared.WriteJSON(w, 200, map[string]any{"groups": items})
+}
+func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
+	uid, _ := auth.UserID(r.Context())
+	var req domain.GroupUpsertParams
+	if shared.DecodeJSON(r, &req) != nil {
+		shared.WriteError(w, 400, "bad_request", "请求格式不正确。")
+		return
+	}
+	item, err := h.service.CreateGroup(r.Context(), uid, req)
+	if errors.Is(err, service.ErrInvalidGroup) {
+		shared.WriteError(w, 422, "invalid_island_group", "岛群需要名称和 2 到 5 座小岛。")
+		return
+	}
+	if err != nil {
+		shared.WriteError(w, 400, "island_group_failed", "岛群成员无效或不属于当前账号。")
+		return
+	}
+	shared.WriteJSON(w, 201, item)
+}
+func (h *Handler) getGroup(w http.ResponseWriter, r *http.Request) {
+	uid, _ := auth.UserID(r.Context())
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	item, err := h.service.GetGroup(r.Context(), uid, id)
+	if err != nil {
+		shared.WriteError(w, 404, "island_group_not_found", "没有找到这个岛群。")
+		return
+	}
+	shared.WriteJSON(w, 200, item)
+}
+func (h *Handler) updateGroup(w http.ResponseWriter, r *http.Request) {
+	uid, _ := auth.UserID(r.Context())
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var req domain.GroupUpsertParams
+	if shared.DecodeJSON(r, &req) != nil {
+		shared.WriteError(w, 400, "bad_request", "请求格式不正确。")
+		return
+	}
+	item, err := h.service.UpdateGroup(r.Context(), uid, id, req)
+	if err != nil {
+		shared.WriteError(w, 404, "island_group_not_found", "没有找到这个岛群。")
+		return
+	}
+	shared.WriteJSON(w, 200, item)
+}
+func (h *Handler) deleteGroup(w http.ResponseWriter, r *http.Request) {
+	uid, _ := auth.UserID(r.Context())
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	ok, err := h.service.DeleteGroup(r.Context(), uid, id)
+	if err != nil || !ok {
+		shared.WriteError(w, 404, "island_group_not_found", "没有找到这个岛群。")
+		return
+	}
+	shared.WriteJSON(w, 200, map[string]bool{"deleted": true})
+}
+func (h *Handler) addGroupIslands(w http.ResponseWriter, r *http.Request) {
+	h.changeGroupIslands(w, r, true)
+}
+func (h *Handler) removeGroupIslands(w http.ResponseWriter, r *http.Request) {
+	h.changeGroupIslands(w, r, false)
+}
+func (h *Handler) changeGroupIslands(w http.ResponseWriter, r *http.Request, add bool) {
+	uid, _ := auth.UserID(r.Context())
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var req domain.GroupMemberAction
+	if shared.DecodeJSON(r, &req) != nil {
+		shared.WriteError(w, 400, "bad_request", "请求格式不正确。")
+		return
+	}
+	var item domain.IslandGroup
+	var err error
+	if add {
+		item, err = h.service.AddGroupIslands(r.Context(), uid, id, req.IslandIDs)
+	} else {
+		item, err = h.service.RemoveGroupIslands(r.Context(), uid, id, req.IslandIDs)
+	}
+	if err != nil {
+		shared.WriteError(w, 400, "island_group_failed", "无法变更岛群成员。")
+		return
+	}
+	shared.WriteJSON(w, 200, item)
 }

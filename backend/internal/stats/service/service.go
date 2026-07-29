@@ -42,3 +42,18 @@ func (s *Service) FreqWords(ctx context.Context, userID int64) (domain.FreqWords
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Count > items[j].Count })
 	return domain.FreqWords{Words: items}, nil
 }
+
+func (s *Service) Tide(ctx context.Context, userID int64) (domain.TideInsight, error) {
+	signal, err := s.repo.TideSignal(ctx, userID)
+	if err != nil {
+		return domain.TideInsight{}, err
+	}
+	return domain.TideInsight{
+		Period:      "14d",
+		Title:       "最近的潮汐",
+		Message:     "这段时间，“" + signal.Name + "”出现得稍多一些。它只是一次轻轻的回看，不替你解释。",
+		Emotion:     signal.Name,
+		Occurrences: signal.Count,
+		GeneratedAt: time.Now().UTC(),
+	}, nil
+}

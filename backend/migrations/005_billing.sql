@@ -1,0 +1,152 @@
+DO $$ BEGIN CREATE TYPE billing_tier AS ENUM ('glimmer','starlight','galaxy'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE billing_period AS ENUM ('month','year'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE payment_provider AS ENUM ('apple','wechat','alipay'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE payment_order_status AS ENUM ('created','pending','paid','failed','closed','refunded'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE subscription_status AS ENUM ('trialing','active','grace','past_due','canceled','expired','revoked'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_media_user_object_key ON media_files(user_id, object_key);
+
+CREATE TABLE IF NOT EXISTS billing_products (
+  id BIGSERIAL PRIMARY KEY,
+  code VARCHAR(64) NOT NULL UNIQUE,
+  tier billing_tier NOT NULL,
+  period billing_period NOT NULL,
+  price_cents INT NOT NULL CHECK (price_cents > 0),
+  currency CHAR(3) NOT NULL DEFAULT 'CNY',
+  trial_days INT NOT NULL DEFAULT 0 CHECK (trial_days >= 0),
+  storage_quota_bytes BIGINT NOT NULL,
+  ai_quota INT NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS billing_provider_products (
+  product_id BIGINT NOT NULL REFERENCES billing_products(id) ON DELETE CASCADE,
+  provider payment_provider NOT NULL,
+  external_product_id VARCHAR(256) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  verified_at TIMESTAMPTZ,
+  PRIMARY KEY(product_id, provider),
+  UNIQUE(provider, external_product_id)
+);
+
+CREATE TABLE IF NOT EXISTS payment_orders (
+  id BIGSERIAL PRIMARY KEY,
+  public_id UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id BIGINT NOT NULL REFERENCES billing_products(id),
+  provider payment_provider NOT NULL,
+  client_request_id VARCHAR(128) NOT NULL,
+  external_order_id VARCHAR(256),
+  transaction_id VARCHAR(256),
+  amount_cents INT NOT NULL,
+  currency CHAR(3) NOT NULL,
+  status payment_order_status NOT NULL DEFAULT 'created',
+  failure_code VARCHAR(128),
+  paid_at TIMESTAMPTZ,
+  refunded_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, client_request_id),
+  UNIQUE(provider, transaction_id)
+);
+CREATE INDEX IF NOT EXISTS idx_payment_orders_user ON payment_orders(user_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_orders_open_user ON payment_orders(user_id)
+  WHERE status IN ('created','pending');
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id BIGSERIAL PRIMARY KEY,
+  public_id UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  product_id BIGINT NOT NULL REFERENCES billing_products(id),
+  provider payment_provider NOT NULL,
+  external_subscription_id VARCHAR(256),
+  status subscription_status NOT NULL,
+  current_period_start TIMESTAMPTZ NOT NULL,
+  current_period_end TIMESTAMPTZ NOT NULL,
+  grace_until TIMESTAMPTZ,
+  cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+  retry_count INT NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(provider, external_subscription_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_active_user ON subscriptions(user_id)
+  WHERE status IN ('trialing','active','grace','past_due');
+CREATE INDEX IF NOT EXISTS idx_subscriptions_renewal_due ON subscriptions(provider,next_retry_at)
+  WHERE provider IN ('wechat','alipay') AND status IN ('trialing','active','past_due','grace') AND cancel_at_period_end=false;
+
+CREATE TABLE IF NOT EXISTS payment_events (
+  id BIGSERIAL PRIMARY KEY,
+  provider payment_provider NOT NULL,
+  external_event_id VARCHAR(256) NOT NULL,
+  event_type VARCHAR(128) NOT NULL,
+  payload_encrypted BYTEA NOT NULL,
+  payload_hash CHAR(64) NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'received',
+  error_message TEXT,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  processed_at TIMESTAMPTZ,
+  UNIQUE(provider, external_event_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_entitlements (
+  user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  tier billing_tier NOT NULL DEFAULT 'glimmer',
+  source_subscription_id BIGINT REFERENCES subscriptions(id) ON DELETE SET NULL,
+  valid_until TIMESTAMPTZ,
+  grace_until TIMESTAMPTZ,
+  storage_quota_bytes BIGINT NOT NULL DEFAULT 1073741824,
+  ai_quota INT NOT NULL DEFAULT 0,
+  version BIGINT NOT NULL DEFAULT 1,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS usage_counters (
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  metric VARCHAR(64) NOT NULL,
+  period_start TIMESTAMPTZ NOT NULL,
+  period_end TIMESTAMPTZ NOT NULL,
+  used BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id, metric, period_start)
+);
+
+CREATE TABLE IF NOT EXISTS storage_reservations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  object_key TEXT NOT NULL UNIQUE,
+  bytes BIGINT NOT NULL CHECK (bytes > 0),
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_storage_reservations_active ON storage_reservations(user_id, expires_at) WHERE consumed_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS trial_redemptions (
+  provider payment_provider NOT NULL,
+  payer_subject_hash CHAR(64) NOT NULL,
+  product_family VARCHAR(64) NOT NULL,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  redeemed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(provider, payer_subject_hash, product_family)
+);
+
+INSERT INTO billing_products(code,tier,period,price_cents,currency,trial_days,storage_quota_bytes,ai_quota)
+VALUES
+ ('starlight_month','starlight','month',1200,'CNY',0,21474836480,0),
+ ('starlight_year','starlight','year',9800,'CNY',7,21474836480,0),
+ ('galaxy_month','galaxy','month',2800,'CNY',0,107374182400,300),
+ ('galaxy_year','galaxy','year',21800,'CNY',7,107374182400,300)
+ON CONFLICT(code) DO UPDATE SET
+ tier=excluded.tier, period=excluded.period, price_cents=excluded.price_cents,
+ currency=excluded.currency, trial_days=excluded.trial_days,
+ storage_quota_bytes=excluded.storage_quota_bytes, ai_quota=excluded.ai_quota,
+ updated_at=now();
+
+INSERT INTO billing_provider_products(product_id, provider, external_product_id)
+SELECT id, provider, 'com.xiguang.membership.' || replace(code, '_', '.')
+FROM billing_products CROSS JOIN (VALUES ('apple'::payment_provider),('wechat'::payment_provider),('alipay'::payment_provider)) p(provider)
+ON CONFLICT(product_id,provider) DO NOTHING;

@@ -20,6 +20,9 @@ var requiredTables = []string{
 	"refresh_tokens",
 	"oplog",
 	"ai_requests",
+	"ai_artifacts",
+	"island_groups",
+	"island_group_members",
 }
 
 var requiredEnums = []string{
@@ -29,22 +32,29 @@ var requiredEnums = []string{
 }
 
 func TestRuntimeSchemaContainsCLAUDECoreTables(t *testing.T) {
-	assertSchemaContainsTables(t, "runtime schema", schema, requiredTables)
+	assertSchemaContainsTables(t, "runtime schema", schema+billingSchema+aiAssistanceSchema, requiredTables)
 	assertSchemaContainsEnums(t, "runtime schema", schema, requiredEnums)
 }
 
 func TestMigrationFileContainsCLAUDECoreTables(t *testing.T) {
-	path := filepath.Join("..", "..", "..", "migrations", "001_init.sql")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
+	paths, err := filepath.Glob(filepath.Join("..", "..", "..", "migrations", "*.sql"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("list migrations: %v", err)
 	}
-	migration := string(raw)
+	var migration string
+	for _, path := range paths {
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read migration: %v", readErr)
+		}
+		migration += "\n" + string(raw)
+	}
+	path := "all migrations"
 
 	assertSchemaContainsTables(t, path, migration, requiredTables)
 	assertSchemaContainsEnums(t, path, migration, requiredEnums)
 
-	runtimeTables := createTableNames(schema)
+	runtimeTables := createTableNames(schema + billingSchema + aiAssistanceSchema)
 	migrationTables := createTableNames(migration)
 	if diff := missing(runtimeTables, migrationTables); len(diff) > 0 {
 		t.Fatalf("migration has tables not present in runtime schema: %v", diff)

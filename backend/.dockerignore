@@ -4,5 +4,6 @@ tmp
 dist
 build
 server
+bin
 *.test
 coverage.out

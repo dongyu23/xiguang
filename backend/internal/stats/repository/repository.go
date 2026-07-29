@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"xiguang/backend/internal/stats/domain"
@@ -11,6 +13,21 @@ import (
 type Repository interface {
 	EmotionCounts(ctx context.Context, userID int64) ([]domain.EmotionCount, error)
 	FreqWords(ctx context.Context, userID int64, limit int) ([]domain.FreqWord, error)
+	TideSignal(ctx context.Context, userID int64) (domain.EmotionCount, error)
+}
+
+func (r *PG) TideSignal(ctx context.Context, userID int64) (domain.EmotionCount, error) {
+	var item domain.EmotionCount
+	err := r.db.QueryRow(ctx, `SELECT COALESCE(emotion,'说不清'),COUNT(*) FROM fragments
+		WHERE user_id=$1 AND is_deleted=FALSE AND created_at > now() - interval '14 days'
+		GROUP BY COALESCE(emotion,'说不清') ORDER BY COUNT(*) DESC LIMIT 1`, userID).Scan(&item.Name, &item.Count)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.EmotionCount{Name: "说不清", Count: 0}, nil
+	}
+	if err != nil {
+		return domain.EmotionCount{}, err
+	}
+	return item, nil
 }
 
 type PG struct {

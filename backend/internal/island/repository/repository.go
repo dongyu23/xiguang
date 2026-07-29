@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"xiguang/backend/internal/island/domain"
@@ -23,6 +24,13 @@ type Repository interface {
 	Fragments(ctx context.Context, userID int64, name string, limit int) ([]domain.FragmentPreview, error)
 	FragmentsByID(ctx context.Context, userID, islandID int64, limit int) ([]domain.FragmentPreview, error)
 	MarkDormantIslands(ctx context.Context, userID int64) (int, error)
+	ListGroups(ctx context.Context, userID int64) ([]domain.IslandGroup, error)
+	CreateGroup(ctx context.Context, userID int64, params domain.GroupUpsertParams) (domain.IslandGroup, error)
+	FindGroup(ctx context.Context, userID, groupID int64) (domain.IslandGroup, error)
+	UpdateGroup(ctx context.Context, userID, groupID int64, params domain.GroupUpsertParams) (domain.IslandGroup, error)
+	DeleteGroup(ctx context.Context, userID, groupID int64) (bool, error)
+	AddGroupIslands(ctx context.Context, userID, groupID int64, islandIDs []int64) (domain.IslandGroup, error)
+	RemoveGroupIslands(ctx context.Context, userID, groupID int64, islandIDs []int64) (domain.IslandGroup, error)
 }
 
 type PG struct {
@@ -247,6 +255,135 @@ func (r *PG) FragmentsByID(ctx context.Context, userID, islandID int64, limit in
 	for rows.Next() {
 		var item domain.FragmentPreview
 		if err := rows.Scan(&item.ID, &item.PublicID, &item.ContentText, &item.Emotion, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *PG) ListGroups(ctx context.Context, userID int64) ([]domain.IslandGroup, error) {
+	rows, err := r.db.Query(ctx, `SELECT id,public_id::text,name,description,source,created_at,updated_at
+		FROM island_groups WHERE user_id=$1 AND deleted_at IS NULL ORDER BY updated_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.IslandGroup{}
+	for rows.Next() {
+		var item domain.IslandGroup
+		if err := rows.Scan(&item.ID, &item.PublicID, &item.Name, &item.Description, &item.Source, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	for i := range items {
+		members, err := r.groupMembers(ctx, userID, items[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		items[i].Islands = members
+	}
+	return items, rows.Err()
+}
+
+func (r *PG) CreateGroup(ctx context.Context, userID int64, params domain.GroupUpsertParams) (domain.IslandGroup, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return domain.IslandGroup{}, err
+	}
+	defer tx.Rollback(ctx)
+	var item domain.IslandGroup
+	err = tx.QueryRow(ctx, `INSERT INTO island_groups(user_id,name,description,source) VALUES($1,$2,$3,$4)
+		RETURNING id,public_id::text,name,description,source,created_at,updated_at`, userID, params.Name, params.Description, params.Source).Scan(&item.ID, &item.PublicID, &item.Name, &item.Description, &item.Source, &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		return domain.IslandGroup{}, err
+	}
+	if err = insertGroupMembers(ctx, tx, userID, item.ID, params.IslandIDs); err != nil {
+		return domain.IslandGroup{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.IslandGroup{}, err
+	}
+	return r.FindGroup(ctx, userID, item.ID)
+}
+
+func (r *PG) FindGroup(ctx context.Context, userID, groupID int64) (domain.IslandGroup, error) {
+	var item domain.IslandGroup
+	err := r.db.QueryRow(ctx, `SELECT id,public_id::text,name,description,source,created_at,updated_at FROM island_groups WHERE user_id=$1 AND id=$2 AND deleted_at IS NULL`, userID, groupID).Scan(&item.ID, &item.PublicID, &item.Name, &item.Description, &item.Source, &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		return item, err
+	}
+	item.Islands, err = r.groupMembers(ctx, userID, groupID)
+	return item, err
+}
+func (r *PG) UpdateGroup(ctx context.Context, userID, groupID int64, params domain.GroupUpsertParams) (domain.IslandGroup, error) {
+	_, err := r.db.Exec(ctx, `UPDATE island_groups SET name=$3,description=$4,updated_at=now() WHERE user_id=$1 AND id=$2 AND deleted_at IS NULL`, userID, groupID, params.Name, params.Description)
+	if err != nil {
+		return domain.IslandGroup{}, err
+	}
+	return r.FindGroup(ctx, userID, groupID)
+}
+func (r *PG) DeleteGroup(ctx context.Context, userID, groupID int64) (bool, error) {
+	res, err := r.db.Exec(ctx, `UPDATE island_groups SET deleted_at=now(),updated_at=now() WHERE user_id=$1 AND id=$2 AND deleted_at IS NULL`, userID, groupID)
+	return err == nil && res.RowsAffected() > 0, err
+}
+func (r *PG) AddGroupIslands(ctx context.Context, userID, groupID int64, ids []int64) (domain.IslandGroup, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return domain.IslandGroup{}, err
+	}
+	defer tx.Rollback(ctx)
+	var ok bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM island_groups WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL)`, groupID, userID).Scan(&ok); err != nil || !ok {
+		if err == nil {
+			err = errors.New("group_not_found")
+		}
+		return domain.IslandGroup{}, err
+	}
+	if err = insertGroupMembers(ctx, tx, userID, groupID, ids); err != nil {
+		return domain.IslandGroup{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return domain.IslandGroup{}, err
+	}
+	return r.FindGroup(ctx, userID, groupID)
+}
+func (r *PG) RemoveGroupIslands(ctx context.Context, userID, groupID int64, ids []int64) (domain.IslandGroup, error) {
+	_, err := r.db.Exec(ctx, `DELETE FROM island_group_members gm USING island_groups g WHERE gm.group_id=g.id AND g.id=$1 AND g.user_id=$2 AND gm.island_id=ANY($3)`, groupID, userID, ids)
+	if err != nil {
+		return domain.IslandGroup{}, err
+	}
+	return r.FindGroup(ctx, userID, groupID)
+}
+
+type groupTx interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func insertGroupMembers(ctx context.Context, tx groupTx, userID, groupID int64, ids []int64) error {
+	for i, id := range ids {
+		tag, err := tx.Exec(ctx, `INSERT INTO island_group_members(group_id,island_id,sort_order)
+	SELECT $1,i.id,$3 FROM islands i WHERE i.id=$2 AND i.user_id=$4 AND i.deleted_at IS NULL ON CONFLICT DO NOTHING`, groupID, id, i, userID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return errors.New("island_not_owned")
+		}
+	}
+	return nil
+}
+func (r *PG) groupMembers(ctx context.Context, userID, groupID int64) ([]domain.Island, error) {
+	rows, err := r.db.Query(ctx, `SELECT `+islandSelectCols+` FROM islands i JOIN island_group_members gm ON gm.island_id=i.id WHERE gm.group_id=$1 AND i.user_id=$2 AND i.deleted_at IS NULL ORDER BY gm.sort_order,i.updated_at DESC`, groupID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.Island{}
+	for rows.Next() {
+		var item domain.Island
+		if err := scanIsland(rows, &item); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

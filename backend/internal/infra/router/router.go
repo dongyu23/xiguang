@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"xiguang/backend/internal/archiveimport"
 	"xiguang/backend/internal/asr"
 	"xiguang/backend/internal/auth"
+	"xiguang/backend/internal/billing"
 	"xiguang/backend/internal/emotion"
 	"xiguang/backend/internal/fragment"
 	"xiguang/backend/internal/infra/config"
@@ -30,6 +32,7 @@ import (
 
 func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 	authSvc := auth.New(pool, cfg)
+	billingMod := billing.New(pool, cfg)
 	fragmentSvc := fragment.New(pool)
 	releaseMod := app_release.New(pool, cfg, authSvc.Middleware)
 	// 在 /users/me 等响应里 piggyback 最新版本 meta，客户端可以零额外请求拿到提示。
@@ -56,11 +59,23 @@ func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true,"service":"xiguang-backend"}`))
 	})
+	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		status := billingMod.Readiness(r)
+		code := http.StatusOK
+		if !status.Ready {
+			code = http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(status)
+	})
+	r.Get("/metrics", billingMod.Metrics)
 
 	r.Route("/api/v1", func(api chi.Router) {
 		api.Mount("/auth", authSvc.Routes())
 		api.Mount("/emotions", emotion.Routes())
 		api.Mount("/app", releaseMod.Handler.PublicRoutes())
+		api.Mount("/billing/webhooks", billingMod.PublicRoutes())
 
 		api.Group(func(private chi.Router) {
 			private.Use(authSvc.Middleware)
@@ -68,17 +83,19 @@ func New(pool *pgxpool.Pool, cfg config.Config) http.Handler {
 			private.Mount("/fragments", fragmentSvc.Routes())
 			private.Mount("/timeline", timeline.New(pool).Routes())
 			private.Mount("/tags", tag.New(pool).Routes())
-			private.Mount("/stats", stats.New(pool).Routes())
+			private.Mount("/stats", stats.New(pool, billingMod.Service).Routes())
 			private.Mount("/relations", relation.New(pool).Routes())
 			private.Mount("/starmap", starmap.New(pool).Routes())
 			private.Mount("/islands", island.New(pool).Routes())
-			private.Mount("/media", media.New(pool, cfg).Routes())
-			private.Mount("/archive/imports", archiveimport.New(pool, cfg).Routes())
-			private.Mount("/space", space.Routes())
-			private.Mount("/whitenoise", whitenoise.Routes())
+			private.Mount("/island-groups", island.NewGroups(pool))
+			private.Mount("/media", media.New(pool, cfg, billingMod.Service).Routes())
+			private.Mount("/archive/imports", archiveimport.New(pool, cfg, billingMod.Service).Routes())
+			private.Mount("/space", space.New(pool, billingMod.Service))
+			private.Mount("/whitenoise", whitenoise.Routes(billingMod.Service))
 			private.Mount("/sync", sync.New(pool).Routes())
-			private.Mount("/ai", ai.New(pool, cfg).Routes())
+			private.Mount("/ai", ai.New(pool, cfg, billingMod.Service).Routes())
 			private.Mount("/asr", asr.New(cfg).Routes())
+			private.Mount("/billing", billingMod.PrivateRoutes())
 		})
 
 		// 管理员路由：路径段以 /admin 开头，内部由 RequireAdmin 中间件校验。

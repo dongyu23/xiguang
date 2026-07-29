@@ -13,6 +13,7 @@ type Repository interface {
 	Confirm(ctx context.Context, userID int64, req domain.ConfirmRequest) (domain.MediaFile, error)
 	Create(ctx context.Context, userID int64, req domain.CreateMediaRequest) (domain.MediaFile, error)
 	Get(ctx context.Context, userID, mediaID int64) (domain.MediaFile, error)
+	GetByObjectKey(ctx context.Context, userID int64, objectKey string) (domain.MediaFile, error)
 	FindByObjectKeys(ctx context.Context, userID int64, objectKeys []string) ([]domain.MediaFile, error)
 	Delete(ctx context.Context, userID, mediaID int64) (bool, error)
 }
@@ -55,6 +56,9 @@ func (r *PG) Confirm(ctx context.Context, userID int64, req domain.ConfirmReques
 		userID, req.FragmentID, mediaType(req.MimeType), req.ObjectKey, req.FileName, req.FileSize, req.MimeType).
 		Scan(&item.ID, &item.PublicID)
 	item.ObjectKey = req.ObjectKey
+	item.FileName = req.FileName
+	item.MimeType = req.MimeType
+	item.FileSize = req.FileSize
 	item.FileURL = "/media/" + req.ObjectKey
 	return item, err
 }
@@ -81,6 +85,14 @@ func (r *PG) Get(ctx context.Context, userID, mediaID int64) (domain.MediaFile, 
 	err := r.db.QueryRow(ctx, `SELECT object_key, file_name, mime_type, file_size
 		FROM media_files WHERE user_id=$1 AND id=$2 AND deleted_at IS NULL`, userID, mediaID).
 		Scan(&item.ObjectKey, &item.FileName, &item.MimeType, &item.FileSize)
+	item.FileURL = "/media/" + item.ObjectKey
+	return item, err
+}
+
+func (r *PG) GetByObjectKey(ctx context.Context, userID int64, objectKey string) (domain.MediaFile, error) {
+	var item domain.MediaFile
+	err := r.db.QueryRow(ctx, `SELECT id,public_id::text,object_key,file_name,mime_type,file_size FROM media_files
+		WHERE user_id=$1 AND object_key=$2 AND deleted_at IS NULL`, userID, objectKey).Scan(&item.ID, &item.PublicID, &item.ObjectKey, &item.FileName, &item.MimeType, &item.FileSize)
 	item.FileURL = "/media/" + item.ObjectKey
 	return item, err
 }
