@@ -8,18 +8,22 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.production.yml}"
 STATE_DIR="${DEPLOY_STATE_DIR:-$ROOT_DIR/.deploy}"
 STATE_FILE="$STATE_DIR/backend-image"
+RUNTIME_STATE_FILE="$STATE_DIR/runtime-image"
 LOCK_FILE="$STATE_DIR/deploy.lock"
 TARGET_IMAGE="${BACKEND_IMAGE:-}"
+RUNTIME_IMAGE="${DEPLOY_RUNTIME_IMAGE:-${BACKEND_IMAGE:-}}"
 HTTP_PORT="${HTTP_PORT:-8088}"
 HTTPS_PORT="${HTTPS_PORT:-8443}"
 READY_RETRIES="${DEPLOY_READY_RETRIES:-30}"
 READY_INTERVAL="${DEPLOY_READY_INTERVAL:-4}"
+SKIP_IMAGE_PULL="${DEPLOY_SKIP_IMAGE_PULL:-false}"
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] ERROR: %s\n' "$*" >&2; exit 1; }
 
 [[ -n "$TARGET_IMAGE" ]] || die "BACKEND_IMAGE is required"
 [[ "$TARGET_IMAGE" == *@sha256:* ]] || die "BACKEND_IMAGE must use an immutable sha256 digest"
+[[ -n "$RUNTIME_IMAGE" ]] || die "DEPLOY_RUNTIME_IMAGE resolved to an empty value"
 [[ -f "$COMPOSE_FILE" ]] || die "compose file not found: $COMPOSE_FILE"
 [[ -f "$ROOT_DIR/.env" ]] || die "missing $ROOT_DIR/.env; copy .env.production.example and configure secrets"
 
@@ -30,10 +34,25 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || die "another deployment is already running"
 
 cd "$ROOT_DIR"
-compose=(docker compose --env-file .env -f "$COMPOSE_FILE")
+PULL_OVERRIDE_FILE="$STATE_DIR/compose-pull-never.yml"
+cat > "$PULL_OVERRIDE_FILE" <<'EOF'
+services:
+  app:
+    pull_policy: never
+  payment-init:
+    pull_policy: never
+EOF
+base_compose=(docker compose --env-file .env -f "$COMPOSE_FILE")
+compose=(docker compose --env-file .env -f "$COMPOSE_FILE" -f "$PULL_OVERRIDE_FILE")
 previous_image=""
+previous_runtime_image=""
 if [[ -f "$STATE_FILE" ]]; then
   previous_image="$(tr -d '\r\n' < "$STATE_FILE")"
+fi
+if [[ -f "$RUNTIME_STATE_FILE" ]]; then
+  previous_runtime_image="$(tr -d '\r\n' < "$RUNTIME_STATE_FILE")"
+elif [[ -n "$previous_image" ]]; then
+  previous_runtime_image="$previous_image"
 fi
 
 payment_enabled="$(awk -F= '/^PAYMENT_ENABLED=/{print tolower($2)}' .env | tail -n1 | tr -d '\r[:space:]')"
@@ -63,55 +82,64 @@ wait_url() {
 
 start_image() {
   local image="$1"
-  BACKEND_IMAGE="$image" "${compose[@]}" pull app payment-init
+  if [[ "$SKIP_IMAGE_PULL" == "true" ]]; then
+    docker image inspect "$image" >/dev/null
+    log "using preloaded image $image"
+  else
+    BACKEND_IMAGE="$image" "${base_compose[@]}" pull app payment-init
+  fi
   BACKEND_IMAGE="$image" "${compose[@]}" up -d --no-build postgres redis minio
   BACKEND_IMAGE="$image" "${compose[@]}" up -d --no-build app nginx
 }
 
 rollback() {
   local failed_image="$1"
-  if [[ -z "$previous_image" || "$previous_image" == "$failed_image" ]]; then
+  if [[ -z "$previous_image" || -z "$previous_runtime_image" || "$previous_image" == "$failed_image" ]]; then
     log "no previous image is available for rollback"
     return 1
   fi
   log "rolling back to $previous_image"
-  start_image "$previous_image"
+  start_image "$previous_runtime_image"
   wait_url "$health_url" "rollback health"
   wait_url "$ready_url" "rollback readiness"
   printf '%s\n' "$previous_image" > "$STATE_FILE"
+  printf '%s\n' "$previous_runtime_image" > "$RUNTIME_STATE_FILE"
 }
 
 on_failure() {
   local exit_code=$?
   trap - ERR
   log "deployment failed for $TARGET_IMAGE"
-  BACKEND_IMAGE="$TARGET_IMAGE" "${compose[@]}" ps || true
-  BACKEND_IMAGE="$TARGET_IMAGE" "${compose[@]}" logs --tail=120 app nginx payment-init || true
+  BACKEND_IMAGE="$RUNTIME_IMAGE" "${compose[@]}" ps || true
+  BACKEND_IMAGE="$RUNTIME_IMAGE" "${compose[@]}" logs --tail=120 app nginx payment-init || true
   rollback "$TARGET_IMAGE" || true
   exit "$exit_code"
 }
 trap on_failure ERR
 
 log "deploying $TARGET_IMAGE"
-start_image "$TARGET_IMAGE"
+start_image "$RUNTIME_IMAGE"
 wait_url "$health_url" "application health"
 
 # 初始化任务幂等执行：迁移商品目录、核验渠道映射和生产支付配置。
-BACKEND_IMAGE="$TARGET_IMAGE" "${compose[@]}" run --rm --no-deps payment-init
+BACKEND_IMAGE="$RUNTIME_IMAGE" "${compose[@]}" run --rm --no-deps payment-init
 wait_url "$ready_url" "application readiness"
 
-revision="$(docker image inspect "$TARGET_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2>/dev/null || true)"
+revision="$(docker image inspect "$RUNTIME_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' 2>/dev/null || true)"
 deployed_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 printf '%s\n' "$TARGET_IMAGE" > "$STATE_FILE"
+printf '%s\n' "$RUNTIME_IMAGE" > "$RUNTIME_STATE_FILE"
 cat > "$STATE_DIR/last-success.txt" <<EOF
 deployed_at=$deployed_at
 image=$TARGET_IMAGE
+runtime_image=$RUNTIME_IMAGE
 revision=$revision
 previous_image=$previous_image
+previous_runtime_image=$previous_runtime_image
 health_url=$health_url
 ready_url=$ready_url
 EOF
 
 trap - ERR
 log "deployment succeeded: $TARGET_IMAGE"
-BACKEND_IMAGE="$TARGET_IMAGE" "${compose[@]}" ps
+BACKEND_IMAGE="$RUNTIME_IMAGE" "${compose[@]}" ps

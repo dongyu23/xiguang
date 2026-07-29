@@ -119,6 +119,10 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
 
+      - name: Log in to GHCR for transfer fallback
+        shell: bash
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Upload deployment bundle
         shell: bash
         run: |
@@ -138,18 +142,48 @@ jobs:
             .env.production.example \
             | ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" "tar -xzf - -C '$path'"
 
-      - name: Deploy with health verification and rollback
+      - name: Ensure immutable image is present on deployment host
+        id: host-image
         shell: bash
         env:
           BACKEND_IMAGE: ${{ steps.image.outputs.ref }}
         run: |
           set -euo pipefail
           port="${SSH_PORT:-22}"
+          ssh_args=(-i ~/.ssh/id_deploy -p "$port" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          # shellcheck disable=SC2029
+          if ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" \
+            "docker image inspect '$BACKEND_IMAGE' >/dev/null 2>&1 || docker pull '$BACKEND_IMAGE'"; then
+            runtime_image="$BACKEND_IMAGE"
+            echo "Deployment host has $BACKEND_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Deployment host could not reach GHCR; streaming the verified image from the runner." >&2
+            docker pull "$BACKEND_IMAGE"
+            digest="${BACKEND_IMAGE##*@sha256:}"
+            runtime_image="${BACKEND_IMAGE%%@*}:cd-${digest:0:16}"
+            docker tag "$BACKEND_IMAGE" "$runtime_image"
+            docker save "$runtime_image" | gzip -1 | \
+              ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" 'gunzip | docker load'
+            # shellcheck disable=SC2029
+            ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" \
+              "docker image inspect '$runtime_image' >/dev/null"
+            echo "Transferred $BACKEND_IMAGE as $runtime_image through the Actions runner" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "runtime_ref=$runtime_image" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy with health verification and rollback
+        shell: bash
+        env:
+          BACKEND_IMAGE: ${{ steps.image.outputs.ref }}
+          RUNTIME_IMAGE: ${{ steps.host-image.outputs.runtime_ref }}
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
           path="${DEPLOY_PATH:-/opt/xiguang}"
           ssh_args=(-i ~/.ssh/id_deploy -p "$port" -o BatchMode=yes -o StrictHostKeyChecking=yes)
           printf -v remote_command \
-            "cd %q && chmod +x scripts/*.sh && BACKEND_IMAGE=%q ./scripts/deploy-production.sh" \
-            "$path" "$BACKEND_IMAGE"
+            "cd %q && chmod +x scripts/*.sh && DEPLOY_SKIP_IMAGE_PULL=true DEPLOY_RUNTIME_IMAGE=%q BACKEND_IMAGE=%q ./scripts/deploy-production.sh" \
+            "$path" "$RUNTIME_IMAGE" "$BACKEND_IMAGE"
           # shellcheck disable=SC2029
           ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" "$remote_command"
 
