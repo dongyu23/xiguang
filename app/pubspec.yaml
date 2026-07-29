@@ -32,7 +32,7 @@ dependencies:
   flutter_secure_storage: ^9.0.0
 
   # 图片
-  image_picker: ^1.0.0
+  image_picker: ^1.2.3
   file_picker: ^8.0.0
   flutter_image_compress: ^2.4.0
   cached_network_image: ^3.3.0
