@@ -310,7 +310,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
       _searching = true;
       _selectedMonth = null;
     });
-    _searchDebounce = Timer(const Duration(milliseconds: 280), () async {
+    _searchDebounce = Timer(AppTiming.timelineSearchDebounce, () async {
       try {
         final results =
             await ref.read(fragmentLibraryControllerProvider).search(query);

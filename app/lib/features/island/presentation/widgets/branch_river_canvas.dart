@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/motion.dart';
+import '../../../../design/tokens/spacing.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../domain/universe_overview.dart';
 
@@ -99,7 +100,8 @@ class _BranchRiverCanvasState extends State<BranchRiverCanvas>
       return InteractiveViewer(
         minScale: .8,
         maxScale: 2.4,
-        boundaryMargin: const EdgeInsets.all(80),
+        boundaryMargin:
+            const EdgeInsets.all(AppSpacing.interactiveCanvasBoundary),
         child: canvas,
       );
     });

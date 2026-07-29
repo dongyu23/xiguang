@@ -50,7 +50,7 @@
 ### 前置条件
 
 - Flutter SDK ≥3.3.0
-- Go 1.24+
+- Go 1.25+
 - Docker + Docker Compose
 - （iOS）Xcode 16+
 - （Android）Android SDK + JDK 17

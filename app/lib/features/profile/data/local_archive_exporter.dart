@@ -776,92 +776,104 @@ class LocalArchiveExporter implements LocalArchiveRepositoryPort {
     final file = File(path);
     if (!await file.exists()) throw const ArchiveIntegrityException('归档文件不存在');
     final input = InputFileStream(path);
-    late final Archive archive;
     try {
-      archive = ZipDecoder().decodeStream(input);
-    } catch (_) {
-      throw const ArchiveIntegrityException('不是有效的 ZIP 文件');
+      late final Archive archive;
+      try {
+        archive = ZipDecoder().decodeStream(input);
+      } catch (_) {
+        throw const ArchiveIntegrityException('不是有效的 ZIP 文件');
+      }
+      try {
+        if (archive.length > _maxEntries) {
+          throw const ArchiveIntegrityException('归档文件数量异常，已拒绝打开');
+        }
+        var expanded = 0;
+        final files = <String, _ArchiveBytes>{};
+        for (final entry in archive) {
+          final name = entry.name.replaceAll('\\', '/');
+          if (!_safeArchivePath(name) || entry.isSymbolicLink) {
+            throw ArchiveIntegrityException('归档包含不安全路径：$name');
+          }
+          expanded += entry.size;
+          if (expanded > _maxExpandedBytes) {
+            throw const ArchiveIntegrityException('归档解压体积异常，已拒绝打开');
+          }
+          if (entry.isFile) {
+            final bytes = entry.readBytes();
+            if (bytes == null) {
+              throw ArchiveIntegrityException('无法读取归档文件：$name');
+            }
+            files[name] = _ArchiveBytes(bytes);
+          }
+        }
+        for (final required in const [
+          'README.md',
+          'manifest.json',
+          'checksums.sha256',
+          'data/fragments.json',
+          'data/relations.json',
+          'data/islands.json',
+          'data/emotions.json',
+          'data/audio_library.json',
+          'data/preferences.json',
+          'data/account.json',
+        ]) {
+          if (!files.containsKey(required)) {
+            throw ArchiveIntegrityException('归档缺少必需文件：$required');
+          }
+        }
+        final manifest =
+            _jsonObject(files['manifest.json']!.bytes, 'manifest.json');
+        if (manifest['format'] != format || manifest['version'] != version) {
+          throw const ArchiveIntegrityException('不支持的隙光归档格式或版本');
+        }
+        final mediaManifest = manifest['media'];
+        if (mediaManifest is! Map) {
+          throw const ArchiveIntegrityException('归档媒体清单格式错误');
+        }
+        for (final raw in mediaManifest.entries) {
+          final path = '${raw.key}';
+          final descriptor = raw.value;
+          if (descriptor is! Map ||
+              descriptor['path'] != path ||
+              !path.startsWith('media/') ||
+              !files.containsKey(path)) {
+            throw ArchiveIntegrityException('归档媒体映射无效：$path');
+          }
+          final mime = '${descriptor['mime'] ?? ''}';
+          final expectedSHA = '${descriptor['sha256'] ?? ''}';
+          if ((!mime.startsWith('image/') && !mime.startsWith('audio/')) ||
+              !RegExp(r'^[a-f0-9]{64}$').hasMatch(expectedSHA) ||
+              p.basenameWithoutExtension(path) != expectedSHA ||
+              sha256.convert(files[path]!.bytes).toString() != expectedSHA ||
+              (descriptor['size'] as num?)?.toInt() !=
+                  files[path]!.bytes.length) {
+            throw ArchiveIntegrityException('归档媒体类型、大小或校验值无效：$path');
+          }
+        }
+        final checksumLines =
+            utf8.decode(files['checksums.sha256']!.bytes).split('\n');
+        for (final line in checksumLines) {
+          if (line.trim().isEmpty) continue;
+          final separator = line.indexOf('  ');
+          if (separator != 64) {
+            throw const ArchiveIntegrityException('校验清单格式错误');
+          }
+          final expected = line.substring(0, separator);
+          final name = line.substring(separator + 2);
+          final entry = files[name];
+          if (entry == null ||
+              sha256.convert(entry.bytes).toString() != expected) {
+            throw ArchiveIntegrityException('文件校验失败：$name');
+          }
+        }
+        return _OpenedArchive(manifest, files);
+      } finally {
+        await archive.clear();
+      }
     } finally {
-      input.close();
+      await input.close();
     }
-    if (archive.length > _maxEntries) {
-      throw const ArchiveIntegrityException('归档文件数量异常，已拒绝打开');
-    }
-    var expanded = 0;
-    final files = <String, _ArchiveBytes>{};
-    for (final entry in archive) {
-      final name = entry.name.replaceAll('\\', '/');
-      if (!_safeArchivePath(name) || entry.isSymbolicLink) {
-        throw ArchiveIntegrityException('归档包含不安全路径：$name');
-      }
-      expanded += entry.size;
-      if (expanded > _maxExpandedBytes) {
-        throw const ArchiveIntegrityException('归档解压体积异常，已拒绝打开');
-      }
-      if (entry.isFile) {
-        final bytes = entry.readBytes();
-        if (bytes == null) throw ArchiveIntegrityException('无法读取归档文件：$name');
-        files[name] = _ArchiveBytes(bytes);
-      }
-    }
-    for (final required in const [
-      'README.md',
-      'manifest.json',
-      'checksums.sha256',
-      'data/fragments.json',
-      'data/relations.json',
-      'data/islands.json',
-      'data/emotions.json',
-      'data/audio_library.json',
-      'data/preferences.json',
-      'data/account.json',
-    ]) {
-      if (!files.containsKey(required)) {
-        throw ArchiveIntegrityException('归档缺少必需文件：$required');
-      }
-    }
-    final manifest =
-        _jsonObject(files['manifest.json']!.bytes, 'manifest.json');
-    if (manifest['format'] != format || manifest['version'] != version) {
-      throw const ArchiveIntegrityException('不支持的隙光归档格式或版本');
-    }
-    final mediaManifest = manifest['media'];
-    if (mediaManifest is! Map) {
-      throw const ArchiveIntegrityException('归档媒体清单格式错误');
-    }
-    for (final raw in mediaManifest.entries) {
-      final path = '${raw.key}';
-      final descriptor = raw.value;
-      if (descriptor is! Map ||
-          descriptor['path'] != path ||
-          !path.startsWith('media/') ||
-          !files.containsKey(path)) {
-        throw ArchiveIntegrityException('归档媒体映射无效：$path');
-      }
-      final mime = '${descriptor['mime'] ?? ''}';
-      final expectedSHA = '${descriptor['sha256'] ?? ''}';
-      if ((!mime.startsWith('image/') && !mime.startsWith('audio/')) ||
-          !RegExp(r'^[a-f0-9]{64}$').hasMatch(expectedSHA) ||
-          p.basenameWithoutExtension(path) != expectedSHA ||
-          sha256.convert(files[path]!.bytes).toString() != expectedSHA ||
-          (descriptor['size'] as num?)?.toInt() != files[path]!.bytes.length) {
-        throw ArchiveIntegrityException('归档媒体类型、大小或校验值无效：$path');
-      }
-    }
-    final checksumLines =
-        utf8.decode(files['checksums.sha256']!.bytes).split('\n');
-    for (final line in checksumLines) {
-      if (line.trim().isEmpty) continue;
-      final separator = line.indexOf('  ');
-      if (separator != 64) throw const ArchiveIntegrityException('校验清单格式错误');
-      final expected = line.substring(0, separator);
-      final name = line.substring(separator + 2);
-      final entry = files[name];
-      if (entry == null || sha256.convert(entry.bytes).toString() != expected) {
-        throw ArchiveIntegrityException('文件校验失败：$name');
-      }
-    }
-    return _OpenedArchive(manifest, files);
   }
 
   Future<void> _writeRecords(
