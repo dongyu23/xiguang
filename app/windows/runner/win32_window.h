@@ -97,6 +97,13 @@ class Win32Window {
 
   // window handle for hosted content.
   HWND child_content_ = nullptr;
+
+  // Fixed outer window size after the requested Flutter client area has been
+  // adjusted for the current monitor DPI and native title bar.
+  LONG fixed_window_width_ = 0;
+  LONG fixed_window_height_ = 0;
+  unsigned int fixed_client_width_ = 0;
+  unsigned int fixed_client_height_ = 0;
 };
 
 #endif  // RUNNER_WIN32_WINDOW_H_

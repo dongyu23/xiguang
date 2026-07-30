@@ -703,14 +703,16 @@ class _LedgerError extends StatelessWidget {
 }
 
 String _relationLabel(String value) {
+  // 旧数据兼容：历史 relation_type 存的是英文枚举值，映射回中文标签。
+  // 新数据（含用户自定义类型）直接存中文名，原样返回即可。
   return switch (value) {
     'reminds_me' => '回声',
     'inspiration' => '伏笔',
     'emotion_continue' => '余震',
-    'same_phase' => '平行',
+    'same_phase' => '平行宇宙',
     'cause' => '小小救命',
     'custom' => '旧光',
-    _ => '线索',
+    _ => value,
   };
 }
 

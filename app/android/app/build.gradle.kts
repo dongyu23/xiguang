@@ -47,7 +47,6 @@ android {
         releaseKeyAlias,
         releaseKeyPassword,
     ).all { !it.isNullOrBlank() }
-
     if (releaseSigningConfigured) {
         signingConfigs.create("release") {
             storeFile = file(releaseStoreFile!!)
@@ -78,6 +77,9 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // 支付宝官方 Android SDK。Flutter 侧只通过受控 MethodChannel 调用。
+    implementation("com.alipay.sdk:alipaysdk-android:15.8.38")
+    implementation("com.tencent.mm.opensdk:wechat-sdk-android:6.8.34")
 }
 
 kotlin {

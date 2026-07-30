@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../app/app_state.dart';
 import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
@@ -11,7 +12,6 @@ import '../../../../design/tokens/spacing.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../ui/composites/xiguang_page.dart';
 import '../../../fragment/domain/fragment.dart';
-import '../../application/island_providers.dart';
 import '../../application/universe_overview_provider.dart';
 import '../../application/island_layout_controller.dart';
 import '../../domain/island_layout_preferences.dart';
@@ -23,9 +23,8 @@ import '../widgets/all_seas_overview_canvas.dart';
 import '../widgets/island_archipelago_canvas.dart';
 import '../widgets/island_sprite_visual.dart';
 
-// PAGE_SIZE_EXEMPT: split the all-seas scene, island scene and branch scene
-// into dedicated widgets after the current visual-regression baseline settles.
-
+// PAGE_SIZE_EXEMPT: 本轮保留海域切换、岛屿交互与分支视图的统一状态编排；
+// 后续将场景工具栏、岛屿详情层和各模式内容拆为独立 widgets 后移除此豁免。
 enum _UniverseMode { islands, branches }
 
 enum IslandSceneMode { currentSea, allSeas }
@@ -105,6 +104,9 @@ class _UniversePageState extends ConsumerState<UniversePage> {
               islandSceneMode: _islandSceneMode,
               onToggleOverview: _toggleOverview,
               onToggleList: _toggleListMode,
+              onGroupSuggestions: ref.watch(aiEnabledProvider)
+                  ? () => context.push('/ai/island-groups')
+                  : null,
             ),
             loading: () => _Header.loading(
               mode: _mode,
@@ -112,6 +114,7 @@ class _UniversePageState extends ConsumerState<UniversePage> {
               islandSceneMode: _islandSceneMode,
               onToggleOverview: _toggleOverview,
               onToggleList: _toggleListMode,
+              onGroupSuggestions: null,
             ),
             error: (_, __) => _Header.loading(
               mode: _mode,
@@ -119,6 +122,7 @@ class _UniversePageState extends ConsumerState<UniversePage> {
               islandSceneMode: _islandSceneMode,
               onToggleOverview: _toggleOverview,
               onToggleList: _toggleListMode,
+              onGroupSuggestions: null,
             ),
           ),
           const SizedBox(height: AppSpacing.s14),
@@ -256,7 +260,7 @@ class _UniversePageState extends ConsumerState<UniversePage> {
                     alignment: Alignment.bottomCenter,
                     child: AnimatedSwitcher(
                       key: const ValueKey('island-focus-switcher'),
-                      duration: AppMotion.vinylSettle,
+                      duration: AppMotion.islandModeForward,
                       reverseDuration: AppMotion.normal,
                       switchInCurve: Curves.easeOutCubic,
                       switchOutCurve: Curves.easeInCubic,
@@ -484,7 +488,7 @@ class _UniversePageState extends ConsumerState<UniversePage> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await ref.read(islandsProvider.notifier).deleteIsland(islandId);
+      await ref.read(universeActionsProvider).deleteIsland(islandId);
       if (!mounted) return;
       setState(() => _selectedIsland = null);
       _showNotice('小岛已删除，里面的光仍然保留。');
@@ -548,6 +552,7 @@ class _Header extends StatelessWidget {
     required this.islandSceneMode,
     required this.onToggleOverview,
     required this.onToggleList,
+    required this.onGroupSuggestions,
   }) : loading = false;
 
   const _Header.loading({
@@ -556,6 +561,7 @@ class _Header extends StatelessWidget {
     required this.islandSceneMode,
     required this.onToggleOverview,
     required this.onToggleList,
+    required this.onGroupSuggestions,
   })  : overview = null,
         loading = true;
 
@@ -566,6 +572,7 @@ class _Header extends StatelessWidget {
   final IslandSceneMode islandSceneMode;
   final VoidCallback onToggleOverview;
   final VoidCallback onToggleList;
+  final VoidCallback? onGroupSuggestions;
 
   @override
   Widget build(BuildContext context) {
@@ -602,6 +609,12 @@ class _Header extends StatelessWidget {
         ]),
       ),
       Row(mainAxisSize: MainAxisSize.min, children: [
+        if (mode == _UniverseMode.islands && onGroupSuggestions != null)
+          IconButton(
+            tooltip: '看看哪些岛可以成群',
+            onPressed: onGroupSuggestions,
+            icon: Icon(Icons.hub_outlined, color: theme.accent),
+          ),
         if (mode == _UniverseMode.islands)
           Semantics(
             button: true,
@@ -1156,14 +1169,14 @@ class _UniverseList extends StatelessWidget {
           0,
           AppSpacing.s6,
           0,
-          AppSpacing.universeCompactListBottom,
+          AppSpacing.universeListBottom,
         ),
         itemCount: seas.length,
         itemBuilder: (context, seaIndex) {
-          final bottomSpacing =
+          final bottomPadding =
               seaIndex == seas.length - 1 ? 0.0 : AppSpacing.s14;
           return Padding(
-            padding: EdgeInsets.only(bottom: bottomSpacing),
+            padding: EdgeInsets.only(bottom: bottomPadding),
             child: _IslandSeaList(
               seaIndex: seaIndex,
               islands: seas[seaIndex],
@@ -1183,11 +1196,7 @@ class _UniverseList extends StatelessWidget {
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(
-        0,
-        AppSpacing.s10,
-        0,
-        AppSpacing.universeCompactListBottom,
-      ),
+          0, AppSpacing.s10, 0, AppSpacing.universeListBottom),
       itemCount: branches.length,
       itemBuilder: (_, index) {
         final item = branches[index];

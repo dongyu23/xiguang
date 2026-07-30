@@ -1,6 +1,7 @@
 import '../domain/emotion_density.dart';
 import '../domain/freq_words.dart';
 import '../domain/stats_repository.dart';
+import '../domain/tide_insight.dart';
 import 'stats_api.dart';
 
 class StatsRepositoryImpl implements StatsRepositoryContract {
@@ -40,5 +41,17 @@ class StatsRepositoryImpl implements StatsRepositoryContract {
         .where((item) => item.text.isNotEmpty)
         .toList();
     return FreqWordsResult(words);
+  }
+
+  @override
+  Future<TideInsight> tideInsight() async {
+    final body = await _api.tideInsight();
+    return TideInsight(
+      title: body['title'] as String? ?? '最近的潮汐',
+      message: body['message'] as String? ?? '',
+      emotion: body['emotion'] as String? ?? '',
+      occurrences: (body['occurrences'] as num?)?.toInt() ?? 0,
+      period: body['period'] as String? ?? '14d',
+    );
   }
 }

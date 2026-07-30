@@ -222,7 +222,7 @@ String _stageLabel(IslandVisualStage stage) {
 Color _stageColor(IslandVisualStage stage, NightTheme theme) {
   return switch (stage) {
     IslandVisualStage.dormant => theme.foregroundMuted,
-    IslandVisualStage.relit => AppColors.islandRelit,
+    IslandVisualStage.relit => AppColors.islandRelitGold,
     _ => theme.accent,
   };
 }

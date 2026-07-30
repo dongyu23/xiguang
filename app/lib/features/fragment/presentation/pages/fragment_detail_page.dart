@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'package:xiguang/app/app_state.dart';
+import 'package:xiguang/app/providers.dart';
 import '../../../emotion/application/emotions_controller.dart';
 import '../../../island/application/island_detail_controller.dart';
 import '../../../island/domain/island_repository.dart';
@@ -197,12 +198,12 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                             _PolishResultCard(
                               state: detailState.polishStatus,
                               polishedText: detailState.polishedText,
+                              originalText: detailState.originalText,
                               message: detailState.polishMessage,
                               onAccept: detailState.polishStatus ==
                                           FragmentPolishStatus.done &&
                                       detailState.polishedText.isNotEmpty
-                                  ? () => _acceptPolish(
-                                      fragment, detailState.polishedText)
+                                  ? (text) => _acceptPolish(fragment, text)
                                   : null,
                               onRetry: detailState.polishStatus ==
                                       FragmentPolishStatus.error
@@ -211,7 +212,8 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                                           .notifier)
                                       .polish(
                                           contentText: fragment.contentText,
-                                          emotion: fragment.emotion)
+                                          emotion: fragment.emotion,
+                                          tags: fragment.tags)
                                   : null,
                               onDiscard: () => ref
                                   .read(
@@ -231,7 +233,8 @@ class _FragmentDetailPageState extends ConsumerState<FragmentDetailPage> {
                                         .notifier)
                                     .polish(
                                         contentText: _contentController.text,
-                                        emotion: _emotion),
+                                        emotion: _emotion,
+                                        tags: _parseTags(_tagController.text)),
                               ),
                             ),
                           ],
@@ -645,12 +648,6 @@ bool _isAudioMedia(String value) {
 
 bool _isLegacyAudioCue(String value) {
   return value.trim().toLowerCase().startsWith('audio-cue://');
-}
-
-String _playableAudioSource(String value) {
-  final trimmed = value.trim();
-  if (trimmed.startsWith('users/')) return '/media/$trimmed';
-  return trimmed;
 }
 
 class _DetailHeader extends StatelessWidget {
@@ -1107,16 +1104,17 @@ class _AttachmentAction extends StatelessWidget {
   }
 }
 
-class _AudioAttachmentTile extends StatefulWidget {
+class _AudioAttachmentTile extends ConsumerStatefulWidget {
   const _AudioAttachmentTile({required this.url});
 
   final String url;
 
   @override
-  State<_AudioAttachmentTile> createState() => _AudioAttachmentTileState();
+  ConsumerState<_AudioAttachmentTile> createState() =>
+      _AudioAttachmentTileState();
 }
 
-class _AudioAttachmentTileState extends State<_AudioAttachmentTile> {
+class _AudioAttachmentTileState extends ConsumerState<_AudioAttachmentTile> {
   late final AudioPlayer _player;
   bool _loading = false;
 
@@ -1165,12 +1163,13 @@ class _AudioAttachmentTileState extends State<_AudioAttachmentTile> {
   }
 
   Future<void> _setAudioSource(String url) async {
-    final value = _playableAudioSource(url);
+    final request = ref.read(mediaPlaybackAccessProvider).resolve(url);
+    final value = request.source;
     if (value.startsWith('/') || value.startsWith('file:')) {
       await _player.setFilePath(value.replaceFirst('file://', ''));
       return;
     }
-    await _player.setUrl(value);
+    await _player.setUrl(value, headers: request.headers);
   }
 
   @override
@@ -1499,7 +1498,7 @@ class _PolishButtonState extends State<_PolishButton>
           child: FilledButton.icon(
             onPressed: widget.onTap,
             icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-            label: const Text('润色', maxLines: 1),
+            label: const Text('轻轻润色', maxLines: 1),
             style: FilledButton.styleFrom(
               backgroundColor: theme.accent.withValues(alpha: alpha + .08),
               foregroundColor: theme.foreground,
@@ -1522,6 +1521,7 @@ class _PolishResultCard extends StatefulWidget {
   const _PolishResultCard({
     required this.state,
     required this.polishedText,
+    required this.originalText,
     required this.message,
     this.onAccept,
     this.onRetry,
@@ -1531,7 +1531,8 @@ class _PolishResultCard extends StatefulWidget {
   final FragmentPolishStatus state;
   final String polishedText;
   final String message;
-  final VoidCallback? onAccept;
+  final String originalText;
+  final ValueChanged<String>? onAccept;
   final VoidCallback? onRetry;
   final VoidCallback? onDiscard;
 
@@ -1542,6 +1543,7 @@ class _PolishResultCard extends StatefulWidget {
 class _PolishResultCardState extends State<_PolishResultCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _shimmer;
+  late final TextEditingController _editor;
 
   @override
   void initState() {
@@ -1550,6 +1552,7 @@ class _PolishResultCardState extends State<_PolishResultCard>
       vsync: this,
       duration: AppMotion.shimmer,
     );
+    _editor = TextEditingController(text: widget.polishedText);
     _updateShimmer();
   }
 
@@ -1557,6 +1560,10 @@ class _PolishResultCardState extends State<_PolishResultCard>
   void didUpdateWidget(covariant _PolishResultCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.state != widget.state) _updateShimmer();
+    if (oldWidget.polishedText != widget.polishedText &&
+        _editor.text != widget.polishedText) {
+      _editor.text = widget.polishedText;
+    }
   }
 
   void _updateShimmer() {
@@ -1570,6 +1577,7 @@ class _PolishResultCardState extends State<_PolishResultCard>
   @override
   void dispose() {
     _shimmer.dispose();
+    _editor.dispose();
     super.dispose();
   }
 
@@ -1628,7 +1636,8 @@ class _PolishResultCardState extends State<_PolishResultCard>
           style: AppText.body.copyWith(color: theme.foreground));
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // Polished text
+      Text('原文', style: AppText.caption.copyWith(color: theme.foregroundMuted)),
+      const SizedBox(height: AppSpacing.s6),
       Container(
         width: double.infinity,
         padding: const EdgeInsets.all(AppSpacing.s14),
@@ -1639,10 +1648,21 @@ class _PolishResultCardState extends State<_PolishResultCard>
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
         child: Text(
-          widget.polishedText,
-          style: AppText.body.copyWith(color: theme.foreground),
-        ),
+            widget.originalText.isEmpty
+                ? widget.polishedText
+                : widget.originalText,
+            style: AppText.body.copyWith(color: theme.foreground)),
       ),
+      const SizedBox(height: AppSpacing.s12),
+      Text('轻轻润色后的版本',
+          style: AppText.caption.copyWith(color: theme.foregroundMuted)),
+      const SizedBox(height: AppSpacing.s6),
+      _DiffText(original: widget.originalText, changed: widget.polishedText),
+      const SizedBox(height: AppSpacing.sm),
+      TextField(
+          controller: _editor,
+          maxLines: null,
+          decoration: const InputDecoration(hintText: '你可以继续修改这一版')),
       if (widget.message.isNotEmpty) ...[
         const SizedBox(height: AppSpacing.sm),
         Text(widget.message,
@@ -1660,9 +1680,11 @@ class _PolishResultCardState extends State<_PolishResultCard>
         const SizedBox(width: AppSpacing.s10),
         Expanded(
           child: FilledButton.icon(
-            onPressed: widget.onAccept,
+            onPressed: widget.onAccept == null
+                ? null
+                : () => widget.onAccept!(_editor.text.trim()),
             icon: const Icon(Icons.check_rounded, size: 18),
-            label: const Text('采纳润色'),
+            label: const Text('使用这版'),
           ),
         ),
       ]),
@@ -1676,6 +1698,62 @@ class _PolishResultCardState extends State<_PolishResultCard>
       FragmentPolishStatus.error => '润色失败',
       _ => '',
     };
+  }
+}
+
+class _DiffText extends StatelessWidget {
+  const _DiffText({required this.original, required this.changed});
+  final String original;
+  final String changed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    final before = original.runes.toList();
+    final after = changed.runes.toList();
+    var prefix = 0;
+    while (prefix < before.length &&
+        prefix < after.length &&
+        before[prefix] == after[prefix]) {
+      prefix++;
+    }
+    var suffix = 0;
+    while (suffix < before.length - prefix &&
+        suffix < after.length - prefix &&
+        before[before.length - 1 - suffix] ==
+            after[after.length - 1 - suffix]) {
+      suffix++;
+    }
+    String slice(List<int> runes, int start, int end) =>
+        String.fromCharCodes(runes.sublist(start, end));
+    final head = slice(after, 0, prefix);
+    final middle = slice(after, prefix, after.length - suffix);
+    final tail = slice(after, after.length - suffix, after.length);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.s12),
+      decoration: BoxDecoration(
+        color: theme.surfaceHigh.withValues(alpha: .55),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: RichText(
+        text: TextSpan(
+          style: AppText.body.copyWith(color: theme.foreground),
+          children: [
+            TextSpan(text: head),
+            if (middle.isNotEmpty)
+              TextSpan(
+                text: middle,
+                style: TextStyle(
+                  color: theme.foreground,
+                  backgroundColor: AppColors.teaGreen.withValues(alpha: .24),
+                ),
+              ),
+            TextSpan(text: tail),
+          ],
+        ),
+      ),
+    );
   }
 }
 

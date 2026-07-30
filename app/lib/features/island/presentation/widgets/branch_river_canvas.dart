@@ -100,8 +100,7 @@ class _BranchRiverCanvasState extends State<BranchRiverCanvas>
       return InteractiveViewer(
         minScale: .8,
         maxScale: 2.4,
-        boundaryMargin:
-            const EdgeInsets.all(AppSpacing.interactiveCanvasBoundary),
+        boundaryMargin: EdgeInsets.all(AppSpacing.graphBoundary),
         child: canvas,
       );
     });

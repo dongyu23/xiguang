@@ -5,16 +5,15 @@ import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
 import '../../application/island_create_controller.dart';
 import '../../../../design/themes/extensions/night_theme.dart';
-import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/motion.dart';
+import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../ui/composites/xiguang_page.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 
-// PAGE_SIZE_EXEMPT: extract the name editor, preview and confirmation panel
-// after the island creation interaction has completed visual QA.
-
+// PAGE_SIZE_EXEMPT: 本轮保留建岛表单、预览与提交状态编排；
+// 后续将新岛预览和字段区域拆为独立 widgets 后移除此豁免。
 class IslandCreatePage extends ConsumerStatefulWidget {
   const IslandCreatePage({super.key});
 
@@ -201,7 +200,7 @@ class _NewIslandPreview extends StatelessWidget {
               ),
             ),
           TweenAnimationBuilder<double>(
-            duration: AppMotion.islandCreationReveal,
+            duration: AppMotion.islandReveal,
             curve: Curves.easeOutBack,
             tween: Tween(begin: .78, end: 1),
             builder: (_, scale, child) => Transform.scale(
@@ -219,7 +218,7 @@ class _NewIslandPreview extends StatelessWidget {
           Positioned(
             bottom: 0,
             child: AnimatedSwitcher(
-              duration: AppMotion.fast,
+              duration: AppMotion.selection,
               child: Text(
                 name.isEmpty ? '一座还没有名字的小岛' : name,
                 key: ValueKey(name),

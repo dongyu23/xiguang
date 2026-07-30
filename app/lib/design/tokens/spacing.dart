@@ -47,11 +47,17 @@ class AppSpacing {
   /// 时间河流进入批量选择后，为底部操作栏保留的空间。
   static const double selectionToolbarClearance = 156;
 
-  /// 小宇宙紧凑列表为底部浮层保留的空间。
-  static const double universeCompactListBottom = 76;
+  /// 小宇宙列表避开底部模式切换条的空间。
+  static const double universeListBottom = 76;
 
-  /// 可缩放画布在视口外仍可平移的边界。
-  static const double interactiveCanvasBoundary = 80;
+  /// 小宇宙紧凑列表沿用同一底部避让。
+  static const double universeCompactListBottom = universeListBottom;
+
+  /// 支线画布缩放和平移时保留的边界。
+  static const double graphBoundary = 80;
+
+  /// 其他可缩放画布沿用同一边界。
+  static const double interactiveCanvasBoundary = graphBoundary;
 
   /// 页面水平内边距
   static double pageHorizontal(double width) => width > 520 ? 34 : 22;

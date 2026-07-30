@@ -18,15 +18,18 @@ import '../features/fragment/presentation/pages/capture_page.dart';
 import '../features/fragment/presentation/pages/fragment_detail_page.dart';
 import '../features/fragment/presentation/pages/fragment_edit_page.dart';
 import '../features/ai/presentation/pages/glow_organize_page.dart';
-import '../features/ai/presentation/pages/ai_build_islands_page.dart';
+import '../features/ai/presentation/pages/island_group_suggestions_page.dart';
+import '../features/ai/domain/ai_request.dart';
 import '../features/timeline/presentation/pages/time_river_page.dart';
 import '../features/island/presentation/pages/island_detail_page.dart';
 import '../features/island/presentation/pages/island_create_page.dart';
 import '../features/island/presentation/pages/universe_page.dart';
 import '../features/island/presentation/pages/branch_detail_page.dart';
 import '../features/island/domain/universe_overview.dart';
+import '../features/membership/presentation/pages/membership_page.dart';
 import '../features/space/presentation/pages/space_page.dart';
 import '../features/whitenoise/presentation/pages/whitenoise_page.dart';
+import '../features/stats/presentation/pages/tide_insight_page.dart';
 import '../features/profile/presentation/pages/mine_page.dart';
 import '../features/profile/presentation/pages/data_archive_page.dart';
 import '../features/profile/presentation/pages/trash_page.dart';
@@ -36,6 +39,7 @@ import '../features/profile/presentation/pages/storage_settings_page.dart';
 import '../features/profile/presentation/pages/device_management_page.dart';
 import '../features/profile/presentation/pages/reminder_settings_page.dart';
 import '../features/relation/presentation/pages/relation_ledger_page.dart';
+import '../features/relation/presentation/pages/relation_type_manage_page.dart';
 import '../features/relation/presentation/pages/weave_page.dart';
 import '../features/sync/presentation/pages/sync_settings_page.dart';
 import '../features/emotion/presentation/pages/emotion_manage_page.dart';
@@ -156,6 +160,9 @@ GoRouter createRouter(WidgetRef ref, [Listenable? refreshListenable]) {
                 path: '/relations/ledger',
                 builder: (_, __) => const RelationLedgerPage()),
             GoRoute(
+                path: '/relations/types/manage',
+                builder: (_, __) => const RelationTypeManagePage()),
+            GoRoute(
                 path: '/branches/:id',
                 builder: (_, state) => BranchDetailPage(
                       id: state.pathParameters['id']!,
@@ -164,6 +171,15 @@ GoRouter createRouter(WidgetRef ref, [Listenable? refreshListenable]) {
           // Tab 4: 我的
           StatefulShellBranch(routes: [
             GoRoute(path: '/mine', builder: (_, __) => const MinePage()),
+            GoRoute(
+                path: '/experience-settings',
+                builder: (_, __) => const ExperienceSettingsPage()),
+            GoRoute(
+                path: '/data-settings',
+                builder: (_, __) => const DataSettingsOverviewPage()),
+            GoRoute(
+                path: '/membership',
+                builder: (_, __) => const MembershipPage()),
             GoRoute(
                 path: '/sync-settings',
                 builder: (_, __) => const SyncSettingsPage()),
@@ -195,6 +211,8 @@ GoRouter createRouter(WidgetRef ref, [Listenable? refreshListenable]) {
       GoRoute(path: '/starmap', redirect: (_, __) => '/universe?view=branches'),
       GoRoute(path: '/whitenoise', builder: (_, __) => const WhiteNoisePage()),
       GoRoute(
+          path: '/tide-insight', builder: (_, __) => const TideInsightPage()),
+      GoRoute(
         parentNavigatorKey: rootNavigatorKey,
         path: '/fragments/:id',
         builder: (_, state) => FragmentDetailPage(
@@ -221,10 +239,31 @@ GoRouter createRouter(WidgetRef ref, [Listenable? refreshListenable]) {
         ),
       ),
       GoRoute(
-          path: '/glow-organize', builder: (_, __) => const GlowOrganizePage()),
+          path: '/glow-organize',
+          builder: (_, state) {
+            final query = state.uri.queryParameters;
+            AIScope? scope;
+            final ids = (query['fragmentIds'] ?? '')
+                .split(',')
+                .map(int.tryParse)
+                .whereType<int>()
+                .toList();
+            final islandId = int.tryParse(query['islandId'] ?? '');
+            final days = int.tryParse(query['days'] ?? '');
+            if (ids.length >= 2) {
+              scope = AIScope.fragments(ids);
+            } else if (islandId != null) {
+              scope = AIScope.island(islandId);
+            } else if (days == 7 || days == 30) {
+              scope = AIScope.range(days);
+            }
+            return GlowOrganizePage(initialScope: scope);
+          }),
       GoRoute(
-          path: '/ai/build-islands',
-          builder: (_, __) => const AiBuildIslandsPage()),
+          path: '/ai/island-groups',
+          builder: (_, __) => const IslandGroupSuggestionsPage()),
+      GoRoute(
+          path: '/ai/build-islands', redirect: (_, __) => '/ai/island-groups'),
       GoRoute(
           parentNavigatorKey: rootNavigatorKey,
           path: '/fragment-detail/:id',

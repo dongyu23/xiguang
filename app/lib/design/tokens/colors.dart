@@ -144,4 +144,22 @@ class AppColors {
   static const nightVinylDark = Color(0xFF162422); // 夜间黑胶深色
   static const nightVinylMid = Color(0xFF31413D); // 夜间黑胶中等色
   static const nightWave = Color(0xFF203437); // 夜间波浪色
+
+  // 岛屿海域与生长阶段
+  static const islandSeaNightBlue = islandSeaNightMist;
+  static const islandSeaDaySand = islandSeaDayDusk;
+  static const islandBasinNightGreen = islandSeaGlowNight;
+  static const islandBasinDayGreen = islandSeaGlowDay;
+  static const islandBasinNightBlue = islandSeaHazeNight;
+  static const islandBasinDayBlue = islandSeaHazeDay;
+  static const islandRelitGold = islandRelit;
+
+  // 织线关系色
+  static const relationEcho = Color(0xFFB8A4D4);
+  static const relationForeshadow = Color(0xFFA4B8D4);
+  static const relationAftershock = Color(0xFF8FB8A4);
+  static const relationParallel = Color(0xFF8E96A8);
+  static const relationRescue = Color(0xFFD4A4A4);
+  static const relationTide = Color(0xFFA4C4D4);
+  static const relationOldLight = Color(0xFFB9B9A8);
 }

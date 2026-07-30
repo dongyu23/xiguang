@@ -40,6 +40,10 @@ class WhiteNoisePage extends ConsumerWidget {
               items: items,
               selectedID: selectedID,
               onSelect: (id) {
+                final item = noises.valueOrNull
+                    ?.where((noise) => noise.id == id)
+                    .firstOrNull;
+                if (item?.locked ?? true) return;
                 ref.read(whiteNoisePlayingProvider.notifier).state =
                     selectedID == id ? null : id;
               },
@@ -99,15 +103,18 @@ class _WhiteNoiseContent extends StatelessWidget {
                 runSpacing: AppSpacing.s10,
                 children: items
                     .map((item) => XiguangChip(
-                          label: item.name,
+                          label: item.locked ? '${item.name} · 星光' : item.name,
                           selected: selectedID == item.id,
                           leading: Icon(
-                            selectedID == item.id
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
+                            item.locked
+                                ? Icons.lock_outline_rounded
+                                : selectedID == item.id
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
                             size: 18,
                           ),
-                          onSelected: (_) => onSelect(item.id),
+                          onSelected:
+                              item.locked ? null : (_) => onSelect(item.id),
                         ))
                     .toList(),
               ),

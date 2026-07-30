@@ -62,34 +62,65 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              IconButton(
-                tooltip: '返回',
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: Icon(Icons.arrow_back_rounded, color: theme.foreground),
-              ),
-              const SizedBox(width: AppSpacing.s12),
-              Expanded(
-                child: Text('管理心情',
-                    style:
-                        AppText.titleLarge.copyWith(color: theme.foreground)),
-              ),
-              XiguangButton(
-                label: '添加心情',
-                expand: false,
-                height: 40,
-                onPressed: () => _showEditSheet(context, null),
-                leading: const Icon(Icons.mood_outlined, size: 18),
-              ),
-              const SizedBox(width: AppSpacing.s6),
-              XiguangButton(
-                label: '添加音乐',
-                expand: false,
-                height: 40,
-                onPressed: () => _showAudioSheet(context),
-                leading: const Icon(Icons.music_note_rounded, size: 18),
-              ),
-            ]),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 560;
+                final title = Row(children: [
+                  IconButton(
+                    tooltip: '返回',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: Icon(
+                      Icons.arrow_back_rounded,
+                      color: theme.foreground,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.s12),
+                  Expanded(
+                    child: Text(
+                      '管理心情',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          AppText.titleLarge.copyWith(color: theme.foreground),
+                    ),
+                  ),
+                ]);
+                final actions = Row(children: [
+                  Expanded(
+                    child: XiguangButton(
+                      label: '添加心情',
+                      height: 44,
+                      onPressed: () => _showEditSheet(context, null),
+                      leading: const Icon(Icons.mood_outlined, size: 18),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.s10),
+                  Expanded(
+                    child: XiguangButton(
+                      label: '添加音乐',
+                      height: 44,
+                      onPressed: () => _showAudioSheet(context),
+                      leading: const Icon(Icons.music_note_rounded, size: 18),
+                    ),
+                  ),
+                ]);
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      title,
+                      const SizedBox(height: AppSpacing.s12),
+                      actions,
+                    ],
+                  );
+                }
+                return Row(children: [
+                  Expanded(child: title),
+                  const SizedBox(width: AppSpacing.md),
+                  SizedBox(width: 330, child: actions),
+                ]);
+              },
+            ),
             const SizedBox(height: AppSpacing.md),
             Expanded(
               child: emotions.when(

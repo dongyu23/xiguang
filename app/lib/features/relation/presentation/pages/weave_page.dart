@@ -17,6 +17,7 @@ import '../../../../ui/primitives/page_back_button.dart';
 import '../../../../ui/spaces/space_canvas.dart';
 import '../../../fragment/domain/fragment.dart';
 import '../../../fragment/presentation/providers/fragment_providers.dart';
+import '../../application/relation_types_controller.dart';
 import '../../application/weave_controller.dart';
 import '../providers/relation_providers.dart';
 import '../widgets/relation_note_input.dart';
@@ -34,7 +35,10 @@ class WeavePage extends ConsumerStatefulWidget {
 class _WeavePageState extends ConsumerState<WeavePage> {
   final _noteController = TextEditingController();
   late final List<int> _chainIds;
-  String _relationType = 'reminds_me';
+
+  /// 当前选中的关系类型名（存 name，如"回声"）。空串表示尚未初始化，
+  /// 首次拿到 relationTypesProvider 数据时自动选第一个可见类型。
+  String _relationType = '';
   bool _isSubmitting = false;
   bool _completed = false;
   String? _submitNotice;
@@ -43,6 +47,14 @@ class _WeavePageState extends ConsumerState<WeavePage> {
   void initState() {
     super.initState();
     _chainIds = [widget.sourceId];
+    // 初始化默认选中：用 provider 里的第一个可见类型，避免硬编码 'reminds_me'。
+    final types = ref.read(relationTypesProvider).valueOrNull;
+    if (types != null) {
+      final firstVisible = types.where((t) => !t.hidden).firstOrNull;
+      if (firstVisible != null) {
+        _relationType = firstVisible.name;
+      }
+    }
   }
 
   @override
@@ -55,6 +67,14 @@ class _WeavePageState extends ConsumerState<WeavePage> {
   Widget build(BuildContext context) {
     final fragments = ref.watch(fragmentsProvider);
     final theme = NightTheme.of(context);
+    // 首次拿到类型数据时，若 _relationType 仍为空，自动选中第一个可见类型。
+    if (_relationType.isEmpty) {
+      final types = ref.watch(relationTypesProvider).valueOrNull;
+      final firstVisible = types?.where((t) => !t.hidden).firstOrNull;
+      if (firstVisible != null) {
+        _relationType = firstVisible.name;
+      }
+    }
     return Stack(children: [
       const Positioned.fill(child: NightBackgroundPlaceholder()),
       const Positioned.fill(child: AtmosphereBackground()),

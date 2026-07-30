@@ -85,6 +85,25 @@ class AudioLibrary extends Table {
       ];
 }
 
+@DataClassName('RelationTypeEntry')
+class RelationTypes extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text()(); // 关系类型名，用户可见，如"回声"
+  IntColumn get colorHex => integer().named('color_hex')();
+  TextColumn get iconKey => text() // 图标标识，用于前端映射 IconData
+      .named('icon_key')
+      .withDefault(const Constant('auto_awesome_rounded'))();
+  TextColumn get description => text().withDefault(const Constant(''))();
+  BoolColumn get isDefault =>
+      boolean().named('is_default').withDefault(const Constant(false))();
+  IntColumn get sortOrder =>
+      integer().named('sort_order').withDefault(const Constant(0))();
+  BoolColumn get hidden =>
+      boolean().named('hidden').withDefault(const Constant(false))();
+  DateTimeColumn get createdAt =>
+      dateTime().named('created_at').withDefault(currentDateAndTime)();
+}
+
 @DataClassName('LocalRelationEntry')
 class LocalRelations extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -166,6 +185,7 @@ class ArchiveImportJobs extends Table {
   OpLogs,
   Emotions,
   AudioLibrary,
+  RelationTypes,
   LocalRelations,
   LocalIslands,
   LocalIslandMembers,
@@ -180,13 +200,14 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
           await _seedDefaultEmotions();
+          await _seedDefaultRelationTypes();
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
@@ -249,6 +270,13 @@ class AppDatabase extends _$AppDatabase {
               await m.addColumn(fragments, fragments.deletedAt);
             }
           }
+          if (from < 7) {
+            // v7: 新增 relation_types 表（用户可自定义织线类型）
+            if (!await _tableExists('relation_types')) {
+              await m.createTable(relationTypes);
+              await _seedDefaultRelationTypes();
+            }
+          }
           if (from < 5) {
             await _backfillFragmentMetadata();
           }
@@ -303,6 +331,31 @@ class AppDatabase extends _$AppDatabase {
         isDefault: const Value(true),
         sortOrder: Value(i),
         soundKey: Value(soundKey),
+      ));
+    }
+  }
+
+  /// 默认织线类型 - 与 CLAUDE.md 关系类型清单一致：
+  /// 回声/伏笔/余震/平行宇宙/小小救命/潮汐/旧光（7 个，全部 isDefault 不可删）
+  Future<void> _seedDefaultRelationTypes() async {
+    const defaults = <(String, int, String, String)>[
+      ('回声', 0xFFB8A4D4, '一束光在另一束里轻轻回应。', 'auto_awesome_rounded'),
+      ('伏笔', 0xFFA4B8D4, '更早的那束，原来早就埋下了线索。', 'edit_note_rounded'),
+      ('余震', 0xFF8FB8A4, '情绪还在继续，没有马上过去。', 'trip_origin_rounded'),
+      ('平行宇宙', 0xFF8E96A8, '同时存在的另一种可能。', 'grain_rounded'),
+      ('小小救命', 0xFFD4A4A4, '那一次被接住了。', 'favorite_border_rounded'),
+      ('潮汐', 0xFFA4C4D4, '来来去去，有自己的节律。', 'waves_rounded'),
+      ('旧光', 0xFFB9B9A8, '很久以前的，又被想起。', 'circle_rounded'),
+    ];
+    for (var i = 0; i < defaults.length; i++) {
+      final (name, color, desc, icon) = defaults[i];
+      await into(relationTypes).insert(RelationTypesCompanion.insert(
+        name: name,
+        colorHex: color,
+        iconKey: Value(icon),
+        description: Value(desc),
+        isDefault: const Value(true),
+        sortOrder: Value(i),
       ));
     }
   }
@@ -434,6 +487,44 @@ class AppDatabase extends _$AppDatabase {
   Future<void> setEmotionHidden(int id, bool hidden) {
     return (update(emotions)..where((t) => t.id.equals(id)))
         .write(EmotionsCompanion(hidden: Value(hidden)));
+  }
+
+  // ── RelationType CRUD ──
+
+  Future<List<RelationTypeEntry>> getAllRelationTypes() {
+    return (select(relationTypes)
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder)]))
+        .get();
+  }
+
+  Future<RelationTypeEntry?> getRelationTypeByName(String name) {
+    return (select(relationTypes)..where((t) => t.name.equals(name)))
+        .getSingleOrNull();
+  }
+
+  Future<int> insertRelationType(RelationTypesCompanion entry) {
+    return into(relationTypes).insert(entry);
+  }
+
+  Future<bool> updateRelationType(RelationTypesCompanion entry) {
+    return update(relationTypes).replace(entry);
+  }
+
+  Future<int> deleteRelationType(int id) {
+    return (delete(relationTypes)..where((t) => t.id.equals(id))).go();
+  }
+
+  Future<int> maxRelationTypeSortOrder() async {
+    final q = selectOnly(relationTypes)
+      ..addColumns([relationTypes.sortOrder.max()])
+      ..limit(1);
+    final row = await q.getSingle();
+    return row.read(relationTypes.sortOrder.max()) ?? 0;
+  }
+
+  Future<void> setRelationTypeHidden(int id, bool hidden) {
+    return (update(relationTypes)..where((t) => t.id.equals(id)))
+        .write(RelationTypesCompanion(hidden: Value(hidden)));
   }
 
   // ── AudioLibrary CRUD ──

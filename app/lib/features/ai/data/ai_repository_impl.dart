@@ -5,8 +5,46 @@ import 'ai_api.dart';
 
 class AIRepositoryImpl implements AIRepositoryPort {
   const AIRepositoryImpl(this._api);
-
   final AIApi _api;
+  @override
+  Future<AISummaryDraft> previewSummary(AIScope scope) async =>
+      AISummaryDraft.fromJson(
+          await _api.previewSummary({'scope': scope.toJson()}), scope);
+  @override
+  Future<Map<String, dynamic>> saveSummary(
+          {required AISummaryDraft draft,
+          required String title,
+          required String summary,
+          required List<AISummaryPoint> keyPoints,
+          required bool userEdited}) =>
+      _api.saveSummary({
+        'request_id': draft.requestId,
+        'scope': draft.scope.toJson(),
+        'title': title,
+        'summary': summary,
+        'key_points': keyPoints.map((e) => e.toJson()).toList(),
+        'user_edited': userEdited
+      });
+  @override
+  Future<Map<String, dynamic>> previewIslandGroups() =>
+      _api.previewIslandGroups();
+  @override
+  Future<Map<String, dynamic>> createIslandGroup(
+          Map<String, dynamic> proposal) =>
+      _api.createIslandGroup({
+        'name': proposal['name'],
+        'description': proposal['description'] ?? '',
+        'source': 'ai',
+        'island_ids': proposal['island_ids'] ?? const []
+      });
+  @override
+  Future<Map<String, dynamic>> polishFragment(String text, String emotion,
+          {List<String> tags = const []}) =>
+      _api.polishFragment(text, emotion, tags);
+  @override
+  Future<void> feedback(int requestId, String action, {String? reason}) async {
+    await _api.feedback(requestId, action, reason);
+  }
 
   @override
   Future<AIResponse> glowSummary(AIRequest request) async {
@@ -15,17 +53,10 @@ class AIRepositoryImpl implements AIRepositoryPort {
       'fragment_ids': request.fragmentIds,
       if (request.context != null) 'context': request.context,
     });
-    final status = body['status'] as String?;
     return AIResponse(
-      summary: body['summary_text'] as String? ??
-          _summaryForStatus(status) ??
-          '请求已交给星图管理员。',
-      emotionTitle: body['emotion_title'] as String?,
+      summary: body['message'] as String?,
       keywords: (body['keywords'] as List<dynamic>? ?? const [])
-          .map((item) => '$item')
-          .toList(),
-      suggestions: (body['suggestion_ids'] as List<dynamic>? ?? const [])
-          .whereType<int>()
+          .map((e) => '$e')
           .toList(),
     );
   }
@@ -33,21 +64,4 @@ class AIRepositoryImpl implements AIRepositoryPort {
   @override
   Future<Map<String, dynamic>> buildIslands({int rangeDays = 0}) =>
       _api.buildIslands(rangeDays: rangeDays);
-
-  @override
-  Future<Map<String, dynamic>> polishFragment(
-    String contentText,
-    String emotion,
-  ) =>
-      _api.polishFragment(contentText, emotion);
-}
-
-String? _summaryForStatus(String? status) {
-  return switch (status) {
-    'not_implemented' => '柔光整理还没有接上真正的星图管理员，但你的捕光、回看和织线都可以继续使用。',
-    'rate_limited' => '今天已经整理得够多了，先让这些光安静放一会儿。',
-    'not_enough' => '现在的光还不够多。再捕几束之后，我会更容易看见它们之间的线。',
-    'error' || 'parse_error' => '柔光整理暂时没有回应，请稍后再试。',
-    _ => null,
-  };
 }

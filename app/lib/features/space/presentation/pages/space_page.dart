@@ -28,7 +28,18 @@ class SpacePage extends ConsumerWidget {
           const _SpaceHeader(),
           const SizedBox(height: AppSpacing.s20),
           theme.when(
-            data: (space) => _SpaceThemeCard(space: space),
+            data: (themes) => _SpaceThemeList(
+              themes: themes,
+              onSelect: (space) async {
+                if (space.locked) {
+                  context.push('/membership');
+                  return;
+                }
+                await ref
+                    .read(spaceThemeProvider.notifier)
+                    .selectTheme(space.id);
+              },
+            ),
             loading: () => const _SpaceLoadingCard(),
             error: (_, __) => const XiguangEmptyState(
               title: '空间暂时沉入雾里',
@@ -77,16 +88,47 @@ class _SpaceHeader extends StatelessWidget {
   }
 }
 
+class _SpaceThemeList extends StatelessWidget {
+  const _SpaceThemeList({required this.themes, required this.onSelect});
+
+  final List<SpaceTheme> themes;
+  final ValueChanged<SpaceTheme> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    if (themes.isEmpty) {
+      return const XiguangEmptyState(
+        title: '还没有可用的空间主题',
+        description: '稍后再回来看看。',
+        icon: Icons.palette_outlined,
+      );
+    }
+    return Column(
+      children: themes
+          .map((space) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.s12),
+                child: _SpaceThemeCard(
+                  space: space,
+                  onTap: () => onSelect(space),
+                ),
+              ))
+          .toList(growable: false),
+    );
+  }
+}
+
 class _SpaceThemeCard extends StatelessWidget {
-  const _SpaceThemeCard({required this.space});
+  const _SpaceThemeCard({required this.space, required this.onTap});
 
   final SpaceTheme space;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
     final color = _parseHexColor(space.primaryColorHex);
     return XiguangCard(
+      onTap: onTap,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
           height: 132,
@@ -109,7 +151,11 @@ class _SpaceThemeCard extends StatelessWidget {
               left: 18,
               top: 18,
               child: Text(
-                '当前底色',
+                space.selected
+                    ? '当前底色'
+                    : space.locked
+                        ? '星光主题'
+                        : '轻触切换',
                 style: AppText.captionStrong.copyWith(color: Colors.white),
               ),
             ),
@@ -131,14 +177,26 @@ class _SpaceThemeCard extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: AppSpacing.s18),
-        Text(space.name,
-            style: AppText.titleMedium.copyWith(color: theme.foreground)),
+        Row(children: [
+          Expanded(
+            child: Text(space.name,
+                style: AppText.titleMedium.copyWith(color: theme.foreground)),
+          ),
+          Icon(
+            space.locked
+                ? Icons.lock_outline_rounded
+                : space.selected
+                    ? Icons.check_circle_rounded
+                    : Icons.chevron_right_rounded,
+            color: space.locked ? theme.foregroundMuted : theme.accent,
+          ),
+        ]),
         const SizedBox(height: AppSpacing.sm),
         Text(space.description,
             style: AppText.bodyMuted.copyWith(color: theme.foregroundMuted)),
         const SizedBox(height: AppSpacing.md),
         Text(
-          '来自当前后端空间主题。',
+          space.locked ? '星光会员可使用这个主题。' : '主题选择会同步到你的账号。',
           style: AppText.caption.copyWith(color: theme.foregroundMuted),
         ),
       ]),

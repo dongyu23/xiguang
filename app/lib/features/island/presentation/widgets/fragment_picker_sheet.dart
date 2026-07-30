@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
 import '../../../../design/themes/extensions/night_theme.dart';
-import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/motion.dart';
+import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../features/fragment/domain/fragment.dart';
@@ -91,7 +91,7 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
                       ),
                     ),
                     AnimatedSwitcher(
-                      duration: AppMotion.fast,
+                      duration: AppMotion.selection,
                       child: _selected.isEmpty
                           ? const SizedBox(width: 36)
                           : Container(
@@ -336,10 +336,8 @@ class _FragmentPickerSheetState extends ConsumerState<FragmentPickerSheet> {
       _TimeFilter.today => local.year == now.year &&
           local.month == now.month &&
           local.day == now.day,
-      _TimeFilter.week =>
-        local.isAfter(now.subtract(AppTiming.fragmentPickerWeek)),
-      _TimeFilter.month =>
-        local.isAfter(now.subtract(AppTiming.fragmentPickerMonth)),
+      _TimeFilter.week => local.isAfter(now.subtract(AppTiming.recentWeek)),
+      _TimeFilter.month => local.isAfter(now.subtract(AppTiming.recentMonth)),
       _TimeFilter.year => local.year == now.year,
     };
   }
@@ -666,7 +664,7 @@ class _SelectableFragmentRow extends StatelessWidget {
       label: '$title，${fragment.emotion}，${fragment.dateLabel}',
       child: AnimatedContainer(
         key: ValueKey('fragment-picker-row-${fragment.id}'),
-        duration: AppMotion.fast,
+        duration: AppMotion.selection,
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           color: selected

@@ -7,6 +7,9 @@
 
 namespace {
 
+constexpr DWORD kWindowStyle =
+    WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+
 /// Window attribute that enables dark mode window decorations.
 ///
 /// Redefined in case the developer's machine has a Windows SDK older than
@@ -133,11 +136,30 @@ bool Win32Window::Create(const std::wstring& title,
   HMONITOR monitor = MonitorFromPoint(target_point, MONITOR_DEFAULTTONEAREST);
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
+  fixed_client_width_ = size.width;
+  fixed_client_height_ = size.height;
+
+  RECT window_rect = {0, 0, Scale(size.width, scale_factor),
+                      Scale(size.height, scale_factor)};
+  AdjustWindowRectExForDpi(&window_rect, kWindowStyle, FALSE, 0, dpi);
+  fixed_window_width_ = window_rect.right - window_rect.left;
+  fixed_window_height_ = window_rect.bottom - window_rect.top;
+
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(monitor_info);
+  GetMonitorInfo(monitor, &monitor_info);
+  const LONG work_width =
+      monitor_info.rcWork.right - monitor_info.rcWork.left;
+  const LONG work_height =
+      monitor_info.rcWork.bottom - monitor_info.rcWork.top;
+  const LONG centered_x = monitor_info.rcWork.left +
+                          (work_width - fixed_window_width_) / 2;
+  const LONG centered_y = monitor_info.rcWork.top +
+                          (work_height - fixed_window_height_) / 2;
 
   HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
-      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
-      Scale(size.width, scale_factor), Scale(size.height, scale_factor),
+      window_class, title.c_str(), kWindowStyle, centered_x, centered_y,
+      fixed_window_width_, fixed_window_height_,
       nullptr, nullptr, GetModuleHandle(nullptr), this);
 
   if (!window) {
@@ -179,6 +201,17 @@ Win32Window::MessageHandler(HWND hwnd,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
   switch (message) {
+    case WM_GETMINMAXINFO: {
+      auto min_max_info = reinterpret_cast<MINMAXINFO*>(lparam);
+      if (fixed_window_width_ > 0 && fixed_window_height_ > 0) {
+        min_max_info->ptMinTrackSize.x = fixed_window_width_;
+        min_max_info->ptMinTrackSize.y = fixed_window_height_;
+        min_max_info->ptMaxTrackSize.x = fixed_window_width_;
+        min_max_info->ptMaxTrackSize.y = fixed_window_height_;
+      }
+      return 0;
+    }
+
     case WM_DESTROY:
       window_handle_ = nullptr;
       Destroy();
@@ -189,11 +222,18 @@ Win32Window::MessageHandler(HWND hwnd,
 
     case WM_DPICHANGED: {
       auto newRectSize = reinterpret_cast<RECT*>(lparam);
-      LONG newWidth = newRectSize->right - newRectSize->left;
-      LONG newHeight = newRectSize->bottom - newRectSize->top;
+      const UINT new_dpi = HIWORD(wparam);
+      const double new_scale_factor = new_dpi / 96.0;
+      RECT fixed_rect = {
+          0, 0, Scale(fixed_client_width_, new_scale_factor),
+          Scale(fixed_client_height_, new_scale_factor)};
+      AdjustWindowRectExForDpi(&fixed_rect, kWindowStyle, FALSE, 0, new_dpi);
+      fixed_window_width_ = fixed_rect.right - fixed_rect.left;
+      fixed_window_height_ = fixed_rect.bottom - fixed_rect.top;
 
-      SetWindowPos(hwnd, nullptr, newRectSize->left, newRectSize->top, newWidth,
-                   newHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+      SetWindowPos(hwnd, nullptr, newRectSize->left, newRectSize->top,
+                   fixed_window_width_, fixed_window_height_,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
 
       return 0;
     }

@@ -291,7 +291,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
         polishing: polishing,
         polishEnabled: polishEnabled,
         onCancel: _busy ? null : _clearSelection,
-        onPolish: _busy ? null : () => _polishSelected(timeline, fragments),
+        onPolish: _busy ? null : _summarizeSelected,
         onDelete: _busy ? null : _deleteSelected,
       ),
     ]);
@@ -378,6 +378,18 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     setState(_selectedIds.clear);
   }
 
+  void _summarizeSelected() {
+    if (_selectedIds.length < 2 || _selectedIds.length > 50) {
+      showOverlaySnackBar(
+        context,
+        const SnackBar(content: Text('柔光总结需要选择 2 到 50 束光。')),
+      );
+      return;
+    }
+    final ids = _selectedIds.toList()..sort();
+    context.push('/glow-organize?fragmentIds=${ids.join(',')}');
+  }
+
   Future<void> _deleteSelected() async {
     if (_busy || _selectedIds.isEmpty) return;
     final ids = Set<int>.from(_selectedIds);
@@ -410,6 +422,7 @@ class _TimeRiverPageState extends ConsumerState<TimeRiverPage> {
     }
   }
 
+  // ignore: unused_element
   Future<void> _polishSelected(
     AsyncValue<List<DateGroup>> timeline,
     AsyncValue<List<Fragment>> fragments,
@@ -839,7 +852,7 @@ class _SelectionActionBar extends StatelessWidget {
                                     )
                                   : const Icon(Icons.auto_awesome_outlined,
                                       size: 17),
-                              label: Text(polishing ? '润色中' : 'AI 润色'),
+                              label: const Text('柔光总结'),
                               style: OutlinedButton.styleFrom(
                                 minimumSize: const Size(96, 40),
                                 foregroundColor: theme.accent,

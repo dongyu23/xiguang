@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import 'package:xiguang/app/app_state.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../membership/application/membership_controller.dart';
+import '../../../membership/domain/membership.dart';
 import '../../../sync/presentation/providers/sync_providers.dart';
 import '../../../sync/presentation/providers/sync_provider.dart';
 import '../../../sync/domain/sync_config.dart';
@@ -34,49 +36,6 @@ class MinePage extends ConsumerStatefulWidget {
 }
 
 class _MinePageState extends ConsumerState<MinePage> {
-  bool _syncing = false;
-
-  void _updateSyncConfig(SyncConfig config) {
-    ref.read(syncConfigProvider.notifier).update(config);
-    ref.read(syncEngineProvider).updateConfig(config);
-  }
-
-  Future<void> _syncNow() async {
-    if (_syncing) return;
-    setState(() => _syncing = true);
-    try {
-      final status = await syncManually(ref);
-      if (!mounted) return;
-      if (status.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('同步失败，请检查网络和后端状态。'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return;
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(status.pendingCount == 0
-              ? '同步完成。'
-              : '同步完成，仍有 ${status.pendingCount} 条待推送。'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('同步失败，请检查网络和后端状态。'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _syncing = false);
-    }
-  }
-
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -110,11 +69,8 @@ class _MinePageState extends ConsumerState<MinePage> {
   Widget build(BuildContext context) {
     final sessionValue = ref.watch(sessionProvider);
     final theme = NightTheme.of(context);
-    final appearanceOption = ref.watch(nightModeOptionProvider);
     final compact = MediaQuery.sizeOf(context).width < 520;
-    final aiEnabled = ref.watch(aiEnabledProvider);
-    final syncConfig = ref.watch(syncConfigProvider);
-    final syncStatus = ref.watch(syncStatusProvider);
+    final membership = ref.watch(membershipProvider).valueOrNull;
 
     return ScrollToTop(
       builder: (context, controller) => XiguangPage(
@@ -134,27 +90,29 @@ class _MinePageState extends ConsumerState<MinePage> {
             return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Header ──
-                  Text('BOUNDARY',
-                      style: AppText.eyebrow.copyWith(color: theme.accent)),
-                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
                   Text('我的',
-                      style: AppText.hero.copyWith(color: theme.foreground)),
-                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-                  Text('账号、隐私和那些你想自己决定的边界。',
-                      style: AppText.body.copyWith(color: theme.foreground)),
-                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.s22),
+                      style:
+                          AppText.titleLarge.copyWith(color: theme.foreground)),
+                  const SizedBox(height: AppSpacing.s3),
+                  Text('账号、会员与应用边界',
+                      style: AppText.caption
+                          .copyWith(color: theme.foregroundMuted)),
+                  SizedBox(height: compact ? AppSpacing.s14 : AppSpacing.s18),
 
-                  // ── 资料卡片 ──
                   _ProfileCard(
                     session: session,
                     compact: compact,
                     onTap: () => _showEditProfileSheet(context, session),
                   ),
-                  SizedBox(height: compact ? AppSpacing.md : AppSpacing.lg),
+                  const SizedBox(height: AppSpacing.s10),
+                  _MembershipEntryCard(
+                    status: membership,
+                    compact: compact,
+                    onTap: () => context.push('/membership'),
+                  ),
+                  SizedBox(height: compact ? AppSpacing.s18 : AppSpacing.lg),
 
-                  // ── 账号与安全 ──
-                  const SettingsSectionLabel('账号与安全'),
+                  const SettingsSectionLabel('账号'),
                   SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
                   _FlatNavGroup(
                     compact: compact,
@@ -163,7 +121,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                         icon: Icons.lock_outline_rounded,
                         iconColor: AppColors.teaGreen,
                         label: '修改密码',
-                        subtitle: '更新当前账号的登录密码',
+                        subtitle: '更新登录凭据',
                         onTap: () => _showEditProfileSheet(
                           context,
                           session,
@@ -173,138 +131,45 @@ class _MinePageState extends ConsumerState<MinePage> {
                       _NavItem(
                         icon: Icons.shield_outlined,
                         iconColor: AppColors.mistBlue,
-                        label: '隐私设置',
-                        subtitle: '通知预览、数据边界和账号删除',
+                        label: '隐私与账号安全',
+                        subtitle: '数据边界、注销与账号删除',
                         onTap: () => context.push('/privacy-settings'),
                       ),
                       _NavItem(
                         icon: Icons.devices_outlined,
                         iconColor: AppColors.lilac,
                         label: '登录设备',
-                        subtitle: '查看并退出其他设备',
+                        subtitle: '查看当前登录并退出其他设备',
                         onTap: () => context.push('/devices'),
                       ),
                     ],
                   ),
-                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
+                  SizedBox(height: compact ? AppSpacing.s18 : AppSpacing.lg),
 
-                  // ── 数据与同步 ──
-                  const SettingsSectionLabel('数据与同步'),
-                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-                  _InlineSyncCard(
-                    config: syncConfig,
-                    status: syncStatus,
-                    compact: compact,
-                    syncing: _syncing,
-                    onConfigChanged: _updateSyncConfig,
-                    onSyncNow: _syncNow,
-                    onOpenDetails: () => context.push('/sync-settings'),
-                  ),
+                  const SettingsSectionLabel('设置'),
                   SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
                   _FlatNavGroup(
                     compact: compact,
                     items: [
                       _NavItem(
-                        icon: Icons.archive_outlined,
+                        icon: Icons.tune_rounded,
                         iconColor: AppColors.teaGreen,
-                        label: '数据归档',
-                        subtitle: '完整导出、校验与安全恢复',
-                        onTap: () => context.push('/data-archive'),
+                        label: '记录与体验',
+                        subtitle: '外观、提醒、声音、潮汐与 AI',
+                        onTap: () => context.push('/experience-settings'),
                       ),
                       _NavItem(
-                        icon: Icons.restore_from_trash_outlined,
+                        icon: Icons.cloud_outlined,
                         iconColor: AppColors.mistBlue,
-                        label: '回收站',
-                        subtitle: '恢复误删的光片',
-                        onTap: () => context.push('/trash'),
-                      ),
-                      _NavItem(
-                        icon: Icons.cleaning_services_outlined,
-                        iconColor: AppColors.inkMuted,
-                        label: '存储与缓存',
-                        subtitle: '查看并清理临时文件',
-                        onTap: () => context.push('/storage-settings'),
+                        label: '数据与同步',
+                        subtitle: '云同步、归档、回收站与存储',
+                        onTap: () => context.push('/data-settings'),
                       ),
                     ],
                   ),
-                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
+                  SizedBox(height: compact ? AppSpacing.s18 : AppSpacing.lg),
 
-                  // ── 外观与体验 ──
-                  const SettingsSectionLabel('外观与体验'),
-                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-                  _NightModeSelector(
-                    currentOption: appearanceOption,
-                    compact: compact,
-                    onChanged: (option) => updateNightModeOption(ref, option),
-                  ),
-                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-                  _FlatNavGroup(
-                    compact: compact,
-                    items: [
-                      _NavItem(
-                        icon: Icons.notifications_none_rounded,
-                        iconColor: AppColors.mistBlue,
-                        label: '柔光提醒',
-                        subtitle: '捕光、旧光回访和小岛静默',
-                        onTap: () => context.push('/reminders'),
-                      ),
-                      _NavItem(
-                        icon: Icons.palette_outlined,
-                        iconColor: AppColors.teaGreen,
-                        label: '当前空间',
-                        subtitle: '你现在的底色与氛围',
-                        onTap: () => context.push('/space'),
-                      ),
-                      _NavItem(
-                        icon: Icons.palette_outlined,
-                        iconColor: AppColors.lilac,
-                        label: '管理心情',
-                        subtitle: '编辑默认情绪、新增自定义感觉',
-                        onTap: () => context.push('/emotions/manage'),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
-
-                  // ── 智能辅助 ──
-                  const SettingsSectionLabel('智能辅助'),
-                  SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
-                  _AiToggleCard(session: session, compact: compact),
-                  AnimatedSize(
-                    duration: AppMotion.normal,
-                    curve: AppMotion.easeOut,
-                    alignment: Alignment.topCenter,
-                    child: aiEnabled
-                        ? Padding(
-                            padding: EdgeInsets.only(
-                                top: compact ? AppSpacing.s6 : AppSpacing.sm),
-                            child: _FlatNavGroup(
-                              compact: compact,
-                              items: [
-                                _NavItem(
-                                  icon: Icons.auto_awesome_outlined,
-                                  iconColor: AppColors.lilac,
-                                  label: '柔光整理',
-                                  subtitle: '和星图管理员对话，看见光片之间的线',
-                                  onTap: () => context.push('/glow-organize'),
-                                ),
-                                _NavItem(
-                                  icon: Icons.explore_outlined,
-                                  iconColor: AppColors.teaGreen,
-                                  label: 'AI 建岛',
-                                  subtitle: '让星图管理员读光片，找出可以成岛的主题',
-                                  onTap: () =>
-                                      context.push('/ai/build-islands'),
-                                ),
-                              ],
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  SizedBox(height: compact ? AppSpacing.s12 : AppSpacing.md),
-
-                  // ── 支持与关于 ──
-                  const SettingsSectionLabel('支持与关于'),
+                  const SettingsSectionLabel('应用'),
                   SizedBox(height: compact ? AppSpacing.s6 : AppSpacing.sm),
                   _FlatNavGroup(
                     compact: compact,
@@ -327,7 +192,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                       ),
                     ],
                   ),
-                  SizedBox(height: compact ? AppSpacing.s18 : AppSpacing.lg),
+                  SizedBox(height: compact ? AppSpacing.s18 : AppSpacing.xl),
 
                   // ── 退出 ──
                   SizedBox(
@@ -336,7 +201,7 @@ class _MinePageState extends ConsumerState<MinePage> {
                       onPressed: _logout,
                       icon: Icon(Icons.logout_rounded,
                           size: 16, color: AppColors.sunsetCoral),
-                      label: Text('退出登录',
+                      label: Text('退出当前账号',
                           style: AppText.bodyStrong
                               .copyWith(color: AppColors.sunsetCoral)),
                       style: OutlinedButton.styleFrom(
@@ -632,9 +497,372 @@ class _MinePageState extends ConsumerState<MinePage> {
   }
 }
 
+/// 我的页的二级数据目录。首屏只展示一个总入口，低频操作在这里展开。
+class DataSettingsOverviewPage extends ConsumerStatefulWidget {
+  const DataSettingsOverviewPage({super.key});
+
+  @override
+  ConsumerState<DataSettingsOverviewPage> createState() =>
+      _DataSettingsOverviewPageState();
+}
+
+class _DataSettingsOverviewPageState
+    extends ConsumerState<DataSettingsOverviewPage> {
+  bool _syncing = false;
+
+  void _updateSyncConfig(SyncConfig config) {
+    ref.read(syncConfigProvider.notifier).update(config);
+    ref.read(syncEngineProvider).updateConfig(config);
+  }
+
+  Future<void> _syncNow() async {
+    if (_syncing) return;
+    setState(() => _syncing = true);
+    try {
+      final status = await syncManually(ref);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(status.error != null
+              ? '同步失败，请检查网络和后端状态。'
+              : status.pendingCount == 0
+                  ? '同步完成。'
+                  : '同步完成，仍有 ${status.pendingCount} 条待推送。'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('同步失败，请检查网络和后端状态。'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 520;
+    final syncConfig = ref.watch(syncConfigProvider);
+    final syncStatus = ref.watch(syncStatusProvider);
+    return XiguangPage(
+      padding: EdgeInsets.fromLTRB(
+        compact ? AppSpacing.s18 : AppSpacing.s22,
+        AppSpacing.s10,
+        compact ? AppSpacing.s18 : AppSpacing.s22,
+        AppSpacing.pageBottomNav + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const _SettingsPageHeader(
+          title: '数据与同步',
+          subtitle: '管理云端连接、本地空间与完整归档。',
+        ),
+        const SizedBox(height: AppSpacing.s18),
+        _InlineSyncCard(
+          config: syncConfig,
+          status: syncStatus,
+          compact: compact,
+          syncing: _syncing,
+          onConfigChanged: _updateSyncConfig,
+          onSyncNow: _syncNow,
+          onOpenDetails: () => context.push('/sync-settings'),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        const SettingsSectionLabel('数据管理'),
+        const SizedBox(height: AppSpacing.s6),
+        _FlatNavGroup(
+          compact: compact,
+          items: [
+            _NavItem(
+              icon: Icons.archive_outlined,
+              iconColor: AppColors.teaGreen,
+              label: '数据归档',
+              subtitle: '完整导出、校验与安全恢复',
+              onTap: () => context.push('/data-archive'),
+            ),
+            _NavItem(
+              icon: Icons.restore_from_trash_outlined,
+              iconColor: AppColors.mistBlue,
+              label: '回收站',
+              subtitle: '恢复误删的光片',
+              onTap: () => context.push('/trash'),
+            ),
+            _NavItem(
+              icon: Icons.cleaning_services_outlined,
+              iconColor: AppColors.inkMuted,
+              label: '存储与缓存',
+              subtitle: '查看用量并清理临时文件',
+              onTap: () => context.push('/storage-settings'),
+            ),
+          ],
+        ),
+      ]),
+    );
+  }
+}
+
+/// 与记录体验有关的低频设置，和账号、数据边界分开组织。
+class ExperienceSettingsPage extends ConsumerWidget {
+  const ExperienceSettingsPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final compact = MediaQuery.sizeOf(context).width < 520;
+    final appearance = ref.watch(nightModeOptionProvider);
+    final aiEnabled = ref.watch(aiEnabledProvider);
+    final session = ref.watch(sessionProvider);
+    return XiguangPage(
+      padding: EdgeInsets.fromLTRB(
+        compact ? AppSpacing.s18 : AppSpacing.s22,
+        AppSpacing.s10,
+        compact ? AppSpacing.s18 : AppSpacing.s22,
+        AppSpacing.pageBottomNav + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const _SettingsPageHeader(
+          title: '记录与体验',
+          subtitle: '调整隙光回应你的方式，不改变已有内容。',
+        ),
+        const SizedBox(height: AppSpacing.s18),
+        const SettingsSectionLabel('外观'),
+        const SizedBox(height: AppSpacing.s6),
+        _NightModeSelector(
+          currentOption: appearance,
+          compact: compact,
+          onChanged: (option) => updateNightModeOption(ref, option),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        const SettingsSectionLabel('记录与回看'),
+        const SizedBox(height: AppSpacing.s6),
+        _FlatNavGroup(
+          compact: compact,
+          items: [
+            _NavItem(
+              icon: Icons.notifications_none_rounded,
+              iconColor: AppColors.mistBlue,
+              label: '柔光提醒',
+              subtitle: '捕光、旧光回访和小岛静默',
+              onTap: () => context.push('/reminders'),
+            ),
+            _NavItem(
+              icon: Icons.layers_outlined,
+              iconColor: AppColors.teaGreen,
+              label: '空间与氛围',
+              subtitle: '当前空间、主题与视觉底色',
+              onTap: () => context.push('/space'),
+            ),
+            _NavItem(
+              icon: Icons.graphic_eq_rounded,
+              iconColor: AppColors.mistBlue,
+              label: '白噪音',
+              subtitle: '雨声、翻书声与会员声音',
+              onTap: () => context.push('/whitenoise'),
+            ),
+            _NavItem(
+              icon: Icons.waves_rounded,
+              iconColor: AppColors.teaGreen,
+              label: '潮汐提示',
+              subtitle: '回看近期反复出现的感受',
+              onTap: () => context.push('/tide-insight'),
+            ),
+            _NavItem(
+              icon: Icons.mood_outlined,
+              iconColor: AppColors.lilac,
+              label: '心情与织线',
+              subtitle: '管理情绪词与关系类型',
+              onTap: () => context.push('/emotions/manage'),
+            ),
+            _NavItem(
+              icon: Icons.route_outlined,
+              iconColor: AppColors.mistBlue,
+              label: '织线类型',
+              subtitle: '编辑默认关系或新增自定义联系',
+              onTap: () => context.push('/relations/types/manage'),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        const SettingsSectionLabel('星图管理员'),
+        const SizedBox(height: AppSpacing.s6),
+        session.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, __) => const _ErrorPanel(),
+          data: (value) => _AiToggleCard(session: value, compact: compact),
+        ),
+        AnimatedSize(
+          duration: AppMotion.normal,
+          curve: AppMotion.easeOut,
+          alignment: Alignment.topCenter,
+          child: aiEnabled
+              ? Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.s6),
+                  child: _FlatNavGroup(
+                    compact: compact,
+                    items: [
+                      _NavItem(
+                        icon: Icons.auto_awesome_outlined,
+                        iconColor: AppColors.lilac,
+                        label: '柔光整理',
+                        subtitle: '总结选中的光片、岛或一段时间',
+                        onTap: () => context.push('/glow-organize'),
+                      ),
+                      _NavItem(
+                        icon: Icons.hub_outlined,
+                        iconColor: AppColors.teaGreen,
+                        label: '岛群建议',
+                        subtitle: '查看可以聚在一起的岛屿候选',
+                        onTap: () => context.push('/ai/island-groups'),
+                      ),
+                    ],
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ]),
+    );
+  }
+}
+
+class _SettingsPageHeader extends StatelessWidget {
+  const _SettingsPageHeader({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      IconButton(
+        tooltip: '返回',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => Navigator.of(context).maybePop(),
+        icon: Icon(Icons.arrow_back_rounded, color: theme.foreground),
+      ),
+      const SizedBox(height: AppSpacing.s6),
+      Text(title, style: AppText.titleLarge.copyWith(color: theme.foreground)),
+      const SizedBox(height: AppSpacing.s3),
+      Text(subtitle,
+          style: AppText.caption.copyWith(color: theme.foregroundMuted)),
+    ]);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════
 // 私有组件
 // ═══════════════════════════════════════════════════════════
+
+class _MembershipEntryCard extends StatelessWidget {
+  const _MembershipEntryCard({
+    required this.status,
+    required this.compact,
+    required this.onTap,
+  });
+
+  final MembershipStatus? status;
+  final bool compact;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    final membership = status ?? const MembershipStatus();
+    final membershipTheme = MembershipTheme.forTier(membership.tier);
+    final isFree = membership.tier == MembershipTier.glimmer;
+    final storage = _storageSummary(membership);
+    final aiRemaining =
+        (membership.aiQuota - membership.aiUsed).clamp(0, 999999);
+    return Semantics(
+      button: true,
+      label: '隙光会员，当前${membership.tier.label}',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          onTap: onTap,
+          child: Ink(
+            padding: EdgeInsets.all(compact ? AppSpacing.s14 : AppSpacing.s18),
+            decoration: BoxDecoration(
+              color: membershipTheme.primary
+                  .withValues(alpha: theme.isNight ? .20 : .13),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              border: Border.all(
+                color: membershipTheme.primary.withValues(alpha: .42),
+              ),
+            ),
+            child: Row(children: [
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: membershipTheme.primary.withValues(alpha: .18),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Icon(
+                  membership.tier == MembershipTier.galaxy
+                      ? Icons.auto_awesome_rounded
+                      : membership.tier == MembershipTier.starlight
+                          ? Icons.star_rounded
+                          : Icons.wb_twilight_rounded,
+                  color: theme.foreground,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Text(
+                        '${membership.tier.label}会员',
+                        style: AppText.titleSmall
+                            .copyWith(color: theme.foreground),
+                      ),
+                      if (membership.isTrial) ...[
+                        const SizedBox(width: AppSpacing.s6),
+                        Text('体验中',
+                            style: AppText.microLabel
+                                .copyWith(color: membershipTheme.primary)),
+                      ],
+                    ]),
+                    const SizedBox(height: AppSpacing.s3),
+                    Text(
+                      isFree
+                          ? '1GB 永久空间 · 查看会员方案'
+                          : membership.aiQuota > 0
+                              ? '$storage · AI 剩余 $aiRemaining 次'
+                              : '$storage · ${membership.cancelAtPeriodEnd ? '到期后回到微光' : '自动续费中'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.caption
+                          .copyWith(color: theme.foregroundMuted),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: theme.foregroundMuted),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _storageSummary(MembershipStatus value) {
+    final used = value.storageUsedBytes / (1024 * 1024 * 1024);
+    final total = value.storageQuotaBytes / (1024 * 1024 * 1024);
+    final usedLabel = used < .1
+        ? '${(used * 1024).round()}MB'
+        : '${used.toStringAsFixed(1)}GB';
+    return '$usedLabel / ${total.round()}GB';
+  }
+}
 
 /// 资料卡片 — 点击进入编辑
 class _ProfileCard extends StatelessWidget {

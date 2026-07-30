@@ -13,6 +13,7 @@ class FragmentDetailState {
     this.error,
     this.polishStatus = FragmentPolishStatus.idle,
     this.polishedText = '',
+    this.originalText = '',
     this.polishMessage = '',
   });
 
@@ -20,6 +21,7 @@ class FragmentDetailState {
   final Object? error;
   final FragmentPolishStatus polishStatus;
   final String polishedText;
+  final String originalText;
   final String polishMessage;
 
   FragmentDetailState copyWith({
@@ -27,6 +29,7 @@ class FragmentDetailState {
     Object? error,
     FragmentPolishStatus? polishStatus,
     String? polishedText,
+    String? originalText,
     String? polishMessage,
   }) {
     return FragmentDetailState(
@@ -34,6 +37,7 @@ class FragmentDetailState {
       error: error,
       polishStatus: polishStatus ?? this.polishStatus,
       polishedText: polishedText ?? this.polishedText,
+      originalText: originalText ?? this.originalText,
       polishMessage: polishMessage ?? this.polishMessage,
     );
   }
@@ -85,19 +89,27 @@ class FragmentDetailController
   Future<void> polish({
     required String contentText,
     required String emotion,
+    List<String> tags = const [],
   }) async {
     if (!ref.read(aiEnabledProvider)) return;
     if (state.polishStatus == FragmentPolishStatus.loading) return;
     state = state.copyWith(
       polishStatus: FragmentPolishStatus.loading,
       polishedText: '',
+      originalText: contentText,
       polishMessage: '',
     );
     try {
       final result = await ref
           .read(aiRepositoryProvider)
-          .polishFragment(contentText, emotion);
-      if (result['status'] == 'error' || result['status'] == 'rate_limited') {
+          .polishFragment(contentText, emotion, tags: tags);
+      if (const {
+        'error',
+        'rate_limited',
+        'membership_required',
+        'quota_exhausted',
+        'parse_error'
+      }.contains(result['status'])) {
         state = state.copyWith(
           polishStatus: FragmentPolishStatus.error,
           polishMessage: result['message'] as String? ?? 'AI 服务暂时不可用，请稍后重试。',
@@ -106,7 +118,10 @@ class FragmentDetailController
       }
       state = state.copyWith(
         polishStatus: FragmentPolishStatus.done,
-        polishedText: result['polished_text'] as String? ?? '',
+        polishedText: result['status'] == 'no_change'
+            ? ''
+            : result['polished_text'] as String? ?? contentText,
+        originalText: result['original_text'] as String? ?? contentText,
         polishMessage: result['message'] as String? ?? '',
       );
     } catch (error) {
@@ -122,6 +137,7 @@ class FragmentDetailController
     state = state.copyWith(
       polishStatus: FragmentPolishStatus.idle,
       polishedText: '',
+      originalText: '',
       polishMessage: '',
     );
   }

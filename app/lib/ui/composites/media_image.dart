@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../design/tokens/colors.dart';
+import '../../app/providers.dart';
 import 'media_file_image_stub.dart'
     if (dart.library.io) 'media_file_image_io.dart';
 
@@ -19,7 +21,7 @@ void _evictCacheIfNeeded() {
 }
 
 /// 媒体图片组件 — 支持 base64/本地路径/网络URL，网络图片带缓存
-class MediaImage extends StatelessWidget {
+class MediaImage extends ConsumerWidget {
   const MediaImage({
     super.key,
     required this.source,
@@ -32,15 +34,19 @@ class MediaImage extends StatelessWidget {
   final Widget fallback;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final value = source.trim();
     if (value.isEmpty) return fallback;
 
     // Network URLs (http/https) or proxied paths (/media/ or users/ -> /media/)
-    final networkSource = _networkSource(value);
+    final api = ref.watch(apiClientProvider);
+    final networkSource = _networkSource(value, api);
+    final needsAuth =
+        value.startsWith('users/') || value.startsWith('/media/users/');
     if (networkSource != null) {
       return CachedNetworkImage(
         imageUrl: networkSource,
+        httpHeaders: needsAuth ? api.mediaAuthorizationHeaders : const {},
         fit: fit,
         placeholder: (_, __) => Container(
           color: AppColors.paper,
@@ -101,12 +107,14 @@ class MediaImage extends StatelessWidget {
     }
   }
 
-  String? _networkSource(String value) {
+  String? _networkSource(String value, dynamic api) {
     if (value.startsWith('http://') || value.startsWith('https://')) {
       return value;
     }
-    if (value.startsWith('/media/')) return value;
-    if (value.startsWith('users/')) return '/media/$value';
+    if (value.startsWith('/media/users/')) {
+      return api.mediaObjectUrl(value.substring('/media/'.length));
+    }
+    if (value.startsWith('users/')) return api.mediaObjectUrl(value);
     return null;
   }
 }

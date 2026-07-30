@@ -8,4 +8,5 @@ class StatsApi {
   Future<Map<String, dynamic>> emotionDensity() =>
       _api.get('/stats/emotion-density');
   Future<Map<String, dynamic>> frequentWords() => _api.get('/stats/freq-words');
+  Future<Map<String, dynamic>> tideInsight() => _api.get('/stats/tide');
 }

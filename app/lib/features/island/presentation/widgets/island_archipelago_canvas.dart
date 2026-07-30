@@ -29,14 +29,14 @@ void paintIslandSeaAtmosphere(
       ? [
           AppColors.islandSeaNightDeep.withValues(alpha: .74 * alpha),
           AppColors.islandSeaNightMid.withValues(alpha: .68 * alpha),
-          AppColors.islandSeaNightMist.withValues(alpha: .56 * alpha),
+          AppColors.islandSeaNightBlue.withValues(alpha: .56 * alpha),
           AppColors.islandSeaNightDusk.withValues(alpha: .42 * alpha),
         ]
       : [
           AppColors.islandSeaDayWarm.withValues(alpha: .62 * alpha),
           AppColors.islandSeaDayMint.withValues(alpha: .72 * alpha),
           AppColors.islandSeaDayMist.withValues(alpha: .62 * alpha),
-          AppColors.islandSeaDayDusk.withValues(alpha: .52 * alpha),
+          AppColors.islandSeaDaySand.withValues(alpha: .52 * alpha),
         ];
   canvas.drawRect(
     bounds,
@@ -64,12 +64,12 @@ void paintIslandSeaAtmosphere(
       ..shader = RadialGradient(
         colors: [
           (theme.isNight
-                  ? AppColors.islandSeaGlowNight
-                  : AppColors.islandSeaGlowDay)
+                  ? AppColors.islandBasinNightGreen
+                  : AppColors.islandBasinDayGreen)
               .withValues(alpha: .13 * alpha),
           (theme.isNight
-                  ? AppColors.islandSeaHazeNight
-                  : AppColors.islandSeaHazeDay)
+                  ? AppColors.islandBasinNightBlue
+                  : AppColors.islandBasinDayBlue)
               .withValues(alpha: .065 * alpha),
           Colors.transparent,
         ],
@@ -244,7 +244,7 @@ class _IslandArchipelagoCanvasState extends State<IslandArchipelagoCanvas>
     );
     _arrival = AnimationController(
       vsync: this,
-      duration: AppMotion.islandArrival,
+      duration: AppMotion.islandCanvasTransition,
     );
     _reflow = AnimationController(
       vsync: this,
@@ -1535,15 +1535,7 @@ class _ArchipelagoPainter extends CustomPainter {
       AppColors.emotionHappy,
       AppColors.emotionTired,
     ];
-    return colors[(_stableStringHash(name) + index) % colors.length];
-  }
-
-  int _stableStringHash(String value) {
-    var hash = 0;
-    for (final codeUnit in value.codeUnits) {
-      hash = (hash * 31 + codeUnit) & 0x7fffffff;
-    }
-    return hash;
+    return colors[(name.hashCode.abs() + index) % colors.length];
   }
 
   @override

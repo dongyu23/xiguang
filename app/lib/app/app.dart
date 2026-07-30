@@ -25,6 +25,7 @@ import '../features/sync/presentation/providers/sync_provider.dart';
 import '../features/fragment/domain/fragment.dart';
 import '../features/fragment/presentation/providers/fragment_providers.dart';
 import '../features/reminder/application/reminder_providers.dart';
+import '../features/membership/application/membership_controller.dart';
 import 'router.dart';
 import 'splash_gate.dart';
 
@@ -93,6 +94,7 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
       next.whenData((session) {
         ref.read(authSessionProvider.notifier).state = session;
         if (session != null) {
+          unawaited(ref.read(membershipProvider.future));
           ref.read(aiEnabledProvider.notifier).state = session.aiEnabled;
           _scheduleReminders();
           // 重启 app 时（authRestore 恢复会话）主动触发一次同步检查。
@@ -120,6 +122,7 @@ class _XiguangAppState extends ConsumerState<XiguangApp> {
       // 此时 apiClient 还没 token，永远拿到离线状态；登录后没有任何地方再次触发，
       // 导致用户进入应用后云同步一直显示离线，必须手动点测试连接才会更新。
       if (previous?.id != next?.id && next != null) {
+        unawaited(ref.read(membershipProvider.future));
         _scheduleReminders();
         // 会话变更（登录或恢复）-> 立即标记已连接。
         // 登录：刚成功调用了 /auth/login，后端必然可达。

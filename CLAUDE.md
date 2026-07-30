@@ -226,7 +226,7 @@ Reflectly 案例：逻辑是"通过持续日记和 AI 引导建立情绪觉察�
 **B. 深织线（P2 — 可做基础版）**
 用户主动进入织线页，完整建立关系。
 - 流程：光片详情 → "和另一束光织在一起" → 选择目标光片 → 选择关系类型 → 可选说明 → "织好这条线"
-- 关系类型：回声/伏笔/余震/平行宇宙/小小救命/潮汐/旧光/自定义
+- 关系类型（默认 7 个，用户可自定义新增/编辑/收起，与情绪选择器同构）：回声/伏笔/余震/平行宇宙/小小救命/潮汐/旧光。用户可在「我的 -> 管理织线类型」增删改；relation_type 字段存类型名 text，删类型时织线保留原文字
 - MVP 不做拖拽星图
 
 **C. AI 织线（后期）**
@@ -728,7 +728,8 @@ lib/
 │   ├── relation/
 │   │   ├── domain/
 │   │   │   ├── relation.dart             # Relation (freezed) — id, public_id, source, target, type, custom_label, note
-│   │   │   ├── relation_type.dart        # enum RelationType { cause, inspiration, emotionContinue, samePhase, remindsMe, custom }
+│   │   │   ├── user_relation_type.dart   # UserRelationType (与 UserEmotion 同构，默认 7 个 + 自定义)
+│   │   │   ├── relation_type_color.dart   # autoColorForRelationTypeName + iconForRelationType + iconOptions
 │   │   │   └── relation_repository.dart  # abstract class RelationRepository
 │   │   ├── data/
 │   │   │   ├── relation_api.dart         # dio: POST /api/v1/relations, DELETE /api/v1/relations/{id}
@@ -741,7 +742,9 @@ lib/
 │   │       │   ├── weave_page.dart        # 织线主页（可选：从光片详情页入口触发）
 │   │       │   └── relation_select_page.dart # 搜索/浏览历史光片，选择目标光片
 │   │       └── widgets/
-│   │           ├── relation_type_picker.dart # 关系类型选择器（回声/伏笔/余震/平行宇宙/小小救命/潮汐/旧光/自定义）
+│   │           ├── relation_type_picker.dart # 织线类型选择器（与 EmotionPicker 同构：网格+更多 sheet，用户可自定义）
+│   │           ├── relation_type_edit_sheet.dart # 类型编辑表单（名字/图标/描述）
+│   │           ├── relation_type_manage_page.dart # 「我的->管理织线类型」CRUD 页
 │   │           └── relation_note_input.dart  # 关系说明输入框（可选）
 │   │
 │   ├── starmap/
@@ -2960,7 +2963,7 @@ Row [
 - 数据导出与备份
 - 全文搜索
 - 通知与推送策略
-- 商业/付费模式
+- 商业/付费模式（会员 UI 框架已就位：三档微光/星光/星河 + 本地体验开通；真实付费集成待后端接入）
 - 国际化 (i18n)
 - 无障碍设计 (Accessibility)
 - 月度报告
