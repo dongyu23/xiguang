@@ -376,7 +376,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          find artifacts -maxdepth 1 -type f ! -name '*.sha256' -printf '%f\0' \
+          find artifacts -maxdepth 1 -type f \
+            ! -name '*.sha256' \
+            ! -name 'SHA256SUMS-*.txt' \
+            -printf '%f\0' \
             | sort -z \
             | while IFS= read -r -d '' name; do
                 sha256sum "artifacts/$name"
