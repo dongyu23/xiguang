@@ -1,445 +1,418 @@
-// PAGE_SIZE_EXEMPT: migration in progress; prompt state and result sections will be extracted.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../app/app_state.dart';
 import '../../../../design/themes/extensions/night_theme.dart';
-import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
-import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
-import '../../../../ui/primitives/night_background.dart';
-import '../../../../ui/primitives/page_back_button.dart';
+import '../../../../design/tokens/typography.dart';
 import '../../../../ui/composites/xiguang_card.dart';
-import '../../../../ui/composites/xiguang_chip.dart';
-import '../../../../ui/composites/xiguang_input.dart';
 import '../../../../ui/spaces/space_canvas.dart';
-import '../../domain/ai_request.dart';
 import '../../application/glow_organize_controller.dart';
+import '../../domain/ai_request.dart';
+import '../../domain/ai_response.dart';
 
 class GlowOrganizePage extends ConsumerStatefulWidget {
-  const GlowOrganizePage({super.key});
-
+  const GlowOrganizePage({super.key, this.initialScope});
+  final AIScope? initialScope;
   @override
   ConsumerState<GlowOrganizePage> createState() => _GlowOrganizePageState();
 }
 
 class _GlowOrganizePageState extends ConsumerState<GlowOrganizePage> {
-  final _inputController = TextEditingController();
-  final _messageController = ScrollController();
-  String _mode = 'weave';
-  static const _quickPrompts = [
-    _QuickPrompt(
-      icon: Icons.account_tree_outlined,
-      label: '看见靠近的线',
-      prompt: '这些光片里，哪些主题正在靠近？',
-    ),
-    _QuickPrompt(
-      icon: Icons.sell_outlined,
-      label: '给这组光命名',
-      prompt: '如果把最近的光片放在一起，可以怎么命名？',
-    ),
-    _QuickPrompt(
-      icon: Icons.visibility_off_outlined,
-      label: '只整理，不解释',
-      prompt: '请只帮我整理线索，不做心理解释。',
-    ),
-  ];
-  final List<_GlowMessage> _messages = [
-    _GlowMessage(
-      fromUser: false,
-      text: '我在。可以把你想问的线丢过来，比如“这些主题为什么会靠近？”',
-    ),
-    _GlowMessage(
-      fromUser: false,
-      text: '我只会在你主动发问时回应，不会在后台解释你。',
-    ),
-  ];
+  late AIScope _scope;
+  final _title = TextEditingController();
+  final _summary = TextEditingController();
+  final List<TextEditingController> _points = [];
+  bool _edited = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scope = widget.initialScope ?? const AIScope.range(7);
+  }
 
   @override
   void dispose() {
-    _inputController.dispose();
-    _messageController.dispose();
+    _title.dispose();
+    _summary.dispose();
+    for (final c in _points) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  void _scrollMessagesToEnd() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_messageController.hasClients) return;
-      _messageController.animateTo(
-        _messageController.position.maxScrollExtent,
-        duration: AppMotion.fast,
-        curve: AppMotion.easeOut,
-      );
-    });
+  void _loadDraft(AISummaryDraft draft) {
+    _title.text =
+        draft.titleCandidates.isEmpty ? '' : draft.titleCandidates.first;
+    _summary.text = draft.summary;
+    for (final c in _points) {
+      c.dispose();
+    }
+    _points
+      ..clear()
+      ..addAll(draft.keyPoints.map((p) => TextEditingController(text: p.text)));
+    _edited = false;
   }
 
   @override
   Widget build(BuildContext context) {
-    final loading = ref.watch(glowOrganizeControllerProvider).isLoading;
     final theme = NightTheme.of(context);
-    return Stack(children: [
-      const Positioned.fill(child: NightBackgroundPlaceholder()),
-      const Positioned.fill(child: AtmosphereBackground()),
-      Scaffold(
+    final enabled = ref.watch(aiEnabledProvider);
+    final async = ref.watch(glowOrganizeControllerProvider);
+    final draft = async.valueOrNull;
+    return Scaffold(
         backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.s22,
-                    AppSpacing.s12, AppSpacing.s22, AppSpacing.s22),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const _GlowHeader(),
-                    const SizedBox(height: AppSpacing.md),
-                    const _GlowBriefing(),
-                    const SizedBox(height: AppSpacing.s14),
-                    _ModeSelector(
-                      mode: _mode,
-                      onChanged: (value) => setState(() => _mode = value),
-                    ),
+        body: Stack(children: [
+          const Positioned.fill(child: AtmosphereBackground()),
+          SafeArea(
+              child: Column(children: [
+            Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.s14, AppSpacing.s6, AppSpacing.s14, 0),
+                child: Row(children: [
+                  IconButton(
+                      tooltip: '返回',
+                      onPressed: () => context.pop(),
+                      icon: Icon(Icons.arrow_back_rounded,
+                          color: theme.foreground)),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        Text('柔光总结',
+                            style: AppText.titleLarge
+                                .copyWith(color: theme.foreground)),
+                        Text('只整理你这次明确选择的光',
+                            style: AppText.caption
+                                .copyWith(color: theme.foregroundMuted))
+                      ]))
+                ])),
+            Expanded(
+                child: ListView(
+                    padding: const EdgeInsets.all(AppSpacing.s18),
+                    children: [
+                  _ScopePicker(
+                      scope: _scope,
+                      initial: widget.initialScope,
+                      onChanged: (scope) => setState(() {
+                            _scope = scope;
+                          })),
+                  const SizedBox(height: AppSpacing.s14),
+                  if (!enabled)
+                    _StatusCard(
+                        icon: Icons.visibility_off_outlined,
+                        text: '星图管理员已关闭。捕光、回看和织线仍可正常使用。'),
+                  if (enabled && draft == null && !async.isLoading)
+                    _StartCard(
+                        scope: _scope,
+                        onStart: () async {
+                          final result = await ref
+                              .read(glowOrganizeControllerProvider.notifier)
+                              .preview(_scope);
+                          if (mounted && result.status == 'success') {
+                            setState(() => _loadDraft(result));
+                          }
+                        }),
+                  if (async.isLoading)
+                    const _StatusCard(
+                        icon: Icons.auto_awesome_outlined,
+                        text: '正在轻轻整理这些光...'),
+                  if (async.hasError)
+                    _StatusCard(
+                        icon: Icons.cloud_off_outlined,
+                        text: '暂时没有收到回应，原有内容没有任何变化。',
+                        action: () => ref
+                            .read(glowOrganizeControllerProvider.notifier)
+                            .preview(_scope)),
+                  if (draft != null && draft.status != 'success')
+                    _StatusCard(
+                        icon: Icons.info_outline_rounded,
+                        text: draft.message.isEmpty ? '暂时无法整理。' : draft.message,
+                        action: enabled
+                            ? () => ref
+                                .read(glowOrganizeControllerProvider.notifier)
+                                .preview(_scope)
+                            : null),
+                  if (draft?.status == 'success') ...[
+                    _RangeBanner(scope: draft!.scope, count: draft.sourceCount),
                     const SizedBox(height: AppSpacing.s12),
-                    _QuickPromptRail(
-                      prompts: _quickPrompts,
-                      enabled: !loading,
-                      onSelected: _requestGlowWithPrompt,
-                    ),
-                    const SizedBox(height: AppSpacing.s14),
-                    Expanded(
-                      child: XiguangCard(
-                        padding: const EdgeInsets.all(AppSpacing.s14),
-                        child: Column(children: [
-                          Expanded(
-                            child: ListView.separated(
-                              controller: _messageController,
-                              physics: const BouncingScrollPhysics(),
-                              itemCount: _messages.length + (loading ? 1 : 0),
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: AppSpacing.s10),
-                              itemBuilder: (context, index) {
-                                if (loading && index == _messages.length) {
-                                  return const _TypingBubble();
-                                }
-                                return _MessageBubble(
-                                  message: _messages[index],
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.s12),
-                          Row(children: [
-                            Expanded(
-                              child: XiguangInput(
-                                controller: _inputController,
-                                maxLines: 3,
-                                textInputAction: TextInputAction.send,
-                                onSubmitted: (_) => _requestGlow(),
-                                hint: '比如：哪些线已经织好了？',
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.s10),
-                            SizedBox(
-                              width: 48,
-                              height: 48,
-                              child: IconButton.filled(
-                                tooltip: '发送',
-                                style: IconButton.styleFrom(
-                                  backgroundColor: theme.foreground,
-                                  foregroundColor: theme.surface,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(AppRadius.md),
-                                  ),
-                                ),
-                                onPressed: loading ? null : _requestGlow,
-                                icon: const Icon(
-                                  Icons.arrow_upward_rounded,
-                                  semanticLabel: '发送',
-                                ),
-                              ),
-                            ),
-                          ]),
-                        ]),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ]);
+                    _EditableResult(
+                        title: _title,
+                        summary: _summary,
+                        points: _points,
+                        draft: draft,
+                        onChanged: () {
+                          if (!_edited) setState(() => _edited = true);
+                        }),
+                    const SizedBox(height: AppSpacing.s12),
+                    _SourcesCard(draft: draft),
+                    const SizedBox(height: AppSpacing.s12),
+                    XiguangCard(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text('为什么这样整理',
+                              style: AppText.titleSmall
+                                  .copyWith(color: theme.foreground)),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(draft.why,
+                              style: AppText.body
+                                  .copyWith(color: theme.foregroundMuted))
+                        ])),
+                    const SizedBox(height: AppSpacing.s18),
+                    Row(children: [
+                      Expanded(
+                          child: OutlinedButton(
+                              onPressed: () => _reject(draft),
+                              child: const Text('不合适'))),
+                      const SizedBox(width: AppSpacing.s10),
+                      Expanded(
+                          flex: 2,
+                          child: FilledButton.icon(
+                              onPressed: _saving ? null : () => _save(draft),
+                              icon: _saving
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Icon(Icons.bookmark_add_outlined),
+                              label: const Text('留下这段整理')))
+                    ])
+                  ]
+                ]))
+          ]))
+        ]));
   }
 
-  Future<void> _requestGlow() async {
-    await _requestGlowWithPrompt(_inputController.text.trim());
-  }
-
-  Future<void> _requestGlowWithPrompt(String prompt) async {
-    if (ref.read(glowOrganizeControllerProvider).isLoading) return;
-    final contextText =
-        prompt.isEmpty ? 'manual chat request from starmap' : prompt;
-    setState(() {
-      if (prompt.isNotEmpty) {
-        _messages.add(_GlowMessage(fromUser: true, text: prompt));
-        _inputController.clear();
-      }
-    });
-    _scrollMessagesToEnd();
+  Future<void> _save(AISummaryDraft draft) async {
+    setState(() => _saving = true);
     try {
-      final response = await ref
-          .read(glowOrganizeControllerProvider.notifier)
-          .request(AIRequest(mode: _mode, context: contextText));
-      setState(() => _messages.add(
-          _GlowMessage(fromUser: false, text: response.summary ?? '请求已送达。')));
-      _scrollMessagesToEnd();
-    } catch (_) {
-      setState(() => _messages.add(const _GlowMessage(
-          fromUser: false, text: '柔光整理暂时不可用，但不会影响捕光、织线和回看。')));
-      _scrollMessagesToEnd();
+      final points = <AISummaryPoint>[];
+      for (var i = 0; i < draft.keyPoints.length; i++) {
+        points.add(AISummaryPoint(
+            text: _points[i].text.trim(),
+            sourceFragmentIds: draft.keyPoints[i].sourceFragmentIds));
+      }
+      await ref.read(glowOrganizeControllerProvider.notifier).save(
+          draft: draft,
+          title: _title.text.trim(),
+          summary: _summary.text.trim(),
+          points: points,
+          edited: _edited);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('这段整理已经留在星图注释里。')));
+        context.pop();
+      }
     } finally {
-      _scrollMessagesToEnd();
+      if (mounted) setState(() => _saving = false);
     }
   }
+
+  Future<void> _reject(AISummaryDraft draft) async {
+    final reason = await showModalBottomSheet<String>(
+        context: context,
+        builder: (context) => SafeArea(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const ListTile(
+                  title: Text('哪里不合适？'), subtitle: Text('可以直接关闭，不需要解释或填写提示词。')),
+              for (final item in const ['放错了', '名字不合适', '解释太多'])
+                ListTile(
+                    title: Text(item),
+                    onTap: () => Navigator.pop(context, item))
+            ])));
+    if (!mounted) return;
+    await ref
+        .read(glowOrganizeControllerProvider.notifier)
+        .reject(draft, reason);
+    if (mounted) context.pop();
+  }
 }
 
-class _QuickPrompt {
-  const _QuickPrompt({
-    required this.icon,
-    required this.label,
-    required this.prompt,
-  });
-
-  final IconData icon;
-  final String label;
-  final String prompt;
+class _ScopePicker extends StatelessWidget {
+  const _ScopePicker(
+      {required this.scope, required this.initial, required this.onChanged});
+  final AIScope scope;
+  final AIScope? initial;
+  final ValueChanged<AIScope> onChanged;
+  @override
+  Widget build(BuildContext context) {
+    final options = <AIScope>[
+      if (initial?.type == 'fragments') initial!,
+      if (initial?.type == 'island') initial!,
+      const AIScope.range(7),
+      const AIScope.range(30)
+    ];
+    return SegmentedButton<AIScope>(segments: [
+      for (final s in options)
+        ButtonSegment(
+            value: s,
+            label: Text(s.label),
+            icon: Icon(s.type == 'range'
+                ? Icons.date_range_outlined
+                : s.type == 'island'
+                    ? Icons.landscape_outlined
+                    : Icons.checklist_rounded))
+    ], selected: {
+      scope
+    }, onSelectionChanged: (v) => onChanged(v.first), showSelectedIcon: false);
+  }
 }
 
-class _GlowBriefing extends StatelessWidget {
-  const _GlowBriefing();
-
+class _StartCard extends StatelessWidget {
+  const _StartCard({required this.scope, required this.onStart});
+  final AIScope scope;
+  final VoidCallback onStart;
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
     return XiguangCard(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.s14, AppSpacing.s12, AppSpacing.s14, AppSpacing.s12),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(
-          width: 30,
-          height: 30,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: theme.accent.withValues(alpha: .14),
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          child: Icon(
-            Icons.auto_awesome_outlined,
-            size: 17,
-            color: theme.accent,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.s10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'STAR KEEPER',
-                style: AppText.eyebrow.copyWith(color: theme.foregroundMuted),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                '只在你主动发问时整理线索，不在后台解释你。',
-                style: AppText.body.copyWith(color: theme.foreground),
-              ),
-            ],
-          ),
-        ),
-      ]),
-    );
+        child: Column(children: [
+      Icon(Icons.auto_awesome_outlined, size: 30, color: theme.accent),
+      const SizedBox(height: AppSpacing.s10),
+      Text(scope.label,
+          style: AppText.titleMedium.copyWith(color: theme.foreground)),
+      const SizedBox(height: AppSpacing.sm),
+      Text('会生成一句摘要、主要线索和阶段名称候选。结果在你确认前不会保存。',
+          textAlign: TextAlign.center,
+          style: AppText.body.copyWith(color: theme.foregroundMuted)),
+      const SizedBox(height: AppSpacing.s14),
+      FilledButton.icon(
+          onPressed: onStart,
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: const Text('开始整理'))
+    ]));
   }
 }
 
-class _QuickPromptRail extends StatelessWidget {
-  const _QuickPromptRail({
-    required this.prompts,
-    required this.enabled,
-    required this.onSelected,
-  });
-
-  final List<_QuickPrompt> prompts;
-  final bool enabled;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
-      children: [
-        for (final prompt in prompts)
-          _QuickPromptChip(
-            prompt: prompt,
-            enabled: enabled,
-            onTap: () => onSelected(prompt.prompt),
-          ),
-      ],
-    );
-  }
-}
-
-class _QuickPromptChip extends StatelessWidget {
-  const _QuickPromptChip({
-    required this.prompt,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final _QuickPrompt prompt;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return XiguangChip(
-      label: prompt.label,
-      selected: false,
-      leading: Icon(prompt.icon, size: 15),
-      onSelected: enabled ? (_) => onTap() : null,
-    );
-  }
-}
-
-class _GlowHeader extends StatelessWidget {
-  const _GlowHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = NightTheme.of(context);
-    return Row(
-      children: [
-        PageBackButton(
-          onTap: () => Navigator.of(context).maybePop(),
-        ),
-        const SizedBox(width: AppSpacing.s12),
-        Expanded(
-          child: Text(
-            '柔光整理',
-            style: AppText.titleLarge.copyWith(color: theme.foreground),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ModeSelector extends StatelessWidget {
-  const _ModeSelector({required this.mode, required this.onChanged});
-
-  final String mode;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SegmentedButton<String>(
-      showSelectedIcon: false,
-      segments: const [
-        ButtonSegment(
-          value: 'weave',
-          icon: Icon(Icons.account_tree_outlined, size: 16),
-          label: Text('织线'),
-        ),
-        ButtonSegment(
-          value: 'name',
-          icon: Icon(Icons.sell_outlined, size: 16),
-          label: Text('命名'),
-        ),
-        ButtonSegment(
-          value: 'quiet',
-          icon: Icon(Icons.visibility_off_outlined, size: 16),
-          label: Text('不解释'),
-        ),
-      ],
-      selected: {mode},
-      onSelectionChanged: (values) => onChanged(values.first),
-    );
-  }
-}
-
-class _GlowMessage {
-  const _GlowMessage({required this.fromUser, required this.text});
-
-  final bool fromUser;
+class _StatusCard extends StatelessWidget {
+  const _StatusCard({required this.icon, required this.text, this.action});
+  final IconData icon;
   final String text;
-}
-
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
-
-  final _GlowMessage message;
-
+  final VoidCallback? action;
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
-    return Align(
-      alignment:
-          message.fromUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 420),
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s13, vertical: AppSpacing.s11),
-        decoration: BoxDecoration(
-          color: message.fromUser ? theme.foreground : theme.surface,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: message.fromUser ? null : Border.all(color: theme.border),
-        ),
-        child: Text(
-          message.text,
-          style: AppText.body.copyWith(
-            color: message.fromUser ? theme.surface : theme.foreground,
-          ),
-        ),
-      ),
-    );
+    return XiguangCard(
+        child: Row(children: [
+      Icon(icon, color: theme.accent),
+      const SizedBox(width: AppSpacing.s12),
+      Expanded(
+          child: Text(text,
+              style: AppText.body.copyWith(color: theme.foreground))),
+      if (action != null)
+        IconButton(
+            tooltip: '重试',
+            onPressed: action,
+            icon: const Icon(Icons.refresh_rounded))
+    ]));
   }
 }
 
-class _TypingBubble extends StatelessWidget {
-  const _TypingBubble();
-
+class _RangeBanner extends StatelessWidget {
+  const _RangeBanner({required this.scope, required this.count});
+  final AIScope scope;
+  final int count;
   @override
   Widget build(BuildContext context) {
     final theme = NightTheme.of(context);
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s13, vertical: AppSpacing.s11),
+    return Container(
+        padding: const EdgeInsets.all(AppSpacing.s12),
         decoration: BoxDecoration(
-          color: theme.surface,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: theme.border),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+            color: theme.accent.withValues(alpha: .10),
+            borderRadius: BorderRadius.circular(AppRadius.md)),
+        child: Row(children: [
+          Icon(Icons.visibility_outlined, color: theme.accent, size: 19),
           const SizedBox(width: AppSpacing.sm),
-          Text(
-            '正在看这条线...',
-            style: AppText.caption.copyWith(color: theme.foregroundMuted),
-          ),
-        ]),
-      ),
-    );
+          Expanded(
+              child: Text('实际读取：${scope.label}，共 $count 束光',
+                  style:
+                      AppText.captionStrong.copyWith(color: theme.foreground)))
+        ]));
+  }
+}
+
+class _EditableResult extends StatelessWidget {
+  const _EditableResult(
+      {required this.title,
+      required this.summary,
+      required this.points,
+      required this.draft,
+      required this.onChanged});
+  final TextEditingController title, summary;
+  final List<TextEditingController> points;
+  final AISummaryDraft draft;
+  final VoidCallback onChanged;
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return XiguangCard(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('阶段名称',
+          style: AppText.captionStrong.copyWith(color: theme.foregroundMuted)),
+      const SizedBox(height: AppSpacing.s6),
+      TextField(
+          controller: title,
+          onChanged: (_) => onChanged(),
+          decoration: const InputDecoration(hintText: '给这段时间一个名字')),
+      if (draft.titleCandidates.length > 1) ...[
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(spacing: 6, children: [
+          for (final candidate in draft.titleCandidates)
+            ActionChip(
+                label: Text(candidate),
+                onPressed: () {
+                  title.text = candidate;
+                  onChanged();
+                })
+        ])
+      ],
+      const SizedBox(height: AppSpacing.s14),
+      Text('一句短摘要',
+          style: AppText.captionStrong.copyWith(color: theme.foregroundMuted)),
+      const SizedBox(height: AppSpacing.s6),
+      TextField(
+          controller: summary, onChanged: (_) => onChanged(), maxLines: 3),
+      const SizedBox(height: AppSpacing.s14),
+      Text('主要线索',
+          style: AppText.captionStrong.copyWith(color: theme.foregroundMuted)),
+      for (var i = 0; i < points.length; i++)
+        Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: TextField(
+                controller: points[i],
+                onChanged: (_) => onChanged(),
+                maxLines: 2,
+                decoration: InputDecoration(prefixText: '${i + 1}. ')))
+    ]));
+  }
+}
+
+class _SourcesCard extends StatelessWidget {
+  const _SourcesCard({required this.draft});
+  final AISummaryDraft draft;
+  @override
+  Widget build(BuildContext context) {
+    final theme = NightTheme.of(context);
+    return XiguangCard(
+        child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: Text('查看引用原文',
+                style: AppText.titleSmall.copyWith(color: theme.foreground)),
+            subtitle: Text('${draft.sources.length} 束光，所有线索都可回看来源',
+                style: AppText.caption.copyWith(color: theme.foregroundMuted)),
+            children: [
+          for (final source in draft.sources)
+            ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(source.excerpt,
+                    maxLines: 3, overflow: TextOverflow.ellipsis),
+                subtitle: Text('${source.emotion} · 光片 ${source.fragmentId}'))
+        ]));
   }
 }

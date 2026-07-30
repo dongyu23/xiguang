@@ -25,9 +25,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
-  Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"xiguang", origin, size)) {
+  // The desktop build deliberately mirrors the mobile canvas. Win32Window
+  // treats this as the Flutter client-area size and centers it on screen.
+  Win32Window::Point origin(0, 0);
+  Win32Window::Size size(430, 860);
+  if (!window.Create(L"隙光", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

@@ -47,6 +47,12 @@ class AppSpacing {
   /// 时间河流进入批量选择后，为底部操作栏保留的空间。
   static const double selectionToolbarClearance = 156;
 
+  /// 小宇宙列表避开底部模式切换条的空间。
+  static const double universeListBottom = 76;
+
+  /// 支线画布缩放和平移时保留的边界。
+  static const double graphBoundary = 80;
+
   /// 页面水平内边距
   static double pageHorizontal(double width) => width > 520 ? 34 : 22;
 

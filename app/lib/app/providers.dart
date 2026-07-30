@@ -13,11 +13,17 @@ import '../features/fragment/data/fragment_repository_impl.dart';
 import '../features/fragment/domain/fragment_repository.dart';
 import '../features/island/data/island_repository.dart';
 import '../features/island/domain/island_repository.dart';
+import '../features/membership/data/membership_payment_gateway.dart';
+import '../features/membership/data/membership_repository.dart';
+import '../features/membership/domain/membership_payment_gateway.dart';
+import '../features/membership/domain/membership_repository.dart';
 import '../features/profile/data/local_archive_exporter.dart';
 import '../features/profile/domain/local_archive_repository.dart';
 import '../features/relation/data/relation_api.dart';
 import '../features/relation/data/relation_repository_impl.dart';
+import '../features/relation/data/relation_type_repository_impl.dart';
 import '../features/relation/domain/relation_repository.dart';
+import '../features/relation/domain/relation_type_repository.dart';
 import '../features/reminder/data/local_reminder_service.dart';
 import '../features/reminder/domain/local_reminder_port.dart';
 import '../features/space/data/space_api.dart';
@@ -34,7 +40,9 @@ import '../features/whitenoise/data/whitenoise_api.dart';
 import '../features/whitenoise/data/whitenoise_repository_impl.dart';
 import '../features/whitenoise/domain/whitenoise_repository.dart';
 import '../features/shared/data/api_client.dart';
+import '../features/shared/data/api_media_playback_access.dart';
 import '../features/shared/data/local/app_database.dart';
+import '../features/shared/domain/media_playback_access.dart';
 
 const _apiBaseUrlPrefsKey = 'xiguang.api_base_url';
 
@@ -111,6 +119,10 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return _apiClient;
 });
 
+final mediaPlaybackAccessProvider = Provider<MediaPlaybackAccess>((ref) {
+  return ApiMediaPlaybackAccess(ref.watch(apiClientProvider));
+});
+
 // ── Repository providers that remain here ──
 
 final aiRepositoryProvider = Provider<AIRepositoryPort>((ref) {
@@ -165,6 +177,13 @@ final relationRepositoryProvider = Provider<RelationRepositoryContract>((ref) {
   );
 });
 
+/// 关系类型仓库（本地 Drift）- 与 emotionRepositoryProvider 同构，
+/// 供 RelationTypesController 读取/管理用户自定义织线类型。
+final relationTypeRepositoryProvider =
+    Provider<RelationTypeRepositoryPort>((ref) {
+  return RelationTypeRepository(ref.watch(appDatabaseProvider));
+});
+
 final statsRepositoryProvider = Provider<StatsRepositoryImpl>((ref) {
   return StatsRepositoryImpl(StatsApi(ref.watch(apiClientProvider)));
 });
@@ -180,6 +199,17 @@ final whiteNoiseRepositoryProvider =
 
 final appUpdateRepositoryProvider = Provider<AppUpdateRepository>((ref) {
   return AppUpdateRepository(ref.watch(apiClientProvider));
+});
+
+final membershipRepositoryProvider = Provider<MembershipRepository>((ref) {
+  return MembershipRepositoryImpl(ref.watch(apiClientProvider));
+});
+
+final membershipPaymentGatewayProvider =
+    Provider<MembershipPaymentGatewayPort>((ref) {
+  final gateway = MembershipPaymentGateway();
+  ref.onDispose(gateway.dispose);
+  return gateway;
 });
 
 final syncApiProvider = Provider<SyncApi>((ref) {

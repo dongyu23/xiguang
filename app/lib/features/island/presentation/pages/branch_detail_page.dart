@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../design/themes/extensions/night_theme.dart';
+import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../design/tokens/typography.dart';
@@ -123,7 +124,7 @@ class _BranchDetailPageState extends ConsumerState<BranchDetailPage> {
                           const EdgeInsets.symmetric(vertical: AppSpacing.s10),
                       child: Row(children: [
                         AnimatedContainer(
-                          duration: const Duration(milliseconds: 220),
+                          duration: AppMotion.selection,
                           width: selected ? 12 : 8,
                           height: selected ? 12 : 8,
                           decoration: BoxDecoration(

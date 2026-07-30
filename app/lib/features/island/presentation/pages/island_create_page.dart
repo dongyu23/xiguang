@@ -5,6 +5,7 @@ import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
 import '../../application/island_create_controller.dart';
 import '../../../../design/themes/extensions/night_theme.dart';
+import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/radius.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../../../design/tokens/spacing.dart';
@@ -197,7 +198,7 @@ class _NewIslandPreview extends StatelessWidget {
               ),
             ),
           TweenAnimationBuilder<double>(
-            duration: const Duration(milliseconds: 720),
+            duration: AppMotion.islandReveal,
             curve: Curves.easeOutBack,
             tween: Tween(begin: .78, end: 1),
             builder: (_, scale, child) => Transform.scale(
@@ -215,7 +216,7 @@ class _NewIslandPreview extends StatelessWidget {
           Positioned(
             bottom: 0,
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
+              duration: AppMotion.selection,
               child: Text(
                 name.isEmpty ? '一座还没有名字的小岛' : name,
                 key: ValueKey(name),

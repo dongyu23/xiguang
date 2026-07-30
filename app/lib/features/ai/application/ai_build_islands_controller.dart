@@ -14,8 +14,9 @@ class AiBuildIslandsController extends AutoDisposeAsyncNotifier<void> {
     }
     state = const AsyncLoading();
     try {
-      final result =
-          await ref.read(aiRepositoryProvider).buildIslands(rangeDays: rangeDays);
+      final result = await ref
+          .read(aiRepositoryProvider)
+          .buildIslands(rangeDays: rangeDays);
       state = const AsyncData(null);
       return result;
     } catch (error, stackTrace) {

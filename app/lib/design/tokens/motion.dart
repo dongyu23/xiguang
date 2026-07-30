@@ -43,6 +43,11 @@ class AppMotion {
   /// 从群岛进入岛上时，岛体平移并放大的连续旅程。
   static const Duration islandTravel = Duration(milliseconds: 520);
 
+  static const Duration islandCanvasTransition = Duration(milliseconds: 760);
+  static const Duration islandReveal = Duration(milliseconds: 720);
+  static const Duration selection = Duration(milliseconds: 220);
+  static const Duration islandModeForward = Duration(milliseconds: 360);
+
   /// shimmer 高光扫过周期
   static const Duration shimmer = Duration(milliseconds: 1800);
 
@@ -110,6 +115,12 @@ class AppTiming {
   static const Duration oldLightReminderDelay = Duration(days: 3);
   static const Duration islandQuietReminderDelay = Duration(days: 30);
   static const Duration reminderMinimumLead = Duration(minutes: 2);
+  static const Duration paymentPurchaseTimeout = Duration(minutes: 2);
+  static const Duration paymentStatusPoll = Duration(seconds: 2);
+  static const Duration appleRestoreCollection = Duration(seconds: 3);
+  static const Duration recentWeek = Duration(days: 7);
+  static const Duration recentMonth = Duration(days: 30);
+  static const Duration timelineSearchDebounce = Duration(milliseconds: 280);
 
   static Duration retryBackoff(int attempts) {
     final milliseconds = (200 * (1 << attempts)).clamp(0, 3000);

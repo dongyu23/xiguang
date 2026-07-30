@@ -6,6 +6,7 @@ import '../../fragment/domain/fragment.dart';
 import '../../relation/domain/relation.dart';
 import '../domain/island_model.dart';
 import '../domain/universe_overview.dart';
+import 'island_providers.dart';
 
 final universeOverviewProvider = FutureProvider<UniverseOverview>((ref) async {
   final fragments = await ref.watch(fragmentsProvider.future);
@@ -49,6 +50,22 @@ final universeOverviewProvider = FutureProvider<UniverseOverview>((ref) async {
     relations: relations,
   );
 });
+
+final universeActionsProvider = Provider<UniverseActions>((ref) {
+  return UniverseActions(ref);
+});
+
+class UniverseActions {
+  const UniverseActions(this._ref);
+
+  final Ref _ref;
+
+  Future<void> deleteIsland(int islandId) async {
+    await _ref.read(islandRepositoryProvider).deleteIsland(islandId);
+    _ref.invalidate(universeOverviewProvider);
+    _ref.invalidate(islandsProvider);
+  }
+}
 
 List<BranchVisualSummary> buildBranchVisualSummaries(
   List<Relation> relations,

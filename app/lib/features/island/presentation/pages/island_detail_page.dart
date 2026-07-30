@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:xiguang/ui/primitives/overlay_snackbar.dart';
 
+import '../../../../app/app_state.dart';
 import '../../application/island_detail_controller.dart';
 import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/typography.dart';
@@ -58,6 +59,12 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
         children: [
           _IslandPageHeader(
             title: '岛上',
+            onOrganize: ref.watch(aiEnabledProvider) &&
+                    data != null &&
+                    data.island.islandId > 0
+                ? () => context
+                    .push('/glow-organize?islandId=${data.island.islandId}')
+                : null,
             onDelete: data != null && data.island.islandId > 0
                 ? () => _confirmDeleteIsland(data)
                 : null,
@@ -235,10 +242,12 @@ class _IslandDetailPageState extends ConsumerState<IslandDetailPage> {
 }
 
 class _IslandPageHeader extends StatelessWidget {
-  const _IslandPageHeader({required this.title, this.onDelete});
+  const _IslandPageHeader(
+      {required this.title, this.onDelete, this.onOrganize});
 
   final String title;
   final VoidCallback? onDelete;
+  final VoidCallback? onOrganize;
 
   @override
   Widget build(BuildContext context) {
@@ -259,6 +268,12 @@ class _IslandPageHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        if (onOrganize != null)
+          IconButton(
+            tooltip: '整理这座岛',
+            onPressed: onOrganize,
+            icon: Icon(Icons.auto_awesome_outlined, color: theme.accent),
+          ),
         if (onDelete != null)
           Semantics(
             button: true,

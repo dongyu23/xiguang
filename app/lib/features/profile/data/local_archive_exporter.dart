@@ -776,33 +776,40 @@ class LocalArchiveExporter implements LocalArchiveRepositoryPort {
     final file = File(path);
     if (!await file.exists()) throw const ArchiveIntegrityException('归档文件不存在');
     final input = InputFileStream(path);
-    late final Archive archive;
-    try {
-      archive = ZipDecoder().decodeStream(input);
-    } catch (_) {
-      throw const ArchiveIntegrityException('不是有效的 ZIP 文件');
-    } finally {
-      input.close();
-    }
-    if (archive.length > _maxEntries) {
-      throw const ArchiveIntegrityException('归档文件数量异常，已拒绝打开');
-    }
-    var expanded = 0;
+    Archive? archive;
     final files = <String, _ArchiveBytes>{};
-    for (final entry in archive) {
-      final name = entry.name.replaceAll('\\', '/');
-      if (!_safeArchivePath(name) || entry.isSymbolicLink) {
-        throw ArchiveIntegrityException('归档包含不安全路径：$name');
+    try {
+      try {
+        archive = ZipDecoder().decodeStream(input);
+      } catch (_) {
+        throw const ArchiveIntegrityException('不是有效的 ZIP 文件');
       }
-      expanded += entry.size;
-      if (expanded > _maxExpandedBytes) {
-        throw const ArchiveIntegrityException('归档解压体积异常，已拒绝打开');
+      if (archive.length > _maxEntries) {
+        throw const ArchiveIntegrityException('归档文件数量异常，已拒绝打开');
       }
-      if (entry.isFile) {
-        final bytes = entry.readBytes();
-        if (bytes == null) throw ArchiveIntegrityException('无法读取归档文件：$name');
-        files[name] = _ArchiveBytes(bytes);
+      var expanded = 0;
+      for (final entry in archive) {
+        final name = entry.name.replaceAll('\\', '/');
+        if (!_safeArchivePath(name) || entry.isSymbolicLink) {
+          throw ArchiveIntegrityException('归档包含不安全路径：$name');
+        }
+        expanded += entry.size;
+        if (expanded > _maxExpandedBytes) {
+          throw const ArchiveIntegrityException('归档解压体积异常，已拒绝打开');
+        }
+        if (entry.isFile) {
+          final bytes = entry.readBytes();
+          if (bytes == null) {
+            throw ArchiveIntegrityException('无法读取归档文件：$name');
+          }
+          files[name] = _ArchiveBytes(bytes);
+        }
       }
+    } finally {
+      if (archive != null) {
+        await Future.wait(archive.map((entry) => entry.close()));
+      }
+      await input.close();
     }
     for (final required in const [
       'README.md',

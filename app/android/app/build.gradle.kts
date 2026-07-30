@@ -27,17 +27,53 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("store") { dimension = "distribution" }
+        create("sideload") { dimension = "distribution" }
+    }
+
+    val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_PATH")
+    val releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+    val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+    val releaseSigningConfigured = listOf(
+        releaseStoreFile,
+        releaseStorePassword,
+        releaseKeyAlias,
+        releaseKeyPassword,
+    ).all { !it.isNullOrBlank() }
+    if (releaseSigningConfigured) {
+        signingConfigs.create("release") {
+            storeFile = file(releaseStoreFile!!)
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
+        }
+    }
+
+    gradle.taskGraph.whenReady {
+        val isRelease = allTasks.any { it.name.contains("Release", ignoreCase = true) }
+        if (isRelease && !releaseSigningConfigured) {
+            throw GradleException(
+                "Release signing requires ANDROID_KEYSTORE_PATH, " +
+                    "ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD",
+            )
         }
     }
 }
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // 支付宝官方 Android SDK。Flutter 侧只通过受控 MethodChannel 调用。
+    implementation("com.alipay.sdk:alipaysdk-android:15.8.38")
+    implementation("com.tencent.mm.opensdk:wechat-sdk-android:6.8.34")
 }
 
 kotlin {

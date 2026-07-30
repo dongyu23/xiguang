@@ -214,8 +214,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text('分析范围',
-                style:
-                    AppText.eyebrow.copyWith(color: theme.foregroundMuted)),
+                style: AppText.eyebrow.copyWith(color: theme.foregroundMuted)),
           ),
           const SizedBox(height: AppSpacing.xs),
           Wrap(
@@ -425,8 +424,7 @@ class _AiBuildIslandsPageState extends ConsumerState<AiBuildIslandsPage> {
           ]),
           const SizedBox(height: AppSpacing.s12),
           Text('为什么是这些光',
-              style: AppText.eyebrow
-                  .copyWith(color: theme.foregroundMuted)),
+              style: AppText.eyebrow.copyWith(color: theme.foregroundMuted)),
           const SizedBox(height: AppSpacing.xs),
           Text(
             island['description'] as String? ?? '',

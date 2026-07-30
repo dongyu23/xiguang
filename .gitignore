@@ -81,6 +81,7 @@ app/assets/islands/source/
 *.sqlite
 *.sqlite3
 certs/
+secrets/
 *.apk
 app/android/.kotlin/
 

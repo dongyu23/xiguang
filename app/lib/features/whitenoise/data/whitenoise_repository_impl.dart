@@ -23,6 +23,10 @@ class WhiteNoiseRepositoryImpl implements WhiteNoiseRepositoryContract {
             icon: fallback?.icon ?? id,
             audioFile: fallback?.audioFile ?? '',
             category: item['category'] as String? ?? fallback?.category ?? '',
+            requiredTier: item['required_tier'] as String? ??
+                fallback?.requiredTier ??
+                'glimmer',
+            locked: item['locked'] as bool? ?? fallback?.locked ?? false,
           );
         })
         .where((item) => item.id.isNotEmpty)

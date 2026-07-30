@@ -4,18 +4,30 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "8088:80"
-      - "8443:443"
+      - "${HTTP_PORT:-8088}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    environment:
+      PAYMENT_ENABLED: ${PAYMENT_ENABLED:-false}
+      TLS_CERT_BASE64: ${TLS_CERT_BASE64:-}
+      TLS_KEY_BASE64: ${TLS_KEY_BASE64:-}
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.tls.conf:/etc/nginx/nginx.tls.conf:ro
+      - ./scripts/nginx-entrypoint.sh:/xiguang-nginx-entrypoint.sh:ro
       - ./certs:/etc/nginx/certs:ro
       - ./app/build/web:/usr/share/nginx/html:ro
       # App 在线更新 APK 静态目录 — nginx alias 指向此路径。
       # 发布脚本把 APK 放到 ./app-releases/。
       - ./app-releases:/var/xiguang/app-releases:ro
+    entrypoint: ["/bin/sh", "/xiguang-nginx-entrypoint.sh"]
     depends_on:
       app:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "if [ \"$${PAYMENT_ENABLED:-false}\" = true ]; then wget -q --no-check-certificate -O /dev/null https://127.0.0.1/healthz; else wget -q -O /dev/null http://127.0.0.1/healthz; fi"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     mem_limit: 64m
     restart: unless-stopped
 
@@ -45,6 +57,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-glimmer_minio}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-glimmer_minio_password}
       MINIO_BUCKET: ${MINIO_BUCKET:-glimmer-media}
@@ -63,9 +76,62 @@ services:
       TENCENT_ASR_REALTIME_HOST: ${TENCENT_ASR_REALTIME_HOST:-asr.cloud.tencent.com}
       RELEASE_STATIC_DIR: ${RELEASE_STATIC_DIR:-/var/xiguang/app-releases}
       RELEASE_DOWNLOAD_BASE: ${RELEASE_DOWNLOAD_BASE:-/media/app}
+      PAYMENT_ENABLED: ${PAYMENT_ENABLED:-false}
+      PAYMENT_ENV: ${PAYMENT_ENV:-sandbox}
+      PAYMENT_CHANNELS: ${PAYMENT_CHANNELS:-}
+      PAYMENT_PUBLIC_BASE_URL: ${PAYMENT_PUBLIC_BASE_URL:-}
+      PAYMENT_DATA_ENCRYPTION_KEY: ${PAYMENT_DATA_ENCRYPTION_KEY:-}
+      APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-}
+      APPLE_APP_ID: ${APPLE_APP_ID:-}
+      APPLE_ISSUER_ID: ${APPLE_ISSUER_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY_BASE64: ${APPLE_PRIVATE_KEY_BASE64:-}
+      WECHAT_PAY_APP_ID: ${WECHAT_PAY_APP_ID:-}
+      WECHAT_PAY_MCH_ID: ${WECHAT_PAY_MCH_ID:-}
+      WECHAT_PAY_CERT_SERIAL: ${WECHAT_PAY_CERT_SERIAL:-}
+      WECHAT_PAY_PRIVATE_KEY_BASE64: ${WECHAT_PAY_PRIVATE_KEY_BASE64:-}
+      WECHAT_PAY_API_V3_KEY: ${WECHAT_PAY_API_V3_KEY:-}
+      WECHAT_PAY_PLAN_ID: ${WECHAT_PAY_PLAN_ID:-}
+      WECHAT_PAY_API_BASE: ${WECHAT_PAY_API_BASE:-https://api.mch.weixin.qq.com}
+      WECHAT_PAY_CONTRACT_PATH: ${WECHAT_PAY_CONTRACT_PATH:-/v3/papay/contracts/app-pre-entrust-sign}
+      WECHAT_PAY_CHARGE_PATH: ${WECHAT_PAY_CHARGE_PATH:-/v3/papay/transactions}
+      WECHAT_PAY_QUERY_PATH: ${WECHAT_PAY_QUERY_PATH:-/v3/papay/transactions/out-trade-no/{out_trade_no}}
+      WECHAT_PAY_CANCEL_PATH: ${WECHAT_PAY_CANCEL_PATH:-/v3/papay/contracts/{contract_id}/terminate}
+      ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
+      ALIPAY_APP_PRIVATE_KEY_BASE64: ${ALIPAY_APP_PRIVATE_KEY_BASE64:-}
+      ALIPAY_APP_PUBLIC_CERT_BASE64: ${ALIPAY_APP_PUBLIC_CERT_BASE64:-}
+      ALIPAY_PUBLIC_CERT_BASE64: ${ALIPAY_PUBLIC_CERT_BASE64:-}
+      ALIPAY_ROOT_CERT_BASE64: ${ALIPAY_ROOT_CERT_BASE64:-}
+      ALIPAY_PERSONAL_PRODUCT_CODE: ${ALIPAY_PERSONAL_PRODUCT_CODE:-}
+      ALIPAY_SIGN_SCENE: ${ALIPAY_SIGN_SCENE:-INDUSTRY|DEFAULT}
+      ALIPAY_GATEWAY: ${ALIPAY_GATEWAY:-}
+      PAYMENT_ENABLED_FILE: ${PAYMENT_ENABLED_FILE:-}
+      PAYMENT_ENV_FILE: ${PAYMENT_ENV_FILE:-}
+      PAYMENT_CHANNELS_FILE: ${PAYMENT_CHANNELS_FILE:-}
+      PAYMENT_PUBLIC_BASE_URL_FILE: ${PAYMENT_PUBLIC_BASE_URL_FILE:-}
+      PAYMENT_DATA_ENCRYPTION_KEY_FILE: ${PAYMENT_DATA_ENCRYPTION_KEY_FILE:-}
+      APPLE_BUNDLE_ID_FILE: ${APPLE_BUNDLE_ID_FILE:-}
+      APPLE_APP_ID_FILE: ${APPLE_APP_ID_FILE:-}
+      APPLE_ISSUER_ID_FILE: ${APPLE_ISSUER_ID_FILE:-}
+      APPLE_KEY_ID_FILE: ${APPLE_KEY_ID_FILE:-}
+      APPLE_PRIVATE_KEY_BASE64_FILE: ${APPLE_PRIVATE_KEY_BASE64_FILE:-}
+      WECHAT_PAY_APP_ID_FILE: ${WECHAT_PAY_APP_ID_FILE:-}
+      WECHAT_PAY_MCH_ID_FILE: ${WECHAT_PAY_MCH_ID_FILE:-}
+      WECHAT_PAY_CERT_SERIAL_FILE: ${WECHAT_PAY_CERT_SERIAL_FILE:-}
+      WECHAT_PAY_PRIVATE_KEY_BASE64_FILE: ${WECHAT_PAY_PRIVATE_KEY_BASE64_FILE:-}
+      WECHAT_PAY_API_V3_KEY_FILE: ${WECHAT_PAY_API_V3_KEY_FILE:-}
+      WECHAT_PAY_PLAN_ID_FILE: ${WECHAT_PAY_PLAN_ID_FILE:-}
+      ALIPAY_APP_ID_FILE: ${ALIPAY_APP_ID_FILE:-}
+      ALIPAY_APP_PRIVATE_KEY_BASE64_FILE: ${ALIPAY_APP_PRIVATE_KEY_BASE64_FILE:-}
+      ALIPAY_APP_PUBLIC_CERT_BASE64_FILE: ${ALIPAY_APP_PUBLIC_CERT_BASE64_FILE:-}
+      ALIPAY_PUBLIC_CERT_BASE64_FILE: ${ALIPAY_PUBLIC_CERT_BASE64_FILE:-}
+      ALIPAY_ROOT_CERT_BASE64_FILE: ${ALIPAY_ROOT_CERT_BASE64_FILE:-}
+      ALIPAY_PERSONAL_PRODUCT_CODE_FILE: ${ALIPAY_PERSONAL_PRODUCT_CODE_FILE:-}
     volumes:
       # 与 nginx 共享 APK 静态目录，后端 service 校验文件存在性。
       - ./app-releases:/var/xiguang/app-releases:ro
+      # `_FILE` 形式的密钥放入本地 secrets/，该目录已被 git 忽略。
+      - ./secrets:/run/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -86,8 +152,90 @@ services:
         max-size: "50m"
         max-file: "3"
 
+  payment-init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        TARGETARCH: ${DOCKER_TARGETARCH:-amd64}
+    command: ["payment-init"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-glimmer}
+      DB_PASSWORD: ${DB_PASSWORD:-glimmer_dev_password}
+      DB_NAME: ${DB_NAME:-glimmer}
+      DB_SSLMODE: disable
+      JWT_SECRET: ${JWT_SECRET:-dev_only_change_me_64_chars_minimum_for_real_deployments}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-*}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-glimmer_minio}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-glimmer_minio_password}
+      PAYMENT_ENABLED: ${PAYMENT_ENABLED:-false}
+      PAYMENT_ENV: ${PAYMENT_ENV:-sandbox}
+      PAYMENT_CHANNELS: ${PAYMENT_CHANNELS:-}
+      PAYMENT_PUBLIC_BASE_URL: ${PAYMENT_PUBLIC_BASE_URL:-}
+      PAYMENT_DATA_ENCRYPTION_KEY: ${PAYMENT_DATA_ENCRYPTION_KEY:-}
+      APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-}
+      APPLE_APP_ID: ${APPLE_APP_ID:-}
+      APPLE_ISSUER_ID: ${APPLE_ISSUER_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY_BASE64: ${APPLE_PRIVATE_KEY_BASE64:-}
+      WECHAT_PAY_APP_ID: ${WECHAT_PAY_APP_ID:-}
+      WECHAT_PAY_MCH_ID: ${WECHAT_PAY_MCH_ID:-}
+      WECHAT_PAY_CERT_SERIAL: ${WECHAT_PAY_CERT_SERIAL:-}
+      WECHAT_PAY_PRIVATE_KEY_BASE64: ${WECHAT_PAY_PRIVATE_KEY_BASE64:-}
+      WECHAT_PAY_API_V3_KEY: ${WECHAT_PAY_API_V3_KEY:-}
+      WECHAT_PAY_PLAN_ID: ${WECHAT_PAY_PLAN_ID:-}
+      WECHAT_PAY_API_BASE: ${WECHAT_PAY_API_BASE:-https://api.mch.weixin.qq.com}
+      WECHAT_PAY_CONTRACT_PATH: ${WECHAT_PAY_CONTRACT_PATH:-/v3/papay/contracts/app-pre-entrust-sign}
+      WECHAT_PAY_CHARGE_PATH: ${WECHAT_PAY_CHARGE_PATH:-/v3/papay/transactions}
+      WECHAT_PAY_QUERY_PATH: ${WECHAT_PAY_QUERY_PATH:-/v3/papay/transactions/out-trade-no/{out_trade_no}}
+      WECHAT_PAY_CANCEL_PATH: ${WECHAT_PAY_CANCEL_PATH:-/v3/papay/contracts/{contract_id}/terminate}
+      ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
+      ALIPAY_APP_PRIVATE_KEY_BASE64: ${ALIPAY_APP_PRIVATE_KEY_BASE64:-}
+      ALIPAY_APP_PUBLIC_CERT_BASE64: ${ALIPAY_APP_PUBLIC_CERT_BASE64:-}
+      ALIPAY_PUBLIC_CERT_BASE64: ${ALIPAY_PUBLIC_CERT_BASE64:-}
+      ALIPAY_ROOT_CERT_BASE64: ${ALIPAY_ROOT_CERT_BASE64:-}
+      ALIPAY_PERSONAL_PRODUCT_CODE: ${ALIPAY_PERSONAL_PRODUCT_CODE:-}
+      ALIPAY_SIGN_SCENE: ${ALIPAY_SIGN_SCENE:-INDUSTRY|DEFAULT}
+      ALIPAY_GATEWAY: ${ALIPAY_GATEWAY:-}
+      PAYMENT_ENABLED_FILE: ${PAYMENT_ENABLED_FILE:-}
+      PAYMENT_ENV_FILE: ${PAYMENT_ENV_FILE:-}
+      PAYMENT_CHANNELS_FILE: ${PAYMENT_CHANNELS_FILE:-}
+      PAYMENT_PUBLIC_BASE_URL_FILE: ${PAYMENT_PUBLIC_BASE_URL_FILE:-}
+      PAYMENT_DATA_ENCRYPTION_KEY_FILE: ${PAYMENT_DATA_ENCRYPTION_KEY_FILE:-}
+      APPLE_BUNDLE_ID_FILE: ${APPLE_BUNDLE_ID_FILE:-}
+      APPLE_APP_ID_FILE: ${APPLE_APP_ID_FILE:-}
+      APPLE_ISSUER_ID_FILE: ${APPLE_ISSUER_ID_FILE:-}
+      APPLE_KEY_ID_FILE: ${APPLE_KEY_ID_FILE:-}
+      APPLE_PRIVATE_KEY_BASE64_FILE: ${APPLE_PRIVATE_KEY_BASE64_FILE:-}
+      WECHAT_PAY_APP_ID_FILE: ${WECHAT_PAY_APP_ID_FILE:-}
+      WECHAT_PAY_MCH_ID_FILE: ${WECHAT_PAY_MCH_ID_FILE:-}
+      WECHAT_PAY_CERT_SERIAL_FILE: ${WECHAT_PAY_CERT_SERIAL_FILE:-}
+      WECHAT_PAY_PRIVATE_KEY_BASE64_FILE: ${WECHAT_PAY_PRIVATE_KEY_BASE64_FILE:-}
+      WECHAT_PAY_API_V3_KEY_FILE: ${WECHAT_PAY_API_V3_KEY_FILE:-}
+      WECHAT_PAY_PLAN_ID_FILE: ${WECHAT_PAY_PLAN_ID_FILE:-}
+      ALIPAY_APP_ID_FILE: ${ALIPAY_APP_ID_FILE:-}
+      ALIPAY_APP_PRIVATE_KEY_BASE64_FILE: ${ALIPAY_APP_PRIVATE_KEY_BASE64_FILE:-}
+      ALIPAY_APP_PUBLIC_CERT_BASE64_FILE: ${ALIPAY_APP_PUBLIC_CERT_BASE64_FILE:-}
+      ALIPAY_PUBLIC_CERT_BASE64_FILE: ${ALIPAY_PUBLIC_CERT_BASE64_FILE:-}
+      ALIPAY_ROOT_CERT_BASE64_FILE: ${ALIPAY_ROOT_CERT_BASE64_FILE:-}
+      ALIPAY_PERSONAL_PRODUCT_CODE_FILE: ${ALIPAY_PERSONAL_PRODUCT_CODE_FILE:-}
+    volumes:
+      - ./secrets:/run/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nginx:
+        condition: service_healthy
+    restart: "no"
+
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16
     expose:
       - "5432"
     environment:
@@ -128,8 +276,6 @@ services:
     expose:
       - "9000"
       - "9001"
-    ports:
-      - "9000:9000"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-glimmer_minio}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-glimmer_minio_password}

@@ -72,7 +72,7 @@ void main() {
           contentText: const Value('一束测试的光'),
           emotion: const Value('平静'),
           tags: const Value('["归档"]'),
-          mediaUrls: Value('["${media.path}"]'),
+          mediaUrls: Value(jsonEncode([media.path])),
           createdAt: Value(DateTime.utc(2026, 7, 11, 1, 15)),
           updatedAt: Value(DateTime.utc(2026, 7, 11, 1, 20)),
         ));

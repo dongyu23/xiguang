@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../../design/themes/extensions/night_theme.dart';
+import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/motion.dart';
 import '../../../../design/tokens/spacing.dart';
 import '../../../../design/tokens/typography.dart';
@@ -221,7 +222,7 @@ String _stageLabel(IslandVisualStage stage) {
 Color _stageColor(IslandVisualStage stage, NightTheme theme) {
   return switch (stage) {
     IslandVisualStage.dormant => theme.foregroundMuted,
-    IslandVisualStage.relit => const Color(0xFFD7BC7C),
+    IslandVisualStage.relit => AppColors.islandRelitGold,
     _ => theme.accent,
   };
 }

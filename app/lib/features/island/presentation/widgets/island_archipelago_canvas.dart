@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../../../design/themes/extensions/night_theme.dart';
 import '../../../../design/tokens/colors.dart';
 import '../../../../design/tokens/motion.dart';
+import '../../../../design/tokens/spacing.dart';
 import '../../../../design/tokens/typography.dart';
 import '../../domain/island_visual_stage.dart';
 import '../../domain/universe_overview.dart';
@@ -26,16 +27,16 @@ void paintIslandSeaAtmosphere(
   final bounds = Offset.zero & size;
   final waterColors = theme.isNight
       ? [
-          const Color(0xFF112725).withValues(alpha: .74 * alpha),
-          const Color(0xFF1B3531).withValues(alpha: .68 * alpha),
-          const Color(0xFF26323A).withValues(alpha: .56 * alpha),
-          const Color(0xFF201F2B).withValues(alpha: .42 * alpha),
+          AppColors.islandSeaNightDeep.withValues(alpha: .74 * alpha),
+          AppColors.islandSeaNightMid.withValues(alpha: .68 * alpha),
+          AppColors.islandSeaNightBlue.withValues(alpha: .56 * alpha),
+          AppColors.islandSeaNightDusk.withValues(alpha: .42 * alpha),
         ]
       : [
-          const Color(0xFFF5F0E5).withValues(alpha: .62 * alpha),
-          const Color(0xFFDCEAE4).withValues(alpha: .72 * alpha),
-          const Color(0xFFE4EBE7).withValues(alpha: .62 * alpha),
-          const Color(0xFFF2E8DC).withValues(alpha: .52 * alpha),
+          AppColors.islandSeaDayWarm.withValues(alpha: .62 * alpha),
+          AppColors.islandSeaDayMint.withValues(alpha: .72 * alpha),
+          AppColors.islandSeaDayMist.withValues(alpha: .62 * alpha),
+          AppColors.islandSeaDaySand.withValues(alpha: .52 * alpha),
         ];
   canvas.drawRect(
     bounds,
@@ -63,12 +64,12 @@ void paintIslandSeaAtmosphere(
       ..shader = RadialGradient(
         colors: [
           (theme.isNight
-                  ? const Color(0xFF6FA395)
-                  : const Color(0xFF9FC5B9))
+                  ? AppColors.islandBasinNightGreen
+                  : AppColors.islandBasinDayGreen)
               .withValues(alpha: .13 * alpha),
           (theme.isNight
-                  ? const Color(0xFF8196B0)
-                  : const Color(0xFFB8CBD0))
+                  ? AppColors.islandBasinNightBlue
+                  : AppColors.islandBasinDayBlue)
               .withValues(alpha: .065 * alpha),
           Colors.transparent,
         ],
@@ -90,8 +91,7 @@ void paintIslandSeaAtmosphere(
       final y = baseY +
           sin(x / (54 + layer * 5) + phase * pi * 2 * direction + layer) *
               amplitude +
-          cos(x / (116 + layer * 7) - phase * pi * .8 + layer * .43) *
-              1.7;
+          cos(x / (116 + layer * 7) - phase * pi * .8 + layer * .43) * 1.7;
       if (x == startX) {
         path.moveTo(x, y);
       } else {
@@ -244,7 +244,7 @@ class _IslandArchipelagoCanvasState extends State<IslandArchipelagoCanvas>
     );
     _arrival = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 760),
+      duration: AppMotion.islandCanvasTransition,
     );
     _reflow = AnimationController(
       vsync: this,
@@ -840,7 +840,7 @@ class _SeaPageIndicator extends StatelessWidget {
               duration: AppMotion.quick,
               width: selected ? 15 : 5,
               height: 5,
-              margin: const EdgeInsets.symmetric(horizontal: 3),
+              margin: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
               decoration: BoxDecoration(
                 color: theme.accent.withValues(alpha: selected ? .78 : .24),
                 borderRadius: BorderRadius.circular(999),
@@ -1271,7 +1271,7 @@ class _ArchipelagoPainter extends CustomPainter {
   void _paintTides(Canvas canvas) {
     for (final item in layout.items) {
       final tideColor =
-          theme.isNight ? const Color(0xFF8DB4AB) : const Color(0xFF718F88);
+          theme.isNight ? AppColors.islandTideNight : AppColors.islandTideDay;
       for (var ring = 0; ring < 2; ring++) {
         final spread = item.radius * (3.05 + ring * .52);
         canvas.drawOval(

@@ -174,7 +174,7 @@ class _DeviceTile extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.s6,
-                        vertical: 2,
+                        vertical: AppSpacing.s2,
                       ),
                       decoration: BoxDecoration(
                         color: theme.accent.withValues(alpha: .12),
