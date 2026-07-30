@@ -1,4 +1,4 @@
-﻿name: Apple and Windows Release
+name: Apple and Windows Release
 
 on:
   pull_request:
