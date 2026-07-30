@@ -186,7 +186,12 @@ jobs:
           BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" artifacts/* \
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
+          elif ! gh release create "$GITHUB_REF_NAME" artifacts/* \
             --verify-tag \
             --generate-notes \
-            --title "隙光 $VERSION (build $BUILD_NUMBER)"
+            --title "隙光 $VERSION (build $BUILD_NUMBER)"; then
+            # 多平台工作流可能在同一时刻创建 Release；竞争时改为追加 Android 资产。
+            gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
+          fi
