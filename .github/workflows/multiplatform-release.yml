@@ -1,4 +1,4 @@
-name: Apple and Windows Release
+﻿name: Apple and Windows Release
 
 on:
   pull_request:
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   windows:
     name: Windows x64
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 35
     defaults:
       run:
