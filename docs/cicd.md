@@ -11,7 +11,7 @@
 Flutter PR 和 `main` 推送固定使用 Flutter 3.44.8，执行锁文件解析、格式检查、静态分析、全部测试和 Android Debug 编译。
 Debug APK 会保存为 Actions artifact，保留 14 天，可直接用于内部安装验证。
 
-## Android 自动安装包发布
+## 多平台自动安装包发布
 
 `Android Release` 工作流提供两种入口：
 
@@ -24,6 +24,16 @@ Debug APK 会保存为 Actions artifact，保留 14 天，可直接用于内部�
 - ARMv7、ARM64、x86_64 分架构签名 APK。
 - Google Play 使用的签名 AAB，以及用于权限核验的 Store APK。
 - `SHA256SUMS.txt`。
+
+`Apple and Windows Release` 同时生成：
+
+- Windows x64 完整运行目录 ZIP。
+- macOS Intel x64 应用 ZIP。
+- macOS Apple Silicon（M 系列）arm64 应用 ZIP。
+- iPhone 无签名编译验证 IPA；配置 Apple 签名材料后，额外生成可安装的签名 IPA。
+- `SHA256SUMS-apple-windows.txt` 以及每个文件的独立 SHA-256 文件。
+
+Pull Request 会在 GitHub 的 Windows、Intel Mac 和 Apple Silicon Mac 真机 runner 上完成编译验证。版本标签会把各平台产物追加到同一个 GitHub Release，不会覆盖 Android 产物。
 
 侧载 APK 包含应用内更新所需的 `REQUEST_INSTALL_PACKAGES` 权限；Store AAB 在 CI 中验证不得包含该权限。所有 APK 都会经过 `apksigner` 验证，标签版本必须与 `pubspec.yaml` 一致。
 
@@ -41,6 +51,23 @@ Debug APK 会保存为 Actions artifact，保留 14 天，可直接用于内部�
 | `ANDROID_KEYSTORE_PASSWORD` | JKS 密码 |
 | `ANDROID_KEY_ALIAS` | 签名别名 |
 | `ANDROID_KEY_PASSWORD` | 私钥密码 |
+
+iPhone 真机安装包必须使用 Apple Developer 证书和描述文件。配置以下 Repository Secrets 后，标签构建会生成 `ios-signed.ipa`：
+
+| 名称 | 说明 |
+|---|---|
+| `IOS_CERTIFICATE_P12_BASE64` | Apple Development/Distribution `.p12` 的 Base64 内容 |
+| `IOS_CERTIFICATE_PASSWORD` | `.p12` 导出密码 |
+| `IOS_PROVISIONING_PROFILE_BASE64` | 与 `com.xiguang.xiguang` 匹配的 `.mobileprovision` Base64 内容 |
+| `IOS_PROVISIONING_PROFILE_NAME` | 描述文件的精确名称 |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+可选 Repository Variables：
+
+| 名称 | 默认值 | 说明 |
+|---|---|---|
+| `IOS_CODE_SIGN_IDENTITY` | `Apple Distribution` | 证书身份；开发调试可设为 `Apple Development` |
+| `IOS_EXPORT_METHOD` | `ad-hoc` | 可设为 `development`、`ad-hoc` 或 `app-store-connect` |
 
 发布新版本时先更新 `app/pubspec.yaml`：
 
