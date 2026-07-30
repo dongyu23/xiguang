@@ -56,4 +56,3 @@ flutter test test/ui test/features/membership
 ```
 
 结果：42 项测试全部通过。
-
