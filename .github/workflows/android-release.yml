@@ -72,7 +72,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${API_BASE_URL:?missing FLUTTER_API_BASE_URL repository variable}"
-          [[ "$API_BASE_URL" =~ ^https?://[^/]+/.+ ]]
+          [[ "$API_BASE_URL" == "https://api.frozenfish.cn/api/v1" ]]
           : "${ANDROID_KEYSTORE_BASE64:?missing ANDROID_KEYSTORE_BASE64 secret}"
           : "${ANDROID_KEYSTORE_PASSWORD:?missing ANDROID_KEYSTORE_PASSWORD secret}"
           : "${ANDROID_KEY_ALIAS:?missing ANDROID_KEY_ALIAS secret}"
