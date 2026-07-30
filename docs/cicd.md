@@ -9,6 +9,51 @@
 5. 服务器执行幂等 `payment-init`，检查 `/healthz`、`/readyz`；失败时恢复上一镜像。
 
 Flutter PR 和 `main` 推送固定使用 Flutter 3.44.8，执行锁文件解析、格式检查、静态分析、全部测试和 Android Debug 编译。
+Debug APK 会保存为 Actions artifact，保留 14 天，可直接用于内部安装验证。
+
+## Android 自动安装包发布
+
+`Android Release` 工作流提供两种入口：
+
+- 推送与 `app/pubspec.yaml` 版本一致的语义化标签，例如 `v0.2.0`，自动创建 GitHub Release。
+- 在 Actions 中手动运行，仅构建并保存 30 天 artifact，不创建正式 Release。
+
+正式构建会同时生成：
+
+- GitHub/官网侧载的通用签名 APK。
+- ARMv7、ARM64、x86_64 分架构签名 APK。
+- Google Play 使用的签名 AAB，以及用于权限核验的 Store APK。
+- `SHA256SUMS.txt`。
+
+侧载 APK 包含应用内更新所需的 `REQUEST_INSTALL_PACKAGES` 权限；Store AAB 在 CI 中验证不得包含该权限。所有 APK 都会经过 `apksigner` 验证，标签版本必须与 `pubspec.yaml` 一致。
+
+配置 Repository Variable：
+
+| 名称 | 示例 |
+|---|---|
+| `FLUTTER_API_BASE_URL` | `https://example.com/api/v1` |
+
+配置 Repository Secrets：
+
+| 名称 | 说明 |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | Release JKS 文件的 Base64 内容 |
+| `ANDROID_KEYSTORE_PASSWORD` | JKS 密码 |
+| `ANDROID_KEY_ALIAS` | 签名别名 |
+| `ANDROID_KEY_PASSWORD` | 私钥密码 |
+
+发布新版本时先更新 `app/pubspec.yaml`：
+
+```yaml
+version: 0.3.0+3
+```
+
+合并到 `main` 后创建并推送标签：
+
+```bash
+git tag -a v0.3.0 -m "隙光 0.3.0"
+git push origin v0.3.0
+```
 
 ## 首次部署
 
