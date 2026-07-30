@@ -61,8 +61,8 @@ jobs:
       - name: Validate configuration
         shell: pwsh
         run: |
-          if ($env:API_BASE_URL -notmatch '^https?://[^/]+/.+') {
-            throw '缺少或无效的 FLUTTER_API_BASE_URL Repository Variable'
+          if ($env:API_BASE_URL -ne 'https://api.frozenfish.cn/api/v1') {
+            throw 'FLUTTER_API_BASE_URL 必须是 https://api.frozenfish.cn/api/v1'
           }
 
       - name: Resolve locked dependencies
@@ -153,7 +153,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${API_BASE_URL:?missing FLUTTER_API_BASE_URL repository variable}"
-          [[ "$API_BASE_URL" =~ ^https?://[^/]+/.+ ]]
+          [[ "$API_BASE_URL" == "https://api.frozenfish.cn/api/v1" ]]
 
       - name: Resolve locked dependencies
         run: flutter pub get --enforce-lockfile
@@ -242,7 +242,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${API_BASE_URL:?missing FLUTTER_API_BASE_URL repository variable}"
-          [[ "$API_BASE_URL" =~ ^https?://[^/]+/.+ ]]
+          [[ "$API_BASE_URL" == "https://api.frozenfish.cn/api/v1" ]]
           signing_values=(
             "$IOS_CERTIFICATE_P12_BASE64"
             "$IOS_CERTIFICATE_PASSWORD"
