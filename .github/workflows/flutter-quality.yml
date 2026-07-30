@@ -59,4 +59,12 @@ jobs:
         run: flutter test --coverage
 
       - name: Build Android debug artifact
-        run: flutter build apk --debug
+        run: flutter build apk --debug --flavor sideload
+
+      - name: Upload Android debug APK
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: xiguang-android-debug-${{ github.sha }}
+          path: app/build/app/outputs/flutter-apk/app-sideload-debug.apk
+          if-no-files-found: error
+          retention-days: 14

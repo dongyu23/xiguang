@@ -1,7 +1,7 @@
 name: xiguang
 description: 隙光 — 私人多媒体意识流记录工具。Flutter 前端。
 publish_to: "none"
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
