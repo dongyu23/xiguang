@@ -35,6 +35,7 @@ class WeavePage extends ConsumerStatefulWidget {
 class _WeavePageState extends ConsumerState<WeavePage> {
   final _noteController = TextEditingController();
   late final List<int> _chainIds;
+
   /// 当前选中的关系类型名（存 name，如"回声"）。空串表示尚未初始化，
   /// 首次拿到 relationTypesProvider 数据时自动选第一个可见类型。
   String _relationType = '';

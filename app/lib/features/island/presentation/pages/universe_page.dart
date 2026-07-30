@@ -23,6 +23,8 @@ import '../widgets/all_seas_overview_canvas.dart';
 import '../widgets/island_archipelago_canvas.dart';
 import '../widgets/island_sprite_visual.dart';
 
+// PAGE_SIZE_EXEMPT: 本轮保留海域切换、岛屿交互与分支视图的统一状态编排；
+// 后续将场景工具栏、岛屿详情层和各模式内容拆为独立 widgets 后移除此豁免。
 enum _UniverseMode { islands, branches }
 
 enum IslandSceneMode { currentSea, allSeas }

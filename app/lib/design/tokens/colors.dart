@@ -146,21 +146,13 @@ class AppColors {
   static const nightWave = Color(0xFF203437); // 夜间波浪色
 
   // 岛屿海域与生长阶段
-  static const islandSeaNightDeep = Color(0xFF112725);
-  static const islandSeaNightMid = Color(0xFF1B3531);
-  static const islandSeaNightBlue = Color(0xFF26323A);
-  static const islandSeaNightDusk = Color(0xFF201F2B);
-  static const islandSeaDayWarm = Color(0xFFF5F0E5);
-  static const islandSeaDayMint = Color(0xFFDCEAE4);
-  static const islandSeaDayMist = Color(0xFFE4EBE7);
-  static const islandSeaDaySand = Color(0xFFF2E8DC);
-  static const islandBasinNightGreen = Color(0xFF6FA395);
-  static const islandBasinDayGreen = Color(0xFF9FC5B9);
-  static const islandBasinNightBlue = Color(0xFF8196B0);
-  static const islandBasinDayBlue = Color(0xFFB8CBD0);
-  static const islandTideNight = Color(0xFF8DB4AB);
-  static const islandTideDay = Color(0xFF718F88);
-  static const islandRelitGold = Color(0xFFD7BC7C);
+  static const islandSeaNightBlue = islandSeaNightMist;
+  static const islandSeaDaySand = islandSeaDayDusk;
+  static const islandBasinNightGreen = islandSeaGlowNight;
+  static const islandBasinDayGreen = islandSeaGlowDay;
+  static const islandBasinNightBlue = islandSeaHazeNight;
+  static const islandBasinDayBlue = islandSeaHazeDay;
+  static const islandRelitGold = islandRelit;
 
   // 织线关系色
   static const relationEcho = Color(0xFFB8A4D4);

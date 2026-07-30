@@ -50,8 +50,10 @@ class _RelationTypeEditSheetState extends ConsumerState<RelationTypeEditSheet> {
     final saving = ref.watch(relationTypesProvider).isLoading;
     final mediaQuery = MediaQuery.of(context);
     final bottomInset = mediaQuery.viewInsets.bottom;
-    final maxSheetHeight =
-        mediaQuery.size.height - bottomInset - mediaQuery.padding.top - AppSpacing.md;
+    final maxSheetHeight = mediaQuery.size.height -
+        bottomInset -
+        mediaQuery.padding.top -
+        AppSpacing.md;
     final isEdit = widget.existing != null;
     return AnimatedPadding(
       duration: AppMotion.fast,
@@ -146,7 +148,8 @@ class _RelationTypeEditSheetState extends ConsumerState<RelationTypeEditSheet> {
                 height: 40,
                 decoration: BoxDecoration(
                   color: selected
-                      ? theme.accent.withValues(alpha: theme.isNight ? .22 : .14)
+                      ? theme.accent
+                          .withValues(alpha: theme.isNight ? .22 : .14)
                       : theme.surface,
                   shape: BoxShape.circle,
                   border: Border.all(
@@ -180,11 +183,12 @@ class _RelationTypeEditSheetState extends ConsumerState<RelationTypeEditSheet> {
         final types = ref.read(relationTypesProvider).valueOrNull ??
             const <UserRelationType>[];
         final shownCount = types.where((t) => !t.hidden).length;
-        final newType = await ref.read(relationTypesProvider.notifier).addCustom(
-              name,
-              description: description,
-              iconKey: _iconKey,
-            );
+        final newType =
+            await ref.read(relationTypesProvider.notifier).addCustom(
+                  name,
+                  description: description,
+                  iconKey: _iconKey,
+                );
         // 展示已达上限时，新增项先收起，避免超过 maxShownRelationTypes
         if (shownCount >= maxShownRelationTypes) {
           await ref.read(relationTypesProvider.notifier).toggleHidden(newType);

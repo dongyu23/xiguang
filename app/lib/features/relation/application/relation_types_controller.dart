@@ -29,7 +29,8 @@ class RelationTypesController extends AsyncNotifier<List<UserRelationType>> {
       {String? description, String? iconKey}) async {
     final types = await future;
     _ensureUnique(types, name);
-    state = const AsyncLoading<List<UserRelationType>>().copyWithPrevious(state);
+    state =
+        const AsyncLoading<List<UserRelationType>>().copyWithPrevious(state);
     try {
       final repository = ref.read(relationTypeRepositoryProvider);
       final id = await repository.addCustom(name,
@@ -65,7 +66,8 @@ class RelationTypesController extends AsyncNotifier<List<UserRelationType>> {
       iconKey: iconKey,
       description: description,
     );
-    state = const AsyncLoading<List<UserRelationType>>().copyWithPrevious(state);
+    state =
+        const AsyncLoading<List<UserRelationType>>().copyWithPrevious(state);
     try {
       await ref.read(relationTypeRepositoryProvider).update(updated);
       state = AsyncData([
@@ -81,7 +83,8 @@ class RelationTypesController extends AsyncNotifier<List<UserRelationType>> {
 
   Future<void> setHidden(int id, bool hidden) async {
     final types = await future;
-    state = const AsyncLoading<List<UserRelationType>>().copyWithPrevious(state);
+    state =
+        const AsyncLoading<List<UserRelationType>>().copyWithPrevious(state);
     try {
       await ref.read(relationTypeRepositoryProvider).setHidden(id, hidden);
       state = AsyncData([
@@ -104,7 +107,8 @@ class RelationTypesController extends AsyncNotifier<List<UserRelationType>> {
     final types = await future;
     final target = types.where((t) => t.id == id).firstOrNull;
     if (target == null || target.isDefault) return;
-    state = const AsyncLoading<List<UserRelationType>>().copyWithPrevious(state);
+    state =
+        const AsyncLoading<List<UserRelationType>>().copyWithPrevious(state);
     try {
       await ref.read(relationTypeRepositoryProvider).delete(id);
       state = AsyncData(types.where((t) => t.id != id).toList());

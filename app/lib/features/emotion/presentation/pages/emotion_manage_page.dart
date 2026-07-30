@@ -80,8 +80,8 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
                       '管理心情',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.titleLarge
-                          .copyWith(color: theme.foreground),
+                      style:
+                          AppText.titleLarge.copyWith(color: theme.foreground),
                     ),
                   ),
                 ]);
@@ -100,8 +100,7 @@ class _EmotionManagePageState extends ConsumerState<EmotionManagePage> {
                       label: '添加音乐',
                       height: 44,
                       onPressed: () => _showAudioSheet(context),
-                      leading:
-                          const Icon(Icons.music_note_rounded, size: 18),
+                      leading: const Icon(Icons.music_note_rounded, size: 18),
                     ),
                   ),
                 ]);

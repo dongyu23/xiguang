@@ -34,8 +34,9 @@ class ApiClient {
 
   String get baseUrl => _dio.options.baseUrl;
   bool get hasToken => _accessToken != null;
-  Map<String,String> get mediaAuthorizationHeaders =>
-      _accessToken == null ? const {} : {'Authorization': 'Bearer $_accessToken'};
+  Map<String, String> get mediaAuthorizationHeaders => _accessToken == null
+      ? const {}
+      : {'Authorization': 'Bearer $_accessToken'};
   String get serverOrigin {
     final uri = Uri.parse(baseUrl);
     return uri

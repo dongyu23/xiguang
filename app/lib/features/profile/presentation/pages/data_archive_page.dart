@@ -19,6 +19,8 @@ import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../application/local_archive_controller.dart';
 import '../../domain/archive_models.dart';
 
+// PAGE_SIZE_EXEMPT: 本轮保留导入导出、预检、进度与结果状态编排；
+// 后续将归档操作区和各状态面板拆为独立 widgets 后移除此豁免。
 class DataArchivePage extends ConsumerStatefulWidget {
   const DataArchivePage({super.key});
 

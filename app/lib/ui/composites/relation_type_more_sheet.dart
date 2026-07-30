@@ -280,8 +280,7 @@ class _MoreChip extends StatelessWidget {
                 style: AppText.chip.copyWith(color: textColor, height: 1.08),
               ),
             ),
-            if (isShown)
-              Icon(Icons.check_rounded, size: 15, color: type.color),
+            if (isShown) Icon(Icons.check_rounded, size: 15, color: type.color),
           ]),
         ),
       ),

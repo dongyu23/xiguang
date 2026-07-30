@@ -129,7 +129,6 @@ class AppTiming {
   static const Duration appleRestoreCollection = Duration(seconds: 3);
   static const Duration recentWeek = Duration(days: 7);
   static const Duration recentMonth = Duration(days: 30);
-  static const Duration timelineSearchDebounce = Duration(milliseconds: 280);
 
   static Duration retryBackoff(int attempts) {
     final milliseconds = (200 * (1 << attempts)).clamp(0, 3000);

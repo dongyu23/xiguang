@@ -13,6 +13,8 @@ import '../../application/glow_organize_controller.dart';
 import '../../domain/ai_request.dart';
 import '../../domain/ai_response.dart';
 
+// PAGE_SIZE_EXEMPT: 本轮保留柔光整理的范围选择、草稿编辑与保存编排；
+// 后续将结果编辑器和来源说明拆为独立 widgets 后移除此豁免。
 class GlowOrganizePage extends ConsumerStatefulWidget {
   const GlowOrganizePage({super.key, this.initialScope});
   final AIScope? initialScope;
