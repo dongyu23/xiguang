@@ -115,7 +115,7 @@ void main() {
     final file = File('${root.path}/unknown-version.zip');
     await _writeContractZip(file, version: 99);
 
-    expect(
+    await expectLater(
       _exporter(database, root).verifyArchive(file.path),
       throwsA(isA<ArchiveIntegrityException>()),
     );
@@ -125,7 +125,7 @@ void main() {
     final file = File('${root.path}/unsafe.zip');
     await _writeContractZip(file, version: 1, unsafeEntry: '../outside.txt');
 
-    expect(
+    await expectLater(
       _exporter(database, root).verifyArchive(file.path),
       throwsA(isA<ArchiveIntegrityException>()),
     );

@@ -28,14 +28,20 @@ func (h *Handler) Routes() http.Handler {
 	r.Post("/presign-upload", h.presign)
 	r.Post("/confirm-upload", h.confirm)
 	r.Post("/export-urls", h.exportURLs)
-	r.Get("/object",h.getByObjectKey)
+	r.Get("/object", h.getByObjectKey)
 	r.Get("/{id}", h.get)
 	r.Delete("/{id}", h.delete)
 	return r
 }
 
-func (h *Handler)getByObjectKey(w http.ResponseWriter,r *http.Request){
-	userID,_:=auth.UserID(r.Context());item,err:=h.service.GetByObjectKey(r.Context(),userID,r.URL.Query().Get("key"));if err!=nil{shared.WriteError(w,http.StatusNotFound,"not_found","没有找到这个媒体文件。");return};http.Redirect(w,r,item.FileURL,http.StatusTemporaryRedirect)
+func (h *Handler) getByObjectKey(w http.ResponseWriter, r *http.Request) {
+	userID, _ := auth.UserID(r.Context())
+	item, err := h.service.GetByObjectKey(r.Context(), userID, r.URL.Query().Get("key"))
+	if err != nil {
+		shared.WriteError(w, http.StatusNotFound, "not_found", "没有找到这个媒体文件。")
+		return
+	}
+	http.Redirect(w, r, item.FileURL, http.StatusTemporaryRedirect)
 }
 
 func (h *Handler) exportURLs(w http.ResponseWriter, r *http.Request) {

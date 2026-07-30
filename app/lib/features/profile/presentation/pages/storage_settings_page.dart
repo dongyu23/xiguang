@@ -1,6 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+// PAGE_SIZE_EXEMPT: extract quota summary, cleanup actions and media inventory
+// after the storage-management flow completes integration coverage.
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;

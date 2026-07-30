@@ -29,8 +29,12 @@ android {
 
     flavorDimensions += "distribution"
     productFlavors {
-        create("store") { dimension = "distribution" }
-        create("sideload") { dimension = "distribution" }
+        create("store") {
+            dimension = "distribution"
+        }
+        create("sideload") {
+            dimension = "distribution"
+        }
     }
 
     val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_PATH")
@@ -59,8 +63,10 @@ android {
     }
 
     gradle.taskGraph.whenReady {
-        val isRelease = allTasks.any { it.name.contains("Release", ignoreCase = true) }
-        if (isRelease && !releaseSigningConfigured) {
+        val buildsRelease = allTasks.any {
+            it.name.contains("Release", ignoreCase = true)
+        }
+        if (buildsRelease && !releaseSigningConfigured) {
             throw GradleException(
                 "Release signing requires ANDROID_KEYSTORE_PATH, " +
                     "ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD",

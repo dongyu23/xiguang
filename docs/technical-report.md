@@ -47,7 +47,7 @@
 | 层 | 选型 | 版本/说明 |
 |---|-----|---------|
 | **移动端** | Flutter + Riverpod | SDK ≥3.3.0, iOS + Android |
-| **后端** | Go + Chi + pgx | Go 1.24, 模块化单体 |
+| **后端** | Go + Chi + pgx | Go 1.25, 模块化单体 |
 | **数据库** | PostgreSQL | 16-alpine |
 | **缓存** | Redis | 7-alpine |
 | **对象存储** | MinIO | S3-compatible |

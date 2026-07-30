@@ -144,7 +144,7 @@ class BackendUrlTile extends ConsumerWidget {
                   autocorrect: false,
                   autofocus: true,
                   decoration: const InputDecoration(
-                    hintText: 'http://192.168.1.2:8088/api/v1',
+                    hintText: 'https://api.frozenfish.cn/api/v1',
                   ),
                 ),
                 const SizedBox(height: AppSpacing.s12),

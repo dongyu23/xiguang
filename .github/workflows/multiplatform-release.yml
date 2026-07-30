@@ -1,0 +1,403 @@
+name: Apple and Windows Release
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/multiplatform-release.yml"
+      - "app/**"
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FLUTTER_VERSION: 3.44.8
+  API_BASE_URL: ${{ vars.FLUTTER_API_BASE_URL }}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: multiplatform-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$'
+          if (-not $line) { throw 'pubspec.yaml 缺少 version' }
+          $packageVersion = $line.Matches[0].Groups[1].Value.Trim()
+          $parts = $packageVersion.Split('+')
+          if ($parts.Count -ne 2 -or $parts[0] -notmatch '^\d+\.\d+\.\d+$' -or $parts[1] -notmatch '^[1-9]\d*$') {
+            throw "无效版本：$packageVersion"
+          }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$($parts[0])") {
+            throw "标签 $env:GITHUB_REF_NAME 必须匹配 v$($parts[0])"
+          }
+          "version=$($parts[0])" >> $env:GITHUB_OUTPUT
+          "build_number=$($parts[1])" >> $env:GITHUB_OUTPUT
+
+      - name: Validate configuration
+        shell: pwsh
+        run: |
+          if ($env:API_BASE_URL -ne 'https://api.frozenfish.cn/api/v1') {
+            throw 'FLUTTER_API_BASE_URL 必须是 https://api.frozenfish.cn/api/v1'
+          }
+
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate application sources
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Windows release
+        run: >-
+          flutter build windows
+          --release
+          --build-name "${{ steps.version.outputs.version }}"
+          --build-number "${{ steps.version.outputs.build_number }}"
+          --dart-define="API_BASE_URL=$env:API_BASE_URL"
+
+      - name: Package and verify Windows release
+        shell: pwsh
+        run: |
+          $source = 'build/windows/x64/runner/Release'
+          $exe = Join-Path $source 'xiguang.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw "未生成 $exe" }
+          $out = '../artifacts'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $name = "xiguang-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build_number }}-windows-x64.zip"
+          Compress-Archive -Path "$source/*" -DestinationPath (Join-Path $out $name) -CompressionLevel Optimal
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $out $name)).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content -Encoding utf8 -LiteralPath (Join-Path $out "$name.sha256")
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: windows-x64
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+  macos:
+    name: macOS ${{ matrix.display }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            architecture: x86_64
+            display: Intel x64
+            suffix: macos-intel-x64
+          - runner: macos-15
+            architecture: arm64
+            display: Apple Silicon arm64
+            suffix: macos-apple-silicon-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(awk '/^version:/ {print $2; exit}' pubspec.yaml)"
+          version="${package_version%%+*}"
+          build_number="${package_version##*+}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$build_number" =~ ^[1-9][0-9]*$ ]]
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME must match pubspec version v$version" >&2
+            exit 1
+          fi
+          [[ "$(uname -m)" == "${{ matrix.architecture }}" ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${API_BASE_URL:?missing FLUTTER_API_BASE_URL repository variable}"
+          [[ "$API_BASE_URL" == "https://api.frozenfish.cn/api/v1" ]]
+
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate application sources
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build macOS release
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build macos \
+            --release \
+            --build-name "${{ steps.version.outputs.version }}" \
+            --build-number "${{ steps.version.outputs.build_number }}" \
+            --dart-define="API_BASE_URL=$API_BASE_URL"
+
+      - name: Package and verify macOS release
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_bundle="$(find build/macos/Build/Products/Release -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$app_bundle"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_bundle/Contents/Info.plist")"
+          test -x "$app_bundle/Contents/MacOS/$executable"
+          file "$app_bundle/Contents/MacOS/$executable" | grep -q '${{ matrix.architecture }}'
+          codesign --verify --deep --strict "$app_bundle"
+          mkdir -p ../artifacts
+          output="../artifacts/xiguang-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build_number }}-${{ matrix.suffix }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$output"
+          shasum -a 256 "$output" > "$output.sha256"
+
+      - name: Upload macOS package
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ${{ matrix.suffix }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+  ios:
+    name: iPhone iOS
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: app
+    env:
+      IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+      IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+      IOS_PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_CODE_SIGN_IDENTITY: ${{ vars.IOS_CODE_SIGN_IDENTITY || 'Apple Distribution' }}
+      IOS_EXPORT_METHOD: ${{ vars.IOS_EXPORT_METHOD || 'ad-hoc' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_version="$(awk '/^version:/ {print $2; exit}' pubspec.yaml)"
+          version="${package_version%%+*}"
+          build_number="${package_version##*+}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$build_number" =~ ^[1-9][0-9]*$ ]]
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME must match pubspec version v$version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+
+      - name: Validate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${API_BASE_URL:?missing FLUTTER_API_BASE_URL repository variable}"
+          [[ "$API_BASE_URL" == "https://api.frozenfish.cn/api/v1" ]]
+          signing_values=(
+            "$IOS_CERTIFICATE_P12_BASE64"
+            "$IOS_CERTIFICATE_PASSWORD"
+            "$IOS_PROVISIONING_PROFILE_BASE64"
+            "$IOS_PROVISIONING_PROFILE_NAME"
+            "$APPLE_TEAM_ID"
+          )
+          configured=0
+          for value in "${signing_values[@]}"; do
+            [[ -n "$value" ]] && configured=$((configured + 1))
+          done
+          if [[ "$configured" != 0 && "$configured" != "${#signing_values[@]}" ]]; then
+            echo "iOS signing secrets must be configured together" >&2
+            exit 1
+          fi
+          if [[ "$configured" == "${#signing_values[@]}" ]]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+        id: signing
+
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate application sources
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build unsigned iPhone package
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --build-name "${{ steps.version.outputs.version }}" \
+            --build-number "${{ steps.version.outputs.build_number }}" \
+            --dart-define="API_BASE_URL=$API_BASE_URL"
+          test -d build/ios/iphoneos/Runner.app
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/ios/iphoneos/Runner.app/Info.plist)"
+          [[ "$bundle_id" == "com.xiguang.xiguang" ]]
+          mkdir -p build/ios/unsigned/Payload ../artifacts
+          cp -R build/ios/iphoneos/Runner.app build/ios/unsigned/Payload/
+          output="../artifacts/xiguang-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build_number }}-ios-unsigned.ipa"
+          ditto -c -k --sequesterRsrc --keepParent build/ios/unsigned/Payload "$output"
+          unzip -t "$output"
+          shasum -a 256 "$output" > "$output.sha256"
+
+      - name: Install Apple signing material
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/xiguang-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$IOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security list-keychain -d user -s "$keychain" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+
+      - name: Build signed installable IPA
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/Runner.xcarchive"
+          xcodebuild \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$archive" \
+            archive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$IOS_CODE_SIGN_IDENTITY" \
+            PROVISIONING_PROFILE_SPECIFIER="$IOS_PROVISIONING_PROFILE_NAME"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>$IOS_EXPORT_METHOD</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>provisioningProfiles</key><dict>
+              <key>com.xiguang.xiguang</key><string>$IOS_PROVISIONING_PROFILE_NAME</string>
+            </dict>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$archive" \
+            -exportPath "$RUNNER_TEMP/ios-export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          ipa="$(find "$RUNNER_TEMP/ios-export" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+          test -n "$ipa"
+          output="../artifacts/xiguang-${{ steps.version.outputs.version }}-${{ steps.version.outputs.build_number }}-ios-signed.ipa"
+          cp "$ipa" "$output"
+          codesign --verify --deep --strict "$archive/Products/Applications/Runner.app"
+          shasum -a 256 "$output" > "$output.sha256"
+
+      - name: Upload iOS packages
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ios
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Append Apple and Windows packages to Release
+    if: github.ref_type == 'tag'
+    needs: [windows, macos, ios]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download platform packages
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create platform checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          find artifacts -maxdepth 1 -type f \
+            ! -name '*.sha256' \
+            ! -name 'SHA256SUMS-*.txt' \
+            -printf '%f\0' \
+            | sort -z \
+            | while IFS= read -r -d '' name; do
+                sha256sum "artifacts/$name"
+              done > artifacts/SHA256SUMS-apple-windows.txt
+
+      - name: Publish platform packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber --repo "$GITHUB_REPOSITORY"
+          elif ! gh release create "$GITHUB_REF_NAME" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            --title "隙光 $version"; then
+            gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber --repo "$GITHUB_REPOSITORY"
+          fi

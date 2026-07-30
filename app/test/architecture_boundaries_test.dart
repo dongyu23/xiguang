@@ -109,7 +109,7 @@ void main() {
 
   test('oversized pages must declare their extraction plan', () {
     for (final file in _dartFiles('lib/features')) {
-      if (!file.path.contains('/presentation/pages/')) continue;
+      if (!_normalizedPath(file).contains('/presentation/pages/')) continue;
       final source = file.readAsStringSync();
       final lineCount = '\n'.allMatches(source).length + 1;
       if (lineCount <= 300) continue;

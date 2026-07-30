@@ -45,6 +45,11 @@ import '../features/shared/data/local/app_database.dart';
 import '../features/shared/domain/media_playback_access.dart';
 
 const _apiBaseUrlPrefsKey = 'xiguang.api_base_url';
+const _legacyApiBaseUrls = <String>{
+  'http://101.35.113.175:8088/api/v1',
+  'http://192.168.5.200:8088/api/v1',
+  'http://127.0.0.1:8088/api/v1',
+};
 
 String normalizeApiBaseUrl(String value) {
   final trimmed = value.trim();
@@ -54,17 +59,31 @@ String normalizeApiBaseUrl(String value) {
   return trimmed;
 }
 
+String resolveInitialApiBaseUrl(String? saved) {
+  final normalized = saved == null ? '' : normalizeApiBaseUrl(saved);
+  if (normalized.isEmpty || _legacyApiBaseUrls.contains(normalized)) {
+    return normalizeApiBaseUrl(ApiClient.defaultBaseUrl);
+  }
+  return normalized;
+}
+
 String? validateApiBaseUrl(String value) {
   final normalized = normalizeApiBaseUrl(value);
   if (normalized.isEmpty) return '请输入后端地址';
   final uri = Uri.tryParse(normalized);
   if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-    return '请输入完整地址，例如 http://192.168.1.2:8088/api/v1';
+    return '请输入完整地址，例如 https://api.frozenfish.cn/api/v1';
   }
-  if (uri.scheme != 'http' && uri.scheme != 'https') {
-    return '仅支持 http 或 https 地址';
+  if (uri.scheme != 'https') {
+    return '后端地址必须使用 HTTPS';
   }
-  if (!normalized.endsWith('/api/v1')) {
+  final isIpv4 = RegExp(r'^\d{1,3}(?:\.\d{1,3}){3}$').hasMatch(uri.host);
+  final isDomain =
+      RegExp(r'^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$').hasMatch(uri.host);
+  if (isIpv4 || !isDomain) {
+    return '请使用 HTTPS 域名，不要直接填写 IP 地址';
+  }
+  if (uri.path != '/api/v1' || uri.hasQuery || uri.hasFragment) {
     return '地址需要以 /api/v1 结尾';
   }
   return null;
@@ -86,7 +105,11 @@ class ApiBaseUrlNotifier extends AsyncNotifier<String> {
   Future<String> build() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_apiBaseUrlPrefsKey);
-    return normalizeApiBaseUrl(saved ?? ApiClient.defaultBaseUrl);
+    final resolved = resolveInitialApiBaseUrl(saved);
+    if (saved != null && normalizeApiBaseUrl(saved) != resolved) {
+      await prefs.remove(_apiBaseUrlPrefsKey);
+    }
+    return resolved;
   }
 
   Future<void> save(String value) async {

@@ -6,6 +6,7 @@ import '../../../app/providers.dart';
 import '../../fragment/application/fragment_list_controller.dart';
 import '../domain/island_model.dart';
 import '../domain/island_repository.dart';
+import 'universe_overview_provider.dart';
 
 export '../../../app/providers.dart' show islandRepositoryProvider;
 
@@ -34,5 +35,11 @@ class IslandsNotifier extends AsyncNotifier<List<IslandModel>> {
     final remote = await repository.tryListRemoteIslands();
     if (remote == null || (remote.isEmpty && hasLocal)) return;
     state = AsyncData(remote);
+  }
+
+  Future<void> deleteIsland(int islandId) async {
+    await ref.read(islandRepositoryProvider).deleteIsland(islandId);
+    ref.invalidate(universeOverviewProvider);
+    ref.invalidateSelf();
   }
 }

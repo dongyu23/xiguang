@@ -50,8 +50,14 @@ class AppSpacing {
   /// 小宇宙列表避开底部模式切换条的空间。
   static const double universeListBottom = 76;
 
+  /// 小宇宙紧凑列表沿用同一底部避让。
+  static const double universeCompactListBottom = universeListBottom;
+
   /// 支线画布缩放和平移时保留的边界。
   static const double graphBoundary = 80;
+
+  /// 其他可缩放画布沿用同一边界。
+  static const double interactiveCanvasBoundary = graphBoundary;
 
   /// 页面水平内边距
   static double pageHorizontal(double width) => width > 520 ? 34 : 22;

@@ -41,7 +41,8 @@ class XiguangPage extends StatelessWidget {
         child: Stack(
           children: [
             const Positioned.fill(child: NightBackgroundPlaceholder()),
-            if (backgroundLayer != null) Positioned.fill(child: backgroundLayer!),
+            if (backgroundLayer != null)
+              Positioned.fill(child: backgroundLayer!),
             SafeArea(
               child: scrollable
                   ? SingleChildScrollView(

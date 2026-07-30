@@ -47,7 +47,7 @@ const validSHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8
 func baseParams() domain.PublishParams {
 	return domain.PublishParams{
 		Channel:      "stable",
-		Platform:    "android",
+		Platform:     "android",
 		Version:      "0.2.0",
 		BuildNumber:  5,
 		APKFileName:  "xiguang-0.2.0+5.apk",

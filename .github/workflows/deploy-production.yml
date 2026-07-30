@@ -1,0 +1,205 @@
+name: Production Deployment
+
+on:
+  workflow_run:
+    workflows:
+      - Backend CI and Image
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Optional GHCR tag or digest to deploy; empty uses the selected main commit
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy production
+    if: >-
+      vars.CD_ENABLED == 'true' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main'
+        )
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.CD_PUBLIC_BASE_URL }}
+    env:
+      REGISTRY: ghcr.io
+      SSH_HOST: ${{ secrets.CD_SSH_HOST }}
+      SSH_USER: ${{ secrets.CD_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.CD_SSH_PRIVATE_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.CD_SSH_KNOWN_HOSTS }}
+      SSH_PORT: ${{ vars.CD_SSH_PORT }}
+      DEPLOY_PATH: ${{ vars.CD_DEPLOY_PATH }}
+      PUBLIC_READY_URL: ${{ vars.CD_PUBLIC_READY_URL }}
+    steps:
+      - name: Select source revision
+        id: source
+        shell: bash
+        env:
+          MANUAL_IMAGE: ${{ inputs.image }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            source_sha="$RUN_SHA"
+          else
+            source_sha="$GITHUB_SHA"
+          fi
+          test -n "$source_sha"
+          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "manual_image=$MANUAL_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout deployment bundle
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Resolve immutable image digest
+        id: image
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          MANUAL_IMAGE: ${{ steps.source.outputs.manual_image }}
+          GHCR_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          image_name="${REGISTRY}/${GHCR_REPOSITORY,,}"
+          if [[ -n "$MANUAL_IMAGE" ]]; then
+            candidate="$MANUAL_IMAGE"
+          else
+            candidate="${image_name}:sha-${SOURCE_SHA:0:7}"
+          fi
+          if [[ "$candidate" != ghcr.io/* ]]; then
+            echo "Only GHCR images are accepted: $candidate" >&2
+            exit 1
+          fi
+          inspect="$(docker buildx imagetools inspect "$candidate")"
+          digest="$(awk '/^Digest:/ {print $2; exit}' <<< "$inspect")"
+          test -n "$digest"
+          immutable="${candidate%%@*}"
+          immutable="${immutable%%:*}@${digest}"
+          echo "ref=$immutable" >> "$GITHUB_OUTPUT"
+          echo "Deploying $immutable" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate deployment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${SSH_HOST:?missing CD_SSH_HOST secret}"
+          : "${SSH_USER:?missing CD_SSH_USER secret}"
+          : "${SSH_PRIVATE_KEY:?missing CD_SSH_PRIVATE_KEY secret}"
+          : "${SSH_KNOWN_HOSTS:?missing CD_SSH_KNOWN_HOSTS secret}"
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+
+      - name: Log in to GHCR for transfer fallback
+        shell: bash
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Upload deployment bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          path="${DEPLOY_PATH:-/opt/xiguang}"
+          ssh_args=(-i ~/.ssh/id_deploy -p "$port" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          # shellcheck disable=SC2029
+          ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p '$path/scripts'"
+          # shellcheck disable=SC2029
+          tar -czf - \
+            docker-compose.production.yml \
+            nginx.conf \
+            nginx.tls.conf \
+            scripts/nginx-entrypoint.sh \
+            scripts/deploy-production.sh \
+            .env.production.example \
+            | ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" "tar -xzf - -C '$path'"
+
+      - name: Ensure immutable image is present on deployment host
+        id: host-image
+        shell: bash
+        env:
+          BACKEND_IMAGE: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          ssh_args=(-i ~/.ssh/id_deploy -p "$port" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          # shellcheck disable=SC2029
+          if ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" \
+            "docker image inspect '$BACKEND_IMAGE' >/dev/null 2>&1 || docker pull '$BACKEND_IMAGE'"; then
+            runtime_image="$BACKEND_IMAGE"
+            echo "Deployment host has $BACKEND_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Deployment host could not reach GHCR; streaming the verified image from the runner." >&2
+            docker pull "$BACKEND_IMAGE"
+            digest="${BACKEND_IMAGE##*@sha256:}"
+            runtime_image="${BACKEND_IMAGE%%@*}:cd-${digest:0:16}"
+            docker tag "$BACKEND_IMAGE" "$runtime_image"
+            docker save "$runtime_image" | gzip -1 | \
+              ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" 'gunzip | docker load'
+            # shellcheck disable=SC2029
+            ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" \
+              "docker image inspect '$runtime_image' >/dev/null"
+            echo "Transferred $BACKEND_IMAGE as $runtime_image through the Actions runner" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "runtime_ref=$runtime_image" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy with health verification and rollback
+        shell: bash
+        env:
+          BACKEND_IMAGE: ${{ steps.image.outputs.ref }}
+          RUNTIME_IMAGE: ${{ steps.host-image.outputs.runtime_ref }}
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          path="${DEPLOY_PATH:-/opt/xiguang}"
+          ssh_args=(-i ~/.ssh/id_deploy -p "$port" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          printf -v remote_command \
+            "cd %q && chmod +x scripts/*.sh && DEPLOY_SKIP_IMAGE_PULL=true DEPLOY_RUNTIME_IMAGE=%q BACKEND_IMAGE=%q ./scripts/deploy-production.sh" \
+            "$path" "$RUNTIME_IMAGE" "$BACKEND_IMAGE"
+          # shellcheck disable=SC2029
+          ssh "${ssh_args[@]}" "$SSH_USER@$SSH_HOST" "$remote_command"
+
+      - name: Verify public readiness
+        if: env.PUBLIC_READY_URL != ''
+        shell: bash
+        run: curl --fail --show-error --silent --retry 6 --retry-delay 5 --max-time 15 "$PUBLIC_READY_URL"
+
+      - name: Record deployment
+        shell: bash
+        env:
+          BACKEND_IMAGE: ${{ steps.image.outputs.ref }}
+        run: |
+          {
+            echo "### Production deployment succeeded"
+            echo "- Image: \`$BACKEND_IMAGE\`"
+            echo "- Source: \`${{ steps.source.outputs.sha }}\`"
+            echo "- Host: \`$SSH_HOST\`"
+          } >> "$GITHUB_STEP_SUMMARY"

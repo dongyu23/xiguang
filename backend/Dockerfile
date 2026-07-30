@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # 多阶段构建：Go 源码在 Docker 内编译，宿主机无需安装 Go。
 
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 ARG TARGETARCH=amd64
 WORKDIR /src
 

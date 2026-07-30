@@ -22,7 +22,7 @@ class ApiClient {
 
   static const defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.5.200:8088/api/v1',
+    defaultValue: 'https://api.frozenfish.cn/api/v1',
   );
 
   final Dio _dio;

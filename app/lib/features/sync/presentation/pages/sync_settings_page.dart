@@ -408,7 +408,7 @@ class _ServerUrlCard extends StatelessWidget {
         style: AppText.body.copyWith(color: theme.foreground),
         decoration: InputDecoration(
           labelText: '后端地址',
-          hintText: 'http://127.0.0.1:8088/api/v1',
+          hintText: 'https://api.frozenfish.cn/api/v1',
           errorText: errorText,
           prefixIcon: const Icon(Icons.dns_outlined, size: 19),
           filled: true,

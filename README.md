@@ -50,7 +50,7 @@
 ### 前置条件
 
 - Flutter SDK ≥3.3.0
-- Go 1.24+
+- Go 1.25+
 - Docker + Docker Compose
 - （iOS）Xcode 16+
 - （Android）Android SDK + JDK 17
@@ -84,10 +84,10 @@ flutter run -d ios
 flutter run -d macos
 ```
 
-App 默认连接 `http://127.0.0.1:8088/api/v1`。如需自定义：
+App 默认连接生产 HTTPS 后端 `https://api.frozenfish.cn/api/v1`。如需连接其他开发环境，该环境也必须提供受信任证书和 HTTPS 域名：
 
 ```bash
-flutter run --dart-define=API_BASE_URL=http://你的地址/api/v1
+flutter run --dart-define=API_BASE_URL=https://api.dev.example.com/api/v1
 ```
 
 ### 调试方式
@@ -110,7 +110,7 @@ flutter run -d ios
 ```
 
 - 首次连接 iOS 真机需要在 Xcode 里打开 `app/ios/Runner.xcworkspace` 设置 Signing Team
-- App 默认连 `http://127.0.0.1:8088/api/v1`，真机上 127.0.0.1 指向手机本身，需用 `--dart-define=API_BASE_URL=http://你电脑局域网IP:8088/api/v1` 指向后端
+- App 默认连接 `https://api.frozenfish.cn/api/v1`；真机联调如需覆盖，也应使用带受信任证书的 HTTPS 域名
 - 真机调试是验证键盘交互、手势、媒体权限的最终判据
 
 **方式 B：编译 macOS 原生版本**
@@ -226,7 +226,7 @@ Flutter App ──HTTPS──▶ Nginx :443 ──/api/*──▶ Go Backend :80
 
 ## API 概览
 
-基础地址：`http://127.0.0.1:8088/api/v1`
+生产基础地址：`https://api.frozenfish.cn/api/v1`
 
 ### 公开接口（无需登录）
 
@@ -292,8 +292,8 @@ curl -sL https://raw.githubusercontent.com/dongyu23/xiguang/main/deploy.sh | bas
 4. 启动全部 5 个容器
 
 部署完成后访问：
-- API：`http://你的服务器IP:8088/api/v1`
-- 健康检查：`http://你的服务器IP:8088/healthz`
+- API：`https://api.frozenfish.cn/api/v1`
+- 健康检查：`https://api.frozenfish.cn/healthz`
 - MinIO 控制台：`http://你的服务器IP:9001`
 
 自定义安装目录：
