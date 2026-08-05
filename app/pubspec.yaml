@@ -54,7 +54,7 @@ dependencies:
   permission_handler: ^11.0.0
 
   # 在线更新：拉取版本元信息 + 系统安装器调起
-  package_info_plus: ^8.0.0
+  package_info_plus: ^9.0.1
   open_filex: ^4.5.0
 
   # 崩溃上报
