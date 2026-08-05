@@ -60,7 +60,7 @@ dependencies:
   # 崩溃上报
   sentry_flutter: ^9.21.0
   shared_preferences: ^2.5.5
-  connectivity_plus: ^6.1.5
+  connectivity_plus: ^7.3.1
 
   # Apple StoreKit 2；不引入 Google Play Billing 的 Android 实现。
   in_app_purchase_platform_interface: ^1.4.1
